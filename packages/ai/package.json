@@ -1,5 +1,5 @@
 {
-	"name": "@punch/ai",
+	"name": "@punch-bot/ai",
 	"version": "0.84.2",
 	"description": "Unified LLM API with automatic model discovery and provider configuration",
 	"type": "module",
@@ -62,7 +62,7 @@
 	"dependencies": {
 		"@anthropic-ai/sdk": "0.91.1",
 		"@aws-sdk/client-bedrock-runtime": "3.1048.0",
-		"@punch/telemetry": "^0.84.2",
+		"@punch-bot/telemetry": "^0.84.2",
 		"@google/genai": "1.52.0",
 		"@smithy/node-http-handler": "4.7.3",
 		"http-proxy-agent": "7.0.2",

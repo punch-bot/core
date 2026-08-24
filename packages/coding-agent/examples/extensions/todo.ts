@@ -10,9 +10,9 @@
  * correct for that point in history.
  */
 
-import { StringEnum } from "@punch/ai";
-import type { ExtensionAPI, ExtensionContext, Theme } from "@punch/cli";
-import { matchesKey, Text, truncateToWidth } from "@punch/tui";
+import { StringEnum } from "@punch-bot/ai";
+import type { ExtensionAPI, ExtensionContext, Theme } from "@punch-bot/cli";
+import { matchesKey, Text, truncateToWidth } from "@punch-bot/tui";
 import { Type } from "typebox";
 
 interface Todo {

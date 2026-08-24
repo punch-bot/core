@@ -12,10 +12,10 @@
  * - Progress tracking widget during execution
  */
 
-import type { AgentMessage } from "@punch/agent";
-import type { AssistantMessage, TextContent } from "@punch/ai";
-import type { ExtensionAPI, ExtensionContext } from "@punch/cli";
-import { Key } from "@punch/tui";
+import type { AgentMessage } from "@punch-bot/agent";
+import type { AssistantMessage, TextContent } from "@punch-bot/ai";
+import type { ExtensionAPI, ExtensionContext } from "@punch-bot/cli";
+import { Key } from "@punch-bot/tui";
 import { extractTodoItems, isSafeCommand, markCompletedSteps, type TodoItem } from "./utils.ts";
 
 // Tools

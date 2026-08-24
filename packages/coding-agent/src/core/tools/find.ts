@@ -1,6 +1,6 @@
 import { createInterface } from "node:readline";
-import type { AgentTool } from "@punch/agent";
-import { Text } from "@punch/tui";
+import type { AgentTool } from "@punch-bot/agent";
+import { Text } from "@punch-bot/tui";
 import { spawn } from "child_process";
 import path from "path";
 import { type Static, Type } from "typebox";

@@ -1,6 +1,6 @@
-import { Agent } from "@punch/agent";
-import { createModels } from "@punch/ai";
-import { anthropicProvider } from "@punch/ai/providers/anthropic";
+import { Agent } from "@punch-bot/agent";
+import { createModels } from "@punch-bot/ai";
+import { anthropicProvider } from "@punch-bot/ai/providers/anthropic";
 
 const models = createModels();
 models.setProvider(anthropicProvider());

@@ -2,8 +2,8 @@
  * Hello Tool - Minimal custom tool example
  */
 
-import { Type } from "@punch/ai";
-import { defineTool, type ExtensionAPI } from "@punch/cli";
+import { Type } from "@punch-bot/ai";
+import { defineTool, type ExtensionAPI } from "@punch-bot/cli";
 
 const helloTool = defineTool({
 	name: "hello",

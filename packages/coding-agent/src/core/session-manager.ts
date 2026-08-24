@@ -1,5 +1,5 @@
-import type { AgentMessage } from "@punch/agent";
-import { type ImageContent, type Message, type TextContent, type Usage, uuidv7 } from "@punch/ai";
+import type { AgentMessage } from "@punch-bot/agent";
+import { type ImageContent, type Message, type TextContent, type Usage, uuidv7 } from "@punch-bot/ai";
 import { randomUUID } from "crypto";
 import {
 	appendFileSync,

@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
-import { contentText } from "@punch/ai";
+import { contentText } from "@punch-bot/ai";
 import {
 	type AgentSession,
 	type CreateAgentSessionOptions,
@@ -12,7 +12,7 @@ import {
 	ModelRuntime,
 	SessionManager,
 	SettingsManager,
-} from "@punch/cli";
+} from "@punch-bot/cli";
 import {
 	createHarness,
 	type Harness,

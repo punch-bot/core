@@ -1,4 +1,4 @@
-import type { ModelRef, ThinkingLevel } from "@punch/protocol";
+import type { ModelRef, ThinkingLevel } from "@punch-bot/protocol";
 import type { ByteTransportFactory } from "./transport.ts";
 
 export type ConnectionState = "disconnected" | "connecting" | "connected";

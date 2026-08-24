@@ -19,7 +19,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { ExtensionAPI } from "@punch/cli";
+import type { ExtensionAPI } from "@punch-bot/cli";
 
 /**
  * Recursively find all .md files in a directory

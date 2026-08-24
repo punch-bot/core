@@ -1,4 +1,4 @@
-import type { Api, Model } from "@punch/ai";
+import type { Api, Model } from "@punch-bot/ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { InteractiveMode } from "../../../src/modes/interactive/interactive-mode.ts";
 import { createHarness, type Harness } from "../harness.ts";

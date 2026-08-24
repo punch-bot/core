@@ -35,8 +35,8 @@ import {
 	type ProviderRequestOptions,
 	type SimpleStreamOptions,
 	type StreamOptions,
-} from "@punch/ai";
-import * as builtinProviderCatalog from "@punch/ai/providers/all";
+} from "@punch-bot/ai";
+import * as builtinProviderCatalog from "@punch-bot/ai/providers/all";
 import { getAgentDir } from "../config.ts";
 import { operationSignal, raceWithAbortSignal } from "../utils/abort.ts";
 import { AuthStorage as DefaultAuthStorage } from "./auth-storage.ts";

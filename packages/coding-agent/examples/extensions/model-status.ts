@@ -7,7 +7,7 @@
  * Usage: pi -e ./model-status.ts
  */
 
-import type { ExtensionAPI } from "@punch/cli";
+import type { ExtensionAPI } from "@punch-bot/cli";
 
 export default function (pi: ExtensionAPI) {
 	pi.on("model_select", async (event, ctx) => {

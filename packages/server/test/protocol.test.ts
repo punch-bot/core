@@ -1,5 +1,5 @@
-import type { Api, AssistantMessage, Model, ToolCall, ToolResultMessage, UserMessage } from "@punch/ai";
-import { encodeServerMessage, PROTOCOL_VERSION } from "@punch/protocol";
+import type { Api, AssistantMessage, Model, ToolCall, ToolResultMessage, UserMessage } from "@punch-bot/ai";
+import { encodeServerMessage, PROTOCOL_VERSION } from "@punch-bot/protocol";
 import { describe, expect, test } from "vitest";
 import {
 	sanitizeProtocolDetails,

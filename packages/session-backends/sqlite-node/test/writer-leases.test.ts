@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { NodeExecutionEnv } from "@punch/agent/node";
+import { NodeExecutionEnv } from "@punch-bot/agent/node";
 import { describe, expect, it, vi } from "vitest";
 import { createNodeSqliteFactory, type SqliteSessionMetadata, SqliteSessionRepository } from "../src/index.ts";
 import { createTempDir, createUserMessage } from "./test-utils.ts";

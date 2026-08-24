@@ -34,7 +34,7 @@ Source on GitHub ([pi-mono](https://github.com/earendil-works/pi-mono)):
 - [`packages/ai/src/types.ts`](https://github.com/earendil-works/pi-mono/blob/main/packages/ai/src/types.ts) - Base message types (UserMessage, AssistantMessage, ToolResultMessage)
 - [`packages/agent/src/types.ts`](https://github.com/earendil-works/pi-mono/blob/main/packages/agent/src/types.ts) - AgentMessage union type
 
-For TypeScript definitions in your project, inspect `node_modules/@punch/cli/dist/` and `node_modules/@punch/ai/dist/`.
+For TypeScript definitions in your project, inspect `node_modules/@punch-bot/cli/dist/` and `node_modules/@punch-bot/ai/dist/`.
 
 ## Message Types
 

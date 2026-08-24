@@ -1,6 +1,6 @@
 import { join } from "node:path";
-import type { ThinkingLevel } from "@punch/agent";
-import type { Model } from "@punch/ai";
+import type { ThinkingLevel } from "@punch-bot/agent";
+import type { Model } from "@punch-bot/ai";
 import { getAgentDir } from "../config.ts";
 import { resolvePath } from "../utils/paths.ts";
 import type { SessionStartEvent, ToolDefinition } from "./extensions/index.ts";

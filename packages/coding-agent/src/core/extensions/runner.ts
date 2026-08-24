@@ -2,9 +2,9 @@
  * Extension runner - executes extensions and manages their lifecycle.
  */
 
-import type { AgentMessage } from "@punch/agent";
-import type { ImageContent, Model, Provider, ProviderHeaders } from "@punch/ai";
-import type { KeyId } from "@punch/tui";
+import type { AgentMessage } from "@punch-bot/agent";
+import type { ImageContent, Model, Provider, ProviderHeaders } from "@punch-bot/ai";
+import type { KeyId } from "@punch-bot/tui";
 import { type Theme, theme } from "../../modes/interactive/theme/theme.ts";
 import type { ResourceDiagnostic } from "../diagnostics.ts";
 import type { KeybindingsConfig } from "../keybindings.ts";

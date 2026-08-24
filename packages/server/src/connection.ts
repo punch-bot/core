@@ -1,4 +1,4 @@
-import type { ClientMessageDecoder } from "@punch/protocol";
+import type { ClientMessageDecoder } from "@punch-bot/protocol";
 
 import type { MaybePromise } from "./types.ts";
 

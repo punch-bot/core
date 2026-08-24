@@ -9,7 +9,7 @@ import {
 	EventStream,
 	type ToolResultMessage,
 	validateToolArguments,
-} from "@punch/ai";
+} from "@punch-bot/ai";
 import { getDefaultStreamFn } from "./stream-fn.ts";
 import type {
 	AgentContext,

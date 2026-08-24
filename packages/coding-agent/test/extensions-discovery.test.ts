@@ -55,7 +55,7 @@ describe("extensions discovery", () => {
 		fs.writeFileSync(
 			path.join(extensionsDir, "coding-agent-import.ts"),
 			`
-				import { getAgentDir } from "@punch/cli";
+				import { getAgentDir } from "@punch-bot/cli";
 				void getAgentDir;
 				export default function(pi) {
 					pi.registerCommand("test", { handler: async () => {} });
@@ -73,7 +73,7 @@ describe("extensions discovery", () => {
 		fs.writeFileSync(
 			path.join(extensionsDir, "oauth-import.ts"),
 			`
-				import * as oauth from "@punch/ai/oauth";
+				import * as oauth from "@punch-bot/ai/oauth";
 				void oauth;
 				export default function(pi) {
 					pi.registerCommand("test", { handler: async () => {} });

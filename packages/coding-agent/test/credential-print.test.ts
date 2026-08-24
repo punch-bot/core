@@ -1,4 +1,4 @@
-import { InMemoryModelsStore } from "@punch/ai";
+import { InMemoryModelsStore } from "@punch-bot/ai";
 import { describe, expect, test, vi } from "vitest";
 import { parseArgs } from "../src/cli/args.ts";
 import { AuthCommandError, isAuthCommandHelp, parseAuthCommand } from "../src/cli/auth-command.ts";

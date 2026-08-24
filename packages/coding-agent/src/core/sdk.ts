@@ -1,6 +1,6 @@
 import { join } from "node:path";
-import { Agent, type AgentMessage, setDefaultStreamFn, type ThinkingLevel } from "@punch/agent";
-import { clampThinkingLevel, type Message, type Model, streamSimple } from "@punch/ai/compat";
+import { Agent, type AgentMessage, setDefaultStreamFn, type ThinkingLevel } from "@punch-bot/agent";
+import { clampThinkingLevel, type Message, type Model, streamSimple } from "@punch-bot/ai/compat";
 import { getAgentDir } from "../config.ts";
 import { resolvePath } from "../utils/paths.ts";
 import { AgentSession } from "./agent-session.ts";
@@ -142,7 +142,7 @@ function getDefaultAgentDir(): string {
  * const { session } = await createAgentSession();
  *
  * // With explicit model
- * import { getModel } from '@punch/ai';
+ * import { getModel } from '@punch-bot/ai';
  * const { session } = await createAgentSession({
  *   model: getModel('anthropic', 'claude-opus-4-5'),
  *   thinkingLevel: 'high',

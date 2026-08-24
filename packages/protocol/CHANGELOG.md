@@ -4,7 +4,7 @@
 
 ### Breaking Changes
 
-- Renamed package from `@earendil-works/pi-protocol` to `@punch/protocol`.
+- Renamed package from `@earendil-works/pi-protocol` to `@punch-bot/protocol`.
 
 ## [0.84.2] - 2026-08-14
 

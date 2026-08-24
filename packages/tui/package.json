@@ -1,5 +1,5 @@
 {
-	"name": "@punch/tui",
+	"name": "@punch-bot/tui",
 	"version": "0.84.2",
 	"description": "Terminal User Interface library with differential rendering for efficient text-based applications",
 	"type": "module",

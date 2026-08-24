@@ -4,7 +4,7 @@
 
 ### Breaking Changes
 
-- Renamed package from `@earendil-works/pi-coding-agent` to `@punch/cli`.
+- Renamed package from `@earendil-works/pi-coding-agent` to `@punch-bot/cli`.
 
 ### Added
 

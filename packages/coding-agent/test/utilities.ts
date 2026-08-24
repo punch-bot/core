@@ -6,10 +6,10 @@ import { createModelRegistry, getModelRuntime } from "./model-runtime-test-utils
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { Agent } from "@punch/agent";
-import type { OAuthCredentials } from "@punch/ai";
-import { getModel, streamSimple } from "@punch/ai/compat";
-import { builtinProviders } from "@punch/ai/providers/all";
+import { Agent } from "@punch-bot/agent";
+import type { OAuthCredentials } from "@punch-bot/ai";
+import { getModel, streamSimple } from "@punch-bot/ai/compat";
+import { builtinProviders } from "@punch-bot/ai/providers/all";
 import { AgentSession } from "../src/core/agent-session.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import { createEventBus } from "../src/core/event-bus.ts";

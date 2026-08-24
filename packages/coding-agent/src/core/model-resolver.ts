@@ -2,8 +2,8 @@
  * Model resolution, scoping, and initial selection
  */
 
-import type { ThinkingLevel } from "@punch/agent";
-import { type Api, type AuthOperationOptions, type KnownProvider, type Model, modelsAreEqual } from "@punch/ai";
+import type { ThinkingLevel } from "@punch-bot/agent";
+import { type Api, type AuthOperationOptions, type KnownProvider, type Model, modelsAreEqual } from "@punch-bot/ai";
 import chalk from "chalk";
 import { minimatch } from "minimatch";
 import { isValidThinkingLevel } from "../cli/args.ts";

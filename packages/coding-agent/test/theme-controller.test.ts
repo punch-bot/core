@@ -1,4 +1,4 @@
-import type { TUI } from "@punch/tui";
+import type { TUI } from "@punch-bot/tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import { initTheme, type TerminalTheme, theme } from "../src/modes/interactive/theme/theme.ts";

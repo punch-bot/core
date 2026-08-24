@@ -1,4 +1,4 @@
-import type { AssistantMessage } from "@punch/ai";
+import type { AssistantMessage } from "@punch-bot/ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createHarness, type Harness } from "../harness.ts";
 

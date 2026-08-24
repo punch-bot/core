@@ -21,8 +21,8 @@ import {
 	openAIResponsesApi,
 	type SimpleStreamOptions,
 	type ThinkingLevelMap,
-} from "@punch/ai/compat";
-import type { ExtensionAPI } from "@punch/cli";
+} from "@punch-bot/ai/compat";
+import type { ExtensionAPI } from "@punch-bot/cli";
 
 // =============================================================================
 // Constants

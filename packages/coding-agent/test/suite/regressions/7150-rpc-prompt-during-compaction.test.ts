@@ -1,4 +1,4 @@
-import { fauxAssistantMessage } from "@punch/ai";
+import { fauxAssistantMessage } from "@punch-bot/ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { createHarness, getMessageText, getUserTexts, type Harness } from "../harness.ts";
 

@@ -13,7 +13,7 @@
  *   export default function (pi: ExtensionAPI) { ... }
  */
 
-import { createAgentSession, DefaultResourceLoader, getAgentDir, SessionManager } from "@punch/cli";
+import { createAgentSession, DefaultResourceLoader, getAgentDir, SessionManager } from "@punch-bot/cli";
 
 // Extensions are discovered automatically from standard locations.
 // You can also add paths via settings.json or DefaultResourceLoader options.
@@ -52,7 +52,7 @@ try {
 
 // Example extension file (./my-logging-extension.ts):
 /*
-import type { ExtensionAPI } from "@punch/cli";
+import type { ExtensionAPI } from "@punch-bot/cli";
 
 export default function (pi: ExtensionAPI) {
 	pi.on("agent_start", async () => {

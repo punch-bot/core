@@ -12,7 +12,7 @@ import {
 	getAgentDir,
 	SessionManager,
 	type Skill,
-} from "@punch/cli";
+} from "@punch-bot/cli";
 
 // Or define custom skills inline
 const customSkill: Skill = {

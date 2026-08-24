@@ -2,8 +2,8 @@
  * Snake game extension - play snake with /snake command
  */
 
-import type { ExtensionAPI } from "@punch/cli";
-import { matchesKey, visibleWidth } from "@punch/tui";
+import type { ExtensionAPI } from "@punch-bot/cli";
+import { matchesKey, visibleWidth } from "@punch-bot/tui";
 
 const GAME_WIDTH = 40;
 const GAME_HEIGHT = 15;

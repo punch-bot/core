@@ -1,4 +1,4 @@
-import { Container, type SelectItem, SelectList, type SelectListLayoutOptions } from "@punch/tui";
+import { Container, type SelectItem, SelectList, type SelectListLayoutOptions } from "@punch-bot/tui";
 import { getAvailableThemes, getSelectListTheme } from "../theme/theme.ts";
 import { DynamicBorder } from "./dynamic-border.ts";
 

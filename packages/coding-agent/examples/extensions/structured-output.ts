@@ -5,8 +5,8 @@
  * without paying for an extra follow-up LLM turn.
  */
 
-import { defineTool, type ExtensionAPI } from "@punch/cli";
-import { Text } from "@punch/tui";
+import { defineTool, type ExtensionAPI } from "@punch-bot/cli";
+import { Text } from "@punch-bot/tui";
 import { Type } from "typebox";
 
 interface StructuredOutputDetails {

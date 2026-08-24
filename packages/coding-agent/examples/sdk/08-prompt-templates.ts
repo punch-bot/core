@@ -11,7 +11,7 @@ import {
 	getAgentDir,
 	type PromptTemplate,
 	SessionManager,
-} from "@punch/cli";
+} from "@punch-bot/cli";
 
 // Define custom templates
 const deployTemplate: PromptTemplate = {

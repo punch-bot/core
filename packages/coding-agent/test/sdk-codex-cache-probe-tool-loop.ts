@@ -20,7 +20,7 @@ import {
 	type Model,
 	type SimpleStreamOptions,
 	Type,
-} from "@punch/ai/compat";
+} from "@punch-bot/ai/compat";
 import {
 	getOpenAICodexWebSocketDebugStats,
 	streamSimple as streamSimpleOpenAICodexResponses,

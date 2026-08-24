@@ -7,7 +7,7 @@ import type {
 	SessionSnapshot,
 	ThinkingLevel,
 	TranscriptProgress,
-} from "@punch/protocol";
+} from "@punch-bot/protocol";
 import type { PiServerError } from "./errors.ts";
 import type { PiServerListener } from "./listener.ts";
 

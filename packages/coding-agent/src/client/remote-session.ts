@@ -1,4 +1,4 @@
-import type { ConnectionState, ConnectionStateChange, PiClient, SessionLease, Unsubscribe } from "@punch/client";
+import type { ConnectionState, ConnectionStateChange, PiClient, SessionLease, Unsubscribe } from "@punch-bot/client";
 import type {
 	ModelMetadata,
 	ModelRef,
@@ -8,7 +8,7 @@ import type {
 	SessionSnapshot,
 	ThinkingLevel,
 	TranscriptItem,
-} from "@punch/protocol";
+} from "@punch-bot/protocol";
 import {
 	applyTranscriptProgress,
 	applyTranscriptSnapshot,

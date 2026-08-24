@@ -7,10 +7,10 @@ import {
 	type Result,
 	Session,
 	type ShellExecOptions,
-} from "@punch/agent";
-import { NodeExecutionEnv } from "@punch/agent/node";
-import { createModels } from "@punch/ai";
-import { getModel } from "@punch/ai/compat";
+} from "@punch-bot/agent";
+import { NodeExecutionEnv } from "@punch-bot/agent/node";
+import { createModels } from "@punch-bot/ai";
+import { getModel } from "@punch-bot/ai/compat";
 import { Type } from "typebox";
 import { describe, expect, test, vi } from "vitest";
 import {

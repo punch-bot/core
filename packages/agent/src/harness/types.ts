@@ -1,4 +1,4 @@
-import type { SimpleStreamOptions, Transport } from "@punch/ai";
+import type { SimpleStreamOptions, Transport } from "@punch-bot/ai";
 import type { Static, TSchema } from "typebox";
 import type { AgentTool, AgentToolResult, AgentToolUpdateCallback } from "../types.ts";
 

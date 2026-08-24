@@ -4,7 +4,7 @@
  * Replace everything - no discovery, explicit configuration.
  */
 
-import { getModel } from "@punch/ai/compat";
+import { getModel } from "@punch-bot/ai/compat";
 import {
 	createAgentSession,
 	createExtensionRuntime,
@@ -12,7 +12,7 @@ import {
 	type ResourceLoader,
 	SessionManager,
 	SettingsManager,
-} from "@punch/cli";
+} from "@punch-bot/cli";
 
 const modelRuntime = await ModelRuntime.create({
 	authPath: "/tmp/my-agent/auth.json",

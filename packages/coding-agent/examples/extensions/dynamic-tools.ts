@@ -7,7 +7,7 @@
  * - Registers additional tools at runtime via /add-echo-tool <name>
  */
 
-import type { ExtensionAPI } from "@punch/cli";
+import type { ExtensionAPI } from "@punch-bot/cli";
 import { Type } from "typebox";
 
 const ECHO_PARAMS = Type.Object({

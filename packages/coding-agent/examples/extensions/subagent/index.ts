@@ -16,11 +16,17 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { AgentToolResult, ThinkingLevel } from "@punch/agent";
-import type { Message } from "@punch/ai";
-import { StringEnum } from "@punch/ai";
-import { CONFIG_DIR_NAME, type ExtensionAPI, getAgentDir, getMarkdownTheme, withFileMutationQueue } from "@punch/cli";
-import { Container, Markdown, Spacer, Text } from "@punch/tui";
+import type { AgentToolResult, ThinkingLevel } from "@punch-bot/agent";
+import type { Message } from "@punch-bot/ai";
+import { StringEnum } from "@punch-bot/ai";
+import {
+	CONFIG_DIR_NAME,
+	type ExtensionAPI,
+	getAgentDir,
+	getMarkdownTheme,
+	withFileMutationQueue,
+} from "@punch-bot/cli";
+import { Container, Markdown, Spacer, Text } from "@punch-bot/tui";
 import { Type } from "typebox";
 import { type AgentConfig, type AgentScope, discoverAgents } from "./agents.ts";
 

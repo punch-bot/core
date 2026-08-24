@@ -1,5 +1,5 @@
-import type { AgentTool } from "@punch/agent";
-import { Container, Text } from "@punch/tui";
+import type { AgentTool } from "@punch-bot/agent";
+import { Container, Text } from "@punch-bot/tui";
 import { mkdir as fsMkdir, writeFile as fsWriteFile } from "fs/promises";
 import { dirname } from "path";
 import { type Static, Type } from "typebox";

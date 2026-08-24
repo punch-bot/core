@@ -1,4 +1,4 @@
-import type { AgentState } from "@punch/agent";
+import type { AgentState } from "@punch-bot/agent";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { basename, join } from "path";
 import { APP_NAME, getExportTemplateDir } from "../../config.ts";

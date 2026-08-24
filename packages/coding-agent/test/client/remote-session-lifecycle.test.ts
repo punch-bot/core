@@ -1,4 +1,4 @@
-import type { RequestEnvelope } from "@punch/protocol";
+import type { RequestEnvelope } from "@punch-bot/protocol";
 import { describe, expect, test } from "vitest";
 import { collectRequests, connectClient, MemoryServer, openRemoteSession, sessionSnapshot } from "./support.ts";
 

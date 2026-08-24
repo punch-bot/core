@@ -1,5 +1,5 @@
-import type { Model } from "@punch/ai";
-import { getBuiltinModels, getBuiltinProviders } from "@punch/ai/providers/all";
+import type { Model } from "@punch-bot/ai";
+import { getBuiltinModels, getBuiltinProviders } from "@punch-bot/ai/providers/all";
 import { describe, expect, test, vi } from "vitest";
 import {
 	defaultModelPerProvider,

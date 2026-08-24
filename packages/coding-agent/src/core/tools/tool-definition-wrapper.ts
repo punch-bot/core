@@ -1,4 +1,4 @@
-import type { AgentTool } from "@punch/agent";
+import type { AgentTool } from "@punch-bot/agent";
 import type { ExtensionContext, ToolDefinition } from "../extensions/types.ts";
 
 /** Wrap a ToolDefinition into an AgentTool for the core runtime. */

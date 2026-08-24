@@ -1,4 +1,4 @@
-import { type RgbColor, resetCapabilitiesCache, setCapabilities } from "@punch/tui";
+import { type RgbColor, resetCapabilitiesCache, setCapabilities } from "@punch-bot/tui";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	detectTerminalBackgroundFromEnv,

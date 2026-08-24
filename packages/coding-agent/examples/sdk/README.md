@@ -32,14 +32,14 @@ npx tsx examples/sdk/01-minimal.ts
 ## Quick Reference
 
 ```typescript
-import { getModel } from "@punch/ai";
+import { getModel } from "@punch-bot/ai";
 import {
   createAgentSession,
   DefaultResourceLoader,
   ModelRuntime,
   SessionManager,
   SettingsManager,
-} from "@punch/cli";
+} from "@punch-bot/cli";
 
 const modelRuntime = await ModelRuntime.create();
 

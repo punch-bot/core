@@ -1,5 +1,5 @@
-import type { Component } from "@punch/tui";
-import { Box, Container, Spacer, Text } from "@punch/tui";
+import type { Component } from "@punch-bot/tui";
+import { Box, Container, Spacer, Text } from "@punch-bot/tui";
 import type { EntryRenderer } from "../../../core/extensions/types.ts";
 import type { CustomEntry } from "../../../core/session-manager.ts";
 import { theme } from "../theme/theme.ts";

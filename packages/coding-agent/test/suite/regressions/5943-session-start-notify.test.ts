@@ -1,5 +1,5 @@
-import { fauxAssistantMessage } from "@punch/ai";
-import { Container, Text } from "@punch/tui";
+import { fauxAssistantMessage } from "@punch-bot/ai";
+import { Container, Text } from "@punch-bot/tui";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentSessionEvent } from "../../../src/core/agent-session.ts";
 import type { ExtensionUIContext } from "../../../src/core/extensions/index.ts";

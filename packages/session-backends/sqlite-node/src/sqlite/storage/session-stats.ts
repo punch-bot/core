@@ -1,5 +1,5 @@
-import { SessionError, type SessionStats } from "@punch/agent";
-import type { Usage } from "@punch/ai";
+import { SessionError, type SessionStats } from "@punch-bot/agent";
+import type { Usage } from "@punch-bot/ai";
 import { sql } from "../sql.ts";
 import type { SqliteDatabase } from "../types.ts";
 

@@ -3,14 +3,14 @@
 	"compilerOptions": {
 		"outDir": "./dist",
 		"paths": {
-			"@punch/agent": ["../agent/dist/index.d.ts"],
-			"@punch/agent/*": ["../agent/dist/*.d.ts"],
-			"@punch/ai": ["../ai/dist/index.d.ts"],
-			"@punch/ai/*": ["../ai/dist/*.d.ts", "../ai/dist/providers/*.d.ts"],
-			"@punch/client": ["../client/dist/index.d.ts"],
-			"@punch/protocol": ["../protocol/dist/index.d.ts"],
-			"@punch/tui": ["../tui/dist/index.d.ts"],
-			"@punch/tui/*": ["../tui/dist/*.d.ts", "../tui/dist/components/*.d.ts"]
+			"@punch-bot/agent": ["../agent/dist/index.d.ts"],
+			"@punch-bot/agent/*": ["../agent/dist/*.d.ts"],
+			"@punch-bot/ai": ["../ai/dist/index.d.ts"],
+			"@punch-bot/ai/*": ["../ai/dist/*.d.ts", "../ai/dist/providers/*.d.ts"],
+			"@punch-bot/client": ["../client/dist/index.d.ts"],
+			"@punch-bot/protocol": ["../protocol/dist/index.d.ts"],
+			"@punch-bot/tui": ["../tui/dist/index.d.ts"],
+			"@punch-bot/tui/*": ["../tui/dist/*.d.ts", "../tui/dist/components/*.d.ts"]
 		},
 		"rootDir": "./src"
 	},

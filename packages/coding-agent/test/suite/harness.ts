@@ -6,10 +6,10 @@ import { createInMemoryModelRegistry, createModelRegistry, getModelRuntime } fro
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentMessage, AgentTool } from "@punch/agent";
-import { Agent } from "@punch/agent";
-import type { FauxModelDefinition, FauxProviderRegistration, FauxResponseStep, Model } from "@punch/ai/compat";
-import { registerFauxProvider, streamSimple } from "@punch/ai/compat";
+import type { AgentMessage, AgentTool } from "@punch-bot/agent";
+import { Agent } from "@punch-bot/agent";
+import type { FauxModelDefinition, FauxProviderRegistration, FauxResponseStep, Model } from "@punch-bot/ai/compat";
+import { registerFauxProvider, streamSimple } from "@punch-bot/ai/compat";
 import { AgentSession, type AgentSessionEvent } from "../../src/core/agent-session.ts";
 import { AuthStorage } from "../../src/core/auth-storage.ts";
 import type { ExtensionRunner } from "../../src/core/extensions/index.ts";

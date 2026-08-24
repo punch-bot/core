@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@punch/cli";
+import type { ExtensionAPI } from "@punch-bot/cli";
 
 export default function widgetPlacementExtension(pi: ExtensionAPI) {
 	pi.on("session_start", (_event, ctx) => {

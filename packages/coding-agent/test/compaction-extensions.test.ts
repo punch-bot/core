@@ -6,8 +6,8 @@ import { createModelRegistry, getModelRuntime } from "./model-runtime-test-utils
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Agent } from "@punch/agent";
-import { getModel, streamSimple } from "@punch/ai/compat";
+import { Agent } from "@punch-bot/agent";
+import { getModel, streamSimple } from "@punch-bot/ai/compat";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AgentSession } from "../src/core/agent-session.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";

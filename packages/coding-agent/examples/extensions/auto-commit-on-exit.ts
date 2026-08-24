@@ -5,7 +5,7 @@
  * Uses the last assistant message to generate a commit message.
  */
 
-import type { ExtensionAPI } from "@punch/cli";
+import type { ExtensionAPI } from "@punch-bot/cli";
 
 export default function (pi: ExtensionAPI) {
 	pi.on("session_shutdown", async (_event, ctx) => {

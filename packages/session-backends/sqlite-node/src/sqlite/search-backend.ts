@@ -1,5 +1,5 @@
-import type { FileError, Result, SessionSearch, SessionSearchHit, SessionSearchOptions } from "@punch/agent";
-import { SessionError } from "@punch/agent";
+import type { FileError, Result, SessionSearch, SessionSearchHit, SessionSearchOptions } from "@punch-bot/agent";
+import { SessionError } from "@punch-bot/agent";
 import { applyMigrations } from "./migrations.ts";
 import { sql } from "./sql.ts";
 import { decodeSessionMetadata, type SessionRow } from "./storage/sessions.ts";

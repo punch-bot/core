@@ -1,7 +1,7 @@
 import { join } from "node:path";
-import type { SessionMetadata, SessionRepo } from "@punch/agent";
-import { NodeExecutionEnv } from "@punch/agent/node";
-import { createSessionBackendConformance, type SessionBackendFixture } from "@punch/agent/session/testing";
+import type { SessionMetadata, SessionRepo } from "@punch-bot/agent";
+import { NodeExecutionEnv } from "@punch-bot/agent/node";
+import { createSessionBackendConformance, type SessionBackendFixture } from "@punch-bot/agent/session/testing";
 import { describe, it } from "vitest";
 import { createNodeSqliteFactory, type SqliteSessionMetadata, SqliteSessionRepository } from "../src/index.ts";
 import { createTempDir } from "./test-utils.ts";

@@ -1,5 +1,5 @@
 {
-	"name": "@punch/agent",
+	"name": "@punch-bot/agent",
 	"version": "0.84.2",
 	"description": "General-purpose agent with transport abstraction, state management, and attachment support",
 	"type": "module",
@@ -35,8 +35,8 @@
 		"prepublishOnly": "npm run build"
 	},
 	"dependencies": {
-		"@punch/ai": "^0.84.2",
-		"@punch/telemetry": "^0.84.2",
+		"@punch-bot/ai": "^0.84.2",
+		"@punch-bot/telemetry": "^0.84.2",
 		"diff": "8.0.4",
 		"ignore": "7.0.5",
 		"typebox": "1.3.7",

@@ -1,4 +1,4 @@
-import type { FileError, Result } from "@punch/agent";
+import type { FileError, Result } from "@punch-bot/agent";
 import {
 	type BranchBounds,
 	type Entry,
@@ -16,8 +16,8 @@ import {
 	type SessionRepo as SessionRepository,
 	type SessionStats,
 	type SessionStorage,
-} from "@punch/agent";
-import { uuidv7 } from "@punch/ai";
+} from "@punch-bot/agent";
+import { uuidv7 } from "@punch-bot/ai";
 import { appendEntryToBranchCache, buildCachedBranch, deleteBranchCache, rebuildBranchCache } from "./branch-cache.ts";
 import { applyMigrations } from "./migrations.ts";
 import { sql } from "./sql.ts";

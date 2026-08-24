@@ -3,8 +3,8 @@
  * Uses Kitty keyboard protocol for smooth movement (press/release detection)
  */
 
-import type { ExtensionAPI } from "@punch/cli";
-import { isKeyRelease, Key, matchesKey, visibleWidth } from "@punch/tui";
+import type { ExtensionAPI } from "@punch-bot/cli";
+import { isKeyRelease, Key, matchesKey, visibleWidth } from "@punch-bot/tui";
 
 const GAME_WIDTH = 60;
 const GAME_HEIGHT = 24;

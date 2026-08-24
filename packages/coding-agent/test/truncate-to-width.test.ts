@@ -1,4 +1,4 @@
-import { truncateToWidth, visibleWidth } from "@punch/tui";
+import { truncateToWidth, visibleWidth } from "@punch-bot/tui";
 import { describe, expect, it } from "vitest";
 
 /**

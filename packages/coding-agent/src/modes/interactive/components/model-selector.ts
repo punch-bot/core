@@ -1,4 +1,4 @@
-import { type Model, modelsAreEqual } from "@punch/ai";
+import { type Model, modelsAreEqual } from "@punch-bot/ai";
 import {
 	Container,
 	type Focusable,
@@ -9,7 +9,7 @@ import {
 	Spacer,
 	Text,
 	type TUI,
-} from "@punch/tui";
+} from "@punch-bot/tui";
 import type { ModelRuntime } from "../../../core/model-runtime.ts";
 import { refreshModelCatalogs } from "../model-catalog-refresh.ts";
 import { getModelSelectorSearchText } from "../model-search.ts";

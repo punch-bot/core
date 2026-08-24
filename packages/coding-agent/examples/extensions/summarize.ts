@@ -1,7 +1,7 @@
-import { uuidv7 } from "@punch/ai";
-import type { ExtensionAPI, ExtensionCommandContext } from "@punch/cli";
-import { DynamicBorder, getMarkdownTheme } from "@punch/cli";
-import { Container, Markdown, matchesKey, Text } from "@punch/tui";
+import { uuidv7 } from "@punch-bot/ai";
+import type { ExtensionAPI, ExtensionCommandContext } from "@punch-bot/cli";
+import { DynamicBorder, getMarkdownTheme } from "@punch-bot/cli";
+import { Container, Markdown, matchesKey, Text } from "@punch-bot/tui";
 
 type ContentBlock = {
 	type?: string;

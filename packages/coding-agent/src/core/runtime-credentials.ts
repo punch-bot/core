@@ -1,4 +1,4 @@
-import type { AuthOperationOptions, Credential, CredentialInfo, CredentialStore } from "@punch/ai";
+import type { AuthOperationOptions, Credential, CredentialInfo, CredentialStore } from "@punch-bot/ai";
 
 /** Async credential store overlay for non-persistent runtime API keys. */
 export class RuntimeCredentials implements CredentialStore {

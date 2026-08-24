@@ -4,7 +4,7 @@
  * Control session persistence: in-memory, new file, continue, or open specific.
  */
 
-import { createAgentSession, SessionManager } from "@punch/cli";
+import { createAgentSession, SessionManager } from "@punch-bot/cli";
 
 // In-memory (no persistence)
 const { session: inMemory } = await createAgentSession({

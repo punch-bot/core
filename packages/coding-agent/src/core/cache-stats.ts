@@ -1,4 +1,4 @@
-import type { AssistantMessage } from "@punch/ai";
+import type { AssistantMessage } from "@punch-bot/ai";
 import type { SessionEntry } from "./session-manager.ts";
 
 /**

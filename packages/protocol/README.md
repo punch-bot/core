@@ -1,4 +1,4 @@
-# @punch/protocol
+# @punch-bot/protocol
 
 Runtime-neutral schemas, types, CBOR encoding, and byte-stream framing for the experimental pi protocol.
 
@@ -21,7 +21,7 @@ import {
   createServerMessageDecoder,
   encodeClientMessage,
   type ClientHello,
-} from "@punch/protocol";
+} from "@punch-bot/protocol";
 
 const hello: ClientHello = {
   type: "hello",

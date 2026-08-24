@@ -1,4 +1,4 @@
-import type { AssistantMessage, AssistantMessageEvent, Model } from "@punch/ai";
+import type { AssistantMessage, AssistantMessageEvent, Model } from "@punch-bot/ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type ProxyAssistantMessageEvent, streamProxy } from "../src/proxy.ts";
 

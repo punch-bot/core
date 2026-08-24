@@ -1,4 +1,4 @@
-import type { JsonValue, ProtocolErrorCode } from "@punch/protocol";
+import type { JsonValue, ProtocolErrorCode } from "@punch-bot/protocol";
 
 export type PiServerOperationErrorCode = Extract<
 	ProtocolErrorCode,

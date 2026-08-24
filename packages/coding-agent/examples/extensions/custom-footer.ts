@@ -8,9 +8,9 @@
  * Token stats come from ctx.sessionManager/ctx.model (already accessible).
  */
 
-import type { AssistantMessage } from "@punch/ai";
-import type { ExtensionAPI } from "@punch/cli";
-import { truncateToWidth, visibleWidth } from "@punch/tui";
+import type { AssistantMessage } from "@punch-bot/ai";
+import type { ExtensionAPI } from "@punch-bot/cli";
+import { truncateToWidth, visibleWidth } from "@punch-bot/tui";
 
 export default function (pi: ExtensionAPI) {
 	let enabled = false;

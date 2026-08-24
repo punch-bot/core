@@ -10,7 +10,7 @@
  * extensions system using pi.registerTool().
  */
 
-import { createAgentSession, SessionManager } from "@punch/cli";
+import { createAgentSession, SessionManager } from "@punch-bot/cli";
 
 // Read-only mode (no edit/write)
 const { session: readOnlySession } = await createAgentSession({

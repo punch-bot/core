@@ -40,10 +40,10 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Api, Model } from "@punch/ai";
-import type { ExtensionAPI, ExtensionContext } from "@punch/cli";
-import { CONFIG_DIR_NAME, DynamicBorder, getAgentDir } from "@punch/cli";
-import { Container, Key, type SelectItem, SelectList, Text } from "@punch/tui";
+import type { Api, Model } from "@punch-bot/ai";
+import type { ExtensionAPI, ExtensionContext } from "@punch-bot/cli";
+import { CONFIG_DIR_NAME, DynamicBorder, getAgentDir } from "@punch-bot/cli";
+import { Container, Key, type SelectItem, SelectList, Text } from "@punch-bot/tui";
 
 // Preset configuration
 interface Preset {

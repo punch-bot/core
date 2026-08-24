@@ -23,8 +23,8 @@ import type {
 	AgentTool,
 	PrepareNextTurnContext,
 	ThinkingLevel,
-} from "@punch/agent";
-import { contentText } from "@punch/ai";
+} from "@punch-bot/agent";
+import { contentText } from "@punch-bot/ai";
 import type {
 	AssistantMessage,
 	AuthResult,
@@ -33,7 +33,7 @@ import type {
 	ProviderHeaders,
 	TextContent,
 	Usage,
-} from "@punch/ai/compat";
+} from "@punch-bot/ai/compat";
 import {
 	clampThinkingLevel,
 	cleanupSessionResources,
@@ -45,7 +45,7 @@ import {
 	type RetryCallbacks,
 	resetApiProviders,
 	streamSimple,
-} from "@punch/ai/compat";
+} from "@punch-bot/ai/compat";
 import { getThemeByName, theme } from "../modes/interactive/theme/theme.ts";
 import { stripFrontmatter } from "../utils/frontmatter.ts";
 import { sleep } from "../utils/sleep.ts";

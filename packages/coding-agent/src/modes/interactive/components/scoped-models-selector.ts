@@ -1,4 +1,4 @@
-import type { Model } from "@punch/ai";
+import type { Model } from "@punch-bot/ai";
 import {
 	Container,
 	type Focusable,
@@ -9,7 +9,7 @@ import {
 	matchesKey,
 	Spacer,
 	Text,
-} from "@punch/tui";
+} from "@punch-bot/tui";
 import { getModelSearchText } from "../model-search.ts";
 import { theme } from "../theme/theme.ts";
 import { DynamicBorder } from "./dynamic-border.ts";

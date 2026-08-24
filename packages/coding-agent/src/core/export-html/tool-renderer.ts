@@ -5,8 +5,8 @@
  * and converting the ANSI output to HTML.
  */
 
-import type { ImageContent, TextContent } from "@punch/ai";
-import type { Component } from "@punch/tui";
+import type { ImageContent, TextContent } from "@punch-bot/ai";
+import type { Component } from "@punch-bot/tui";
 import type { Theme } from "../../modes/interactive/theme/theme.ts";
 import type { ToolDefinition, ToolRenderContext } from "../extensions/types.ts";
 import { ansiLinesToHtml } from "./ansi-to-html.ts";

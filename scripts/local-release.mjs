@@ -6,15 +6,15 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const packages = [
-	{ directory: "packages/telemetry", name: "@punch/telemetry" },
-	{ directory: "packages/ai", name: "@punch/ai" },
-	{ directory: "packages/tui", name: "@punch/tui" },
-	{ directory: "packages/agent", name: "@punch/agent" },
-	{ directory: "packages/protocol", name: "@punch/protocol" },
-	{ directory: "packages/client", name: "@punch/client" },
-	{ directory: "packages/session-backends/sqlite-node", name: "@punch/sqlite-node" },
-	{ directory: "packages/server", name: "@punch/server" },
-	{ directory: "packages/coding-agent", name: "@punch/cli" },
+	{ directory: "packages/telemetry", name: "@punch-bot/telemetry" },
+	{ directory: "packages/ai", name: "@punch-bot/ai" },
+	{ directory: "packages/tui", name: "@punch-bot/tui" },
+	{ directory: "packages/agent", name: "@punch-bot/agent" },
+	{ directory: "packages/protocol", name: "@punch-bot/protocol" },
+	{ directory: "packages/client", name: "@punch-bot/client" },
+	{ directory: "packages/session-backends/sqlite-node", name: "@punch-bot/sqlite-node" },
+	{ directory: "packages/server", name: "@punch-bot/server" },
+	{ directory: "packages/coding-agent", name: "@punch-bot/cli" },
 ];
 
 function printUsage() {

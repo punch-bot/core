@@ -4,7 +4,7 @@
 
 ### Breaking Changes
 
-- Renamed package from `@earendil-works/pi-tui` to `@punch/tui`.
+- Renamed package from `@earendil-works/pi-tui` to `@punch-bot/tui`.
 
 ### Fixed
 

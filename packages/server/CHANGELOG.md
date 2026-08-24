@@ -4,7 +4,7 @@
 
 ### Breaking Changes
 
-- Renamed package from `@earendil-works/pi-server` to `@punch/server`.
+- Renamed package from `@earendil-works/pi-server` to `@punch-bot/server`.
 
 ## [0.84.2] - 2026-08-14
 

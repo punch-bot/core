@@ -1,5 +1,5 @@
 {
-	"name": "@punch/server",
+	"name": "@punch-bot/server",
 	"version": "0.84.2",
 	"description": "experimental server package for pi",
 	"type": "module",
@@ -47,8 +47,8 @@
 		"node": ">=22.19.0"
 	},
 	"dependencies": {
-		"@punch/ai": "^0.84.2",
-		"@punch/protocol": "^0.84.2"
+		"@punch-bot/ai": "^0.84.2",
+		"@punch-bot/protocol": "^0.84.2"
 	},
 	"devDependencies": {
 		"shx": "0.4.0",

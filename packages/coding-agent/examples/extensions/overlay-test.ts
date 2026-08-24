@@ -8,8 +8,8 @@
  * - Edge case tests (wide chars, styled text, emoji)
  */
 
-import type { ExtensionAPI, ExtensionCommandContext, Theme } from "@punch/cli";
-import { CURSOR_MARKER, type Focusable, matchesKey, visibleWidth } from "@punch/tui";
+import type { ExtensionAPI, ExtensionCommandContext, Theme } from "@punch-bot/cli";
+import { CURSOR_MARKER, type Focusable, matchesKey, visibleWidth } from "@punch-bot/tui";
 
 export default function (pi: ExtensionAPI) {
 	pi.registerCommand("overlay-test", {

@@ -25,9 +25,9 @@
  *   pi -e ./built-in-tool-renderer.ts
  */
 
-import type { BashToolDetails, EditToolDetails, ExtensionAPI, ReadToolDetails } from "@punch/cli";
-import { createBashTool, createEditTool, createReadTool, createWriteTool } from "@punch/cli";
-import { Text } from "@punch/tui";
+import type { BashToolDetails, EditToolDetails, ExtensionAPI, ReadToolDetails } from "@punch-bot/cli";
+import { createBashTool, createEditTool, createReadTool, createWriteTool } from "@punch-bot/cli";
+import { Text } from "@punch-bot/tui";
 
 export default function (pi: ExtensionAPI) {
 	const cwd = process.cwd();

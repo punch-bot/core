@@ -1,5 +1,5 @@
-import type { AssistantMessage } from "@punch/ai";
-import { Container, Markdown, type MarkdownTheme, Spacer, Text } from "@punch/tui";
+import type { AssistantMessage } from "@punch-bot/ai";
+import { Container, Markdown, type MarkdownTheme, Spacer, Text } from "@punch-bot/tui";
 import type { MarkdownTransformer } from "../../../core/extensions/types.ts";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
 import { createMarkdownTransform } from "./markdown-transform.ts";

@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const moduleRequire = createRequire(import.meta.url);
-const TUI_PACKAGE_NAME = "@punch/tui";
+const TUI_PACKAGE_NAME = "@punch-bot/tui";
 
 export interface NativeModuleCandidateOptions {
 	moduleUrl?: string;

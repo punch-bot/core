@@ -1,4 +1,4 @@
-import { SessionError } from "@punch/agent";
+import { SessionError } from "@punch-bot/agent";
 import { joinSqlFragments, sql } from "../sql.ts";
 import type { SqliteDatabase } from "../types.ts";
 

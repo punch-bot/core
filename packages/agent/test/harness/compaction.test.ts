@@ -9,7 +9,7 @@ import {
 	type Model,
 	type Models,
 	type Usage,
-} from "@punch/ai";
+} from "@punch-bot/ai";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
 	type CompactionPreparation,

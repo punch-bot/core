@@ -1,4 +1,4 @@
-import type { ImageContent, TextContent } from "@punch/ai";
+import type { ImageContent, TextContent } from "@punch-bot/ai";
 import { type Static, Type } from "typebox";
 import type { AgentHarnessTool } from "../types.ts";
 import { getOrThrow } from "../types.ts";

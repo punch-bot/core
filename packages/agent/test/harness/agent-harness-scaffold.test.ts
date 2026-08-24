@@ -1,5 +1,5 @@
-import { createModels, type Usage } from "@punch/ai";
-import { getModel } from "@punch/ai/compat";
+import { createModels, type Usage } from "@punch-bot/ai";
+import { getModel } from "@punch-bot/ai/compat";
 import { describe, expect, it } from "vitest";
 import {
 	AgentHarness,

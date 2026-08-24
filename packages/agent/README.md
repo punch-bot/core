@@ -1,23 +1,23 @@
-# @punch/agent
+# @punch-bot/agent
 
-Stateful agent with tool execution and event streaming. Built on `@punch/ai`.
+Stateful agent with tool execution and event streaming. Built on `@punch-bot/ai`.
 
 ## Installation
 
 ```bash
-npm install @punch/agent
+npm install @punch-bot/agent
 ```
 
 ### SQLite session backends
 
-The SQLite session backend and the `node:sqlite` adapter live in a separate package, `@punch/sqlite-node`, so the core package does not pull in runtime builtins or native SQLite dependencies by default. The backend accepts a runtime-specific SQLite factory, allowing other session backends to ship as their own packages in the future.
+The SQLite session backend and the `node:sqlite` adapter live in a separate package, `@punch-bot/sqlite-node`, so the core package does not pull in runtime builtins or native SQLite dependencies by default. The backend accepts a runtime-specific SQLite factory, allowing other session backends to ship as their own packages in the future.
 
 ## Quick Start
 
 ```typescript
-import { Agent } from "@punch/agent";
-import { createModels } from "@punch/ai";
-import { anthropicProvider } from "@punch/ai/providers/anthropic";
+import { Agent } from "@punch-bot/agent";
+import { createModels } from "@punch-bot/ai";
+import { anthropicProvider } from "@punch-bot/ai/providers/anthropic";
 
 const models = createModels();
 models.setProvider(anthropicProvider());
@@ -378,7 +378,7 @@ Follow-up messages are checked only when there are no more tool calls and no ste
 Extend `AgentMessage` via declaration merging:
 
 ```typescript
-declare module "@punch/agent" {
+declare module "@punch-bot/agent" {
   interface CustomAgentMessages {
     notification: { role: "notification"; text: string; timestamp: number };
   }
@@ -460,7 +460,7 @@ Return `terminate: true` from `execute()`, a blocked `beforeToolCall`, or `after
 For browser apps that proxy through a backend:
 
 ```typescript
-import { Agent, streamProxy } from "@punch/agent";
+import { Agent, streamProxy } from "@punch-bot/agent";
 
 const agent = new Agent({
   streamFn: (model, context, options) =>
@@ -477,7 +477,7 @@ const agent = new Agent({
 For direct control without the Agent class:
 
 ```typescript
-import { agentLoop, agentLoopContinue } from "@punch/agent";
+import { agentLoop, agentLoopContinue } from "@punch-bot/agent";
 
 const context: AgentContext = {
   systemPrompt: "You are helpful.",

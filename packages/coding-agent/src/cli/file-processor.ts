@@ -3,7 +3,7 @@
  */
 
 import { access, readFile, stat } from "node:fs/promises";
-import type { ImageContent } from "@punch/ai";
+import type { ImageContent } from "@punch-bot/ai";
 import chalk from "chalk";
 import { resolve } from "path";
 import { resolveReadPath } from "../core/tools/path-utils.ts";

@@ -17,9 +17,9 @@
  * separate variables. Only the agent cursor is ever exposed to the agent.
  */
 
-import { StringEnum } from "@punch/ai";
-import type { ExtensionAPI, ExtensionContext, Theme, ToolExecutionMode } from "@punch/cli";
-import { type Component, matchesKey, Text, truncateToWidth, visibleWidth } from "@punch/tui";
+import { StringEnum } from "@punch-bot/ai";
+import type { ExtensionAPI, ExtensionContext, Theme, ToolExecutionMode } from "@punch-bot/cli";
+import { type Component, matchesKey, Text, truncateToWidth, visibleWidth } from "@punch-bot/tui";
 import { Type } from "typebox";
 
 // Thrown from the tool on illegal actions. The agent runtime surfaces thrown

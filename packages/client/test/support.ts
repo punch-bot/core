@@ -7,7 +7,7 @@ import {
 	type ServerMessage,
 	type ServerSnapshot,
 	type SessionSnapshot,
-} from "@punch/protocol";
+} from "@punch-bot/protocol";
 import type { ByteTransport, ByteTransportHandlers, PiSessionHandle } from "../src/index.ts";
 import { PiClient } from "../src/index.ts";
 

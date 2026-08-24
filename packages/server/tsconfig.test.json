@@ -6,7 +6,7 @@
 		"moduleResolution": "NodeNext",
 		"types": ["node", "vitest"],
 		"paths": {
-			"@punch/protocol": ["../protocol/src/index.ts"]
+			"@punch-bot/protocol": ["../protocol/src/index.ts"]
 		}
 	},
 	"include": ["src/**/*.ts", "test/**/*.ts"]

@@ -4,7 +4,7 @@
  * Shows how to replace or modify the default system prompt.
  */
 
-import { createAgentSession, DefaultResourceLoader, getAgentDir, SessionManager } from "@punch/cli";
+import { createAgentSession, DefaultResourceLoader, getAgentDir, SessionManager } from "@punch-bot/cli";
 
 const cwd = process.cwd();
 const agentDir = getAgentDir();

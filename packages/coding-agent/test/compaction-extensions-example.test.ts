@@ -5,7 +5,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ExtensionAPI, SessionBeforeCompactEvent, SessionCompactEvent } from "../src/core/extensions/index.ts";
 
-vi.mock("@punch/cli", () => ({
+vi.mock("@punch-bot/cli", () => ({
 	convertToLlm: (messages: unknown) => messages,
 	serializeConversation: () => "conversation",
 }));

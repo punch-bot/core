@@ -1,4 +1,4 @@
-import type { ThinkingLevel } from "@punch/agent";
+import type { ThinkingLevel } from "@punch-bot/agent";
 import {
 	Container,
 	type Focusable,
@@ -11,7 +11,7 @@ import {
 	type SelectListLayoutOptions,
 	Spacer,
 	Text,
-} from "@punch/tui";
+} from "@punch-bot/tui";
 import { getSelectListTheme, theme } from "../theme/theme.ts";
 import { DynamicBorder } from "./dynamic-border.ts";
 import { keyDisplayText } from "./keybinding-hints.ts";

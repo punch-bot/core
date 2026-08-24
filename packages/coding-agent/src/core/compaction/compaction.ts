@@ -5,10 +5,10 @@
  * and after compaction the session is reloaded.
  */
 
-import type { AgentMessage, StreamFn, ThinkingLevel } from "@punch/agent";
-import { contentText, type RetryCallbacks, type RetryPolicy, retryAssistantCall, uuidv7 } from "@punch/ai";
-import type { AssistantMessage, Context, Model, SimpleStreamOptions, Usage } from "@punch/ai/compat";
-import { completeSimple } from "@punch/ai/compat";
+import type { AgentMessage, StreamFn, ThinkingLevel } from "@punch-bot/agent";
+import { contentText, type RetryCallbacks, type RetryPolicy, retryAssistantCall, uuidv7 } from "@punch-bot/ai";
+import type { AssistantMessage, Context, Model, SimpleStreamOptions, Usage } from "@punch-bot/ai/compat";
+import { completeSimple } from "@punch-bot/ai/compat";
 import { convertToLlm } from "../messages.ts";
 import {
 	buildSessionContext,

@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { NodeExecutionEnv } from "@punch/agent/node";
+import { NodeExecutionEnv } from "@punch-bot/agent/node";
 import { describe, expect, it } from "vitest";
 import {
 	createNodeSqliteFactory,

@@ -1,4 +1,4 @@
-import { uuidv7 } from "@punch/ai";
+import { uuidv7 } from "@punch-bot/ai";
 import { Session } from "./session.ts";
 import { SessionState } from "./state.ts";
 import {

@@ -2,7 +2,7 @@
  * Utilities for formatting keybinding hints in the UI.
  */
 
-import { getKeybindings, type Keybinding, type KeyId } from "@punch/tui";
+import { getKeybindings, type Keybinding, type KeyId } from "@punch-bot/tui";
 import { theme } from "../theme/theme.ts";
 
 export interface KeyTextFormatOptions {

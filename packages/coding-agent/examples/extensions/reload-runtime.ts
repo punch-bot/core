@@ -5,7 +5,7 @@
  * tool that queues a follow-up command to trigger reload.
  */
 
-import type { ExtensionAPI } from "@punch/cli";
+import type { ExtensionAPI } from "@punch-bot/cli";
 import { Type } from "typebox";
 
 export default function (pi: ExtensionAPI) {

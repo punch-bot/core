@@ -1,7 +1,7 @@
 import { lstat, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { encodeClientMessage, encodeFrame, PROTOCOL_VERSION } from "@punch/protocol";
+import { encodeClientMessage, encodeFrame, PROTOCOL_VERSION } from "@punch-bot/protocol";
 import { afterEach, describe, expect, test } from "vitest";
 import { InternalServerError, NotImplementedError, type PiServer, PiServerError } from "../src/index.ts";
 import { connectUnixTestClient, Deferred, type ProtocolTestClient, TestServerService } from "../src/testing/index.ts";

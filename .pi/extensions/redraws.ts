@@ -4,8 +4,8 @@
  * Exposes /tui to show TUI redraw stats.
  */
 
-import type { ExtensionAPI } from "@punch/cli";
-import { Text } from "@punch/tui";
+import type { ExtensionAPI } from "@punch-bot/cli";
+import { Text } from "@punch-bot/tui";
 
 export default function (pi: ExtensionAPI) {
 	pi.registerCommand("tui", {

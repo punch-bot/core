@@ -5,10 +5,10 @@
  * a summary of the branch being left so context isn't lost.
  */
 
-import type { AgentMessage, StreamFn } from "@punch/agent";
-import type { RetryCallbacks, RetryPolicy } from "@punch/ai";
-import { contentText } from "@punch/ai";
-import type { Model, SimpleStreamOptions, Usage } from "@punch/ai/compat";
+import type { AgentMessage, StreamFn } from "@punch-bot/agent";
+import type { RetryCallbacks, RetryPolicy } from "@punch-bot/ai";
+import { contentText } from "@punch-bot/ai";
+import type { Model, SimpleStreamOptions, Usage } from "@punch-bot/ai/compat";
 import {
 	convertToLlm,
 	createBranchSummaryMessage,

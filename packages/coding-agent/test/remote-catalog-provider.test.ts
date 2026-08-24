@@ -6,7 +6,7 @@ import {
 	type ModelsPublication,
 	type Provider,
 	type RefreshModelsContext,
-} from "@punch/ai";
+} from "@punch-bot/ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { VERSION } from "../src/config.ts";
 import { withRemoteCatalog } from "../src/core/remote-catalog-provider.ts";

@@ -1,4 +1,4 @@
-import { uuidv7 } from "@punch/ai";
+import { uuidv7 } from "@punch-bot/ai";
 import type { AgentMessage } from "../../types.ts";
 import type {
 	BranchBounds,

@@ -7,7 +7,7 @@ This page gets you from install to a useful first pi session.
 Pi is distributed as an npm package:
 
 ```bash
-npm install -g --ignore-scripts @punch/cli
+npm install -g --ignore-scripts @punch-bot/cli
 ```
 
 `--ignore-scripts` disables dependency lifecycle scripts during install. Pi does not require install scripts for normal npm installs.
@@ -18,16 +18,16 @@ Use the package manager that installed pi. The curl installer uses npm globally,
 
 ```bash
 # curl installer or npm install -g
-npm uninstall -g @punch/cli
+npm uninstall -g @punch-bot/cli
 
 # pnpm
-pnpm remove -g @punch/cli
+pnpm remove -g @punch-bot/cli
 
 # Yarn
-yarn global remove @punch/cli
+yarn global remove @punch-bot/cli
 
 # Bun
-bun uninstall -g @punch/cli
+bun uninstall -g @punch-bot/cli
 ```
 
 Uninstalling pi leaves settings, credentials, sessions, and installed pi packages in `~/.pi/agent/`.

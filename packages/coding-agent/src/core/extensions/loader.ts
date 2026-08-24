@@ -7,13 +7,13 @@ import * as fs from "node:fs";
 import { createRequire } from "node:module";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import * as _bundledPiAgentCore from "@punch/agent";
-import type { Provider } from "@punch/ai";
-import * as _bundledPiAiCompat from "@punch/ai/compat";
-import * as _bundledPiAiOauth from "@punch/ai/oauth";
-import * as _bundledPiAiProviders from "@punch/ai/providers/all";
-import type { KeyId } from "@punch/tui";
-import * as _bundledPiTui from "@punch/tui";
+import * as _bundledPiAgentCore from "@punch-bot/agent";
+import type { Provider } from "@punch-bot/ai";
+import * as _bundledPiAiCompat from "@punch-bot/ai/compat";
+import * as _bundledPiAiOauth from "@punch-bot/ai/oauth";
+import * as _bundledPiAiProviders from "@punch-bot/ai/providers/all";
+import type { KeyId } from "@punch-bot/tui";
+import * as _bundledPiTui from "@punch-bot/tui";
 import { createJiti } from "jiti/static";
 // Static imports of packages that extensions may use.
 // These MUST be static so Bun bundles them into the compiled binary.
@@ -23,7 +23,7 @@ import * as _bundledTypeboxCompile from "typebox/compile";
 import * as _bundledTypeboxValue from "typebox/value";
 import { CONFIG_DIR_NAME, getAgentDir, isBunBinary } from "../../config.ts";
 // NOTE: This import works because loader.ts exports are NOT re-exported from index.ts,
-// avoiding a circular dependency. Extensions can import from @punch/cli.
+// avoiding a circular dependency. Extensions can import from @punch-bot/cli.
 import * as _bundledPiCodingAgent from "../../index.ts";
 import { resolvePath } from "../../utils/paths.ts";
 import { createEventBus, type EventBus } from "../event-bus.ts";
@@ -54,16 +54,16 @@ const VIRTUAL_MODULES: Record<string, unknown> = {
 	"@sinclair/typebox": _bundledTypebox,
 	"@sinclair/typebox/compile": _bundledTypeboxCompile,
 	"@sinclair/typebox/value": _bundledTypeboxValue,
-	"@punch/agent": _bundledPiAgentCore,
-	"@punch/tui": _bundledPiTui,
+	"@punch-bot/agent": _bundledPiAgentCore,
+	"@punch-bot/tui": _bundledPiTui,
 	// Extensions resolve the pi-ai root to the compat entrypoint (a strict
 	// superset of the core entrypoint): existing extensions using the old
 	// global API keep working at runtime until compat is removed.
-	"@punch/ai": _bundledPiAiCompat,
-	"@punch/ai/compat": _bundledPiAiCompat,
-	"@punch/ai/oauth": _bundledPiAiOauth,
-	"@punch/ai/providers/all": _bundledPiAiProviders,
-	"@punch/cli": _bundledPiCodingAgent,
+	"@punch-bot/ai": _bundledPiAiCompat,
+	"@punch-bot/ai/compat": _bundledPiAiCompat,
+	"@punch-bot/ai/oauth": _bundledPiAiOauth,
+	"@punch-bot/ai/providers/all": _bundledPiAiProviders,
+	"@punch-bot/cli": _bundledPiCodingAgent,
 	"@earendil-works/pi-agent-core": _bundledPiAgentCore,
 	"@earendil-works/pi-tui": _bundledPiTui,
 	"@earendil-works/pi-ai": _bundledPiAiCompat,
@@ -115,23 +115,23 @@ function getAliases(): Record<string, string> {
 	};
 
 	const piCodingAgentEntry = packageIndex;
-	const piAgentCoreEntry = resolveWorkspaceOrImport("agent/dist/index.js", "@punch/agent");
-	const piTuiEntry = resolveWorkspaceOrImport("tui/dist/index.js", "@punch/tui");
+	const piAgentCoreEntry = resolveWorkspaceOrImport("agent/dist/index.js", "@punch-bot/agent");
+	const piTuiEntry = resolveWorkspaceOrImport("tui/dist/index.js", "@punch-bot/tui");
 	// Extensions resolve the pi-ai root to the compat entrypoint (a strict
 	// superset of the core entrypoint): existing extensions using the old
 	// global API keep working at runtime until compat is removed.
-	const piAiCompatEntry = resolveWorkspaceOrImport("ai/dist/compat.js", "@punch/ai/compat");
-	const piAiOauthEntry = resolveWorkspaceOrImport("ai/dist/oauth.js", "@punch/ai/oauth");
-	const piAiProvidersEntry = resolveWorkspaceOrImport("ai/dist/providers/all.js", "@punch/ai/providers/all");
+	const piAiCompatEntry = resolveWorkspaceOrImport("ai/dist/compat.js", "@punch-bot/ai/compat");
+	const piAiOauthEntry = resolveWorkspaceOrImport("ai/dist/oauth.js", "@punch-bot/ai/oauth");
+	const piAiProvidersEntry = resolveWorkspaceOrImport("ai/dist/providers/all.js", "@punch-bot/ai/providers/all");
 
 	_aliases = {
-		"@punch/cli": piCodingAgentEntry,
-		"@punch/agent": piAgentCoreEntry,
-		"@punch/tui": piTuiEntry,
-		"@punch/ai/providers/all": piAiProvidersEntry,
-		"@punch/ai/compat": piAiCompatEntry,
-		"@punch/ai/oauth": piAiOauthEntry,
-		"@punch/ai": piAiCompatEntry,
+		"@punch-bot/cli": piCodingAgentEntry,
+		"@punch-bot/agent": piAgentCoreEntry,
+		"@punch-bot/tui": piTuiEntry,
+		"@punch-bot/ai/providers/all": piAiProvidersEntry,
+		"@punch-bot/ai/compat": piAiCompatEntry,
+		"@punch-bot/ai/oauth": piAiOauthEntry,
+		"@punch-bot/ai": piAiCompatEntry,
 		"@earendil-works/pi-coding-agent": piCodingAgentEntry,
 		"@earendil-works/pi-agent-core": piAgentCoreEntry,
 		"@earendil-works/pi-tui": piTuiEntry,

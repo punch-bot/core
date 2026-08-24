@@ -4,7 +4,7 @@
 
 ### Breaking Changes
 
-- Renamed package from `@earendil-works/pi-agent-core` to `@punch/agent`.
+- Renamed package from `@earendil-works/pi-agent-core` to `@punch-bot/agent`.
 
 ## [0.84.2] - 2026-08-14
 

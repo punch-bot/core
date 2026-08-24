@@ -1,4 +1,4 @@
-import type { Usage } from "@punch/ai";
+import type { Usage } from "@punch-bot/ai";
 import type { AgentSessionEvent } from "../core/agent-session.ts";
 
 type WithoutPartial<T> = T extends { partial: unknown } ? Omit<T, "partial"> : T;

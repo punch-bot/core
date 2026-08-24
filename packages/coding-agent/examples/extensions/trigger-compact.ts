@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext } from "@punch/cli";
+import type { ExtensionAPI, ExtensionContext } from "@punch-bot/cli";
 
 const COMPACT_THRESHOLD_TOKENS = 100_000;
 

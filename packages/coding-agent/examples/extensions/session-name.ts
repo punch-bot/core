@@ -7,7 +7,7 @@
  * Usage: /session-name [name] - set or show session name
  */
 
-import type { ExtensionAPI } from "@punch/cli";
+import type { ExtensionAPI } from "@punch-bot/cli";
 
 export default function (pi: ExtensionAPI) {
 	pi.registerCommand("session-name", {

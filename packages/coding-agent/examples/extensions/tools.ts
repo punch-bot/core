@@ -9,9 +9,9 @@
  * 2. Use /tools to open the tool selector
  */
 
-import type { ExtensionAPI, ExtensionContext, ToolInfo } from "@punch/cli";
-import { getSettingsListTheme } from "@punch/cli";
-import { Container, type SettingItem, SettingsList } from "@punch/tui";
+import type { ExtensionAPI, ExtensionContext, ToolInfo } from "@punch-bot/cli";
+import { getSettingsListTheme } from "@punch-bot/cli";
+import { Container, type SettingItem, SettingsList } from "@punch-bot/tui";
 
 // State persisted to session
 interface ToolsState {

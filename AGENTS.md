@@ -1,21 +1,21 @@
 # Punch
 
-This is [`punch-bot/core`](https://github.com/punch-bot/core), a fork of the [pi agent harness](https://github.com/earendil-works/pi). npm packages are `@punch/*`. The CLI binary, config dir, and most env vars are still `pi` / `.pi` / `PI_*` until a later rebrand.
+This is [`punch-bot/core`](https://github.com/punch-bot/core), a fork of the [pi agent harness](https://github.com/earendil-works/pi). npm packages are `@punch-bot/*`. The CLI binary, config dir, and most env vars are still `pi` / `.pi` / `PI_*` until a later rebrand.
 
-Directory names did not change with the npm rename. `@punch/cli` lives in `packages/coding-agent`.
+Directory names did not change with the npm rename. `@punch-bot/cli` lives in `packages/coding-agent`.
 
 | npm name | Directory |
 |----------|-----------|
-| `@punch/cli` | `packages/coding-agent` |
-| `@punch/agent` | `packages/agent` |
-| `@punch/ai` | `packages/ai` |
-| `@punch/tui` | `packages/tui` |
-| `@punch/telemetry` | `packages/telemetry` |
-| `@punch/protocol` | `packages/protocol` |
-| `@punch/client` | `packages/client` |
-| `@punch/server` | `packages/server` |
-| `@punch/sqlite-node` | `packages/session-backends/sqlite-node` |
-| `@punch/evals` | `packages/evals` |
+| `@punch-bot/cli` | `packages/coding-agent` |
+| `@punch-bot/agent` | `packages/agent` |
+| `@punch-bot/ai` | `packages/ai` |
+| `@punch-bot/tui` | `packages/tui` |
+| `@punch-bot/telemetry` | `packages/telemetry` |
+| `@punch-bot/protocol` | `packages/protocol` |
+| `@punch-bot/client` | `packages/client` |
+| `@punch-bot/server` | `packages/server` |
+| `@punch-bot/sqlite-node` | `packages/session-backends/sqlite-node` |
+| `@punch-bot/evals` | `packages/evals` |
 
 # Development Rules
 

@@ -14,7 +14,7 @@ import {
 	type ServerHello,
 	type ServerHelloError,
 	type ServerMessage,
-} from "@punch/protocol";
+} from "@punch-bot/protocol";
 import {
 	type ByteConnection,
 	type ByteConnectionHandler,

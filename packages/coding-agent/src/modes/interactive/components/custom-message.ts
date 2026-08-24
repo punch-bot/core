@@ -1,6 +1,6 @@
-import type { TextContent } from "@punch/ai";
-import type { Component } from "@punch/tui";
-import { Box, Container, Markdown, type MarkdownTheme, Spacer, Text } from "@punch/tui";
+import type { TextContent } from "@punch-bot/ai";
+import type { Component } from "@punch-bot/tui";
+import { Box, Container, Markdown, type MarkdownTheme, Spacer, Text } from "@punch-bot/tui";
 import type { MessageRenderer } from "../../../core/extensions/types.ts";
 import type { CustomMessage } from "../../../core/messages.ts";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";

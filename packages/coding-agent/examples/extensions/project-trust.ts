@@ -13,7 +13,7 @@
  * Try it in a project containing .pi, AGENTS.md/CLAUDE.md, or .agents/skills.
  */
 
-import type { ExtensionAPI, ProjectTrustEventResult } from "@punch/cli";
+import type { ExtensionAPI, ProjectTrustEventResult } from "@punch-bot/cli";
 
 export default function (pi: ExtensionAPI) {
 	let loadCount = 0;

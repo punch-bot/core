@@ -18,8 +18,8 @@ import {
 	type RefreshModelsContext,
 	type SimpleStreamOptions,
 	type StreamOptions,
-} from "@punch/ai";
-import { getApiProvider } from "@punch/ai/compat";
+} from "@punch-bot/ai";
+import { getApiProvider } from "@punch-bot/ai/compat";
 import type { ModelConfig, ModelsJsonModel, ModelsJsonModelOverride, ModelsJsonProvider } from "./model-config.ts";
 import {
 	clearConfigValueCache,

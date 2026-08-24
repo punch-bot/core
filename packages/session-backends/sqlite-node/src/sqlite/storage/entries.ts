@@ -1,4 +1,4 @@
-import type { Entry, EntryOrder } from "@punch/agent";
+import type { Entry, EntryOrder } from "@punch-bot/agent";
 import { sql } from "../sql.ts";
 import type { SqliteDatabase } from "../types.ts";
 

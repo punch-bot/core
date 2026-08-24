@@ -20,8 +20,8 @@
  *   pi -e ./tool-override.ts
  */
 
-import type { TextContent } from "@punch/ai";
-import { type ExtensionAPI, getAgentDir, withFileMutationQueue } from "@punch/cli";
+import type { TextContent } from "@punch-bot/ai";
+import { type ExtensionAPI, getAgentDir, withFileMutationQueue } from "@punch-bot/cli";
 import { constants, readFileSync } from "fs";
 import { access, appendFile, readFile } from "fs/promises";
 import { join, resolve } from "path";

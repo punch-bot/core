@@ -1,6 +1,6 @@
-# @punch/sqlite-node
+# @punch-bot/sqlite-node
 
-Node sqlite session backend for `@punch/agent` sessions. Provides the
+Node sqlite session backend for `@punch-bot/agent` sessions. Provides the
 `node:sqlite` adapter (`SqliteDatabase` implementation), SQLite session repository,
 migrations, materialized views, and optional FTS search.
 

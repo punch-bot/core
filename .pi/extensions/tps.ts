@@ -1,5 +1,5 @@
-import type { AssistantMessage } from "@punch/ai";
-import type { ExtensionAPI } from "@punch/cli";
+import type { AssistantMessage } from "@punch-bot/ai";
+import type { ExtensionAPI } from "@punch-bot/cli";
 
 function isAssistantMessage(message: unknown): message is AssistantMessage {
 	if (!message || typeof message !== "object") return false;

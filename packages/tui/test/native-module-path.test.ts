@@ -14,7 +14,7 @@ describe("getNativeModuleCandidates", () => {
 			moduleUrl: pathToFileURL(bundledModule).href,
 			execPath: resolve("virtual", "node", "node.exe"),
 			resolvePackage: (specifier) => {
-				assert.equal(specifier, "@punch/tui");
+				assert.equal(specifier, "@punch-bot/tui");
 				return join(packageRoot, "dist", "index.js");
 			},
 		});

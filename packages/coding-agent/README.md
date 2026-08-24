@@ -5,7 +5,7 @@
 </p>
 <p align="center">
   <a href="https://discord.com/invite/3cU7Bz4UPx"><img alt="Discord" src="https://img.shields.io/badge/discord-community-5865F2?style=flat-square&logo=discord&logoColor=white" /></a>
-  <a href="https://www.npmjs.com/package/@punch/cli"><img alt="npm" src="https://img.shields.io/npm/v/@punch/cli?style=flat-square" /></a>
+  <a href="https://www.npmjs.com/package/@punch-bot/cli"><img alt="npm" src="https://img.shields.io/npm/v/@punch-bot/cli?style=flat-square" /></a>
 </p>
 
 > New issues and PRs from new contributors are auto-closed by default. Maintainers review auto-closed issues daily. See [CONTRIBUTING.md](../../CONTRIBUTING.md).
@@ -63,7 +63,7 @@ I regularly publish my own `pi-mono` work sessions here:
 ## Quick Start
 
 ```bash
-npm install -g --ignore-scripts @punch/cli
+npm install -g --ignore-scripts @punch-bot/cli
 ```
 
 `--ignore-scripts` disables dependency lifecycle scripts during install. Pi does not require install scripts for normal npm installs.
@@ -462,7 +462,7 @@ See [docs/packages.md](docs/packages.md).
 ### SDK
 
 ```typescript
-import { createAgentSession, ModelRuntime, SessionManager } from "@punch/cli";
+import { createAgentSession, ModelRuntime, SessionManager } from "@punch-bot/cli";
 
 const modelRuntime = await ModelRuntime.create();
 const { session } = await createAgentSession({
@@ -706,9 +706,9 @@ MIT
 
 ## See Also
 
-- [@punch/ai](https://www.npmjs.com/package/@punch/ai): Core LLM toolkit
-- [@punch/agent](https://www.npmjs.com/package/@punch/agent): Agent framework
-- [@punch/tui](https://www.npmjs.com/package/@punch/tui): Terminal UI components
+- [@punch-bot/ai](https://www.npmjs.com/package/@punch-bot/ai): Core LLM toolkit
+- [@punch-bot/agent](https://www.npmjs.com/package/@punch-bot/agent): Agent framework
+- [@punch-bot/tui](https://www.npmjs.com/package/@punch-bot/tui): Terminal UI components
 
 <p align="center">
   <a href="https://pi.dev">pi.dev</a> domain graciously donated by

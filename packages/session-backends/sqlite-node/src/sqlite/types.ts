@@ -1,4 +1,4 @@
-import type { FileSystem, SessionCreateOptions, SessionMetadata } from "@punch/agent";
+import type { FileSystem, SessionCreateOptions, SessionMetadata } from "@punch-bot/agent";
 
 /** Result of a prepared SQLite statement execution. */
 export interface SqliteRunResult {

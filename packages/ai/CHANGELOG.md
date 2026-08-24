@@ -5,7 +5,7 @@
 ### Breaking Changes
 
 - Renamed `GoogleThinkingLevel` to `GoogleApiThinkingLevel` and added `ResolvedGoogleThinkingLevel` for normalized adapter levels.
-- Renamed package from `@earendil-works/pi-ai` to `@punch/ai`.
+- Renamed package from `@earendil-works/pi-ai` to `@punch-bot/ai`.
 
 ### Added
 

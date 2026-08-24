@@ -1,4 +1,4 @@
-import type { JsonValue, ProtocolError, ProtocolErrorCode } from "@punch/protocol";
+import type { JsonValue, ProtocolError, ProtocolErrorCode } from "@punch-bot/protocol";
 
 export class PiServerError extends Error {
 	readonly code: ProtocolErrorCode;

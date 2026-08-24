@@ -1,4 +1,4 @@
-import type { AssistantMessage, ToolResultMessage, Usage, UserMessage } from "@punch/ai";
+import type { AssistantMessage, ToolResultMessage, Usage, UserMessage } from "@punch-bot/ai";
 import { describe, expect, it } from "vitest";
 import {
 	type EffectiveLaneConfiguration,

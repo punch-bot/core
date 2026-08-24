@@ -7,7 +7,7 @@ Pi is a minimal terminal coding harness. It is designed to stay small at the cor
 Install Pi with npm:
 
 ```bash
-npm install -g --ignore-scripts @punch/cli
+npm install -g --ignore-scripts @punch-bot/cli
 ```
 
 `--ignore-scripts` disables dependency lifecycle scripts during install. Pi does not require install scripts for normal npm installs.
@@ -21,10 +21,10 @@ curl -fsSL https://pi.dev/install.sh | sh
 To uninstall pi itself, use npm for curl and npm installs:
 
 ```bash
-npm uninstall -g @punch/cli
+npm uninstall -g @punch-bot/cli
 ```
 
-For pnpm, Yarn, or Bun installs, use the matching global remove command: `pnpm remove -g @punch/cli`, `yarn global remove @punch/cli`, or `bun uninstall -g @punch/cli`.
+For pnpm, Yarn, or Bun installs, use the matching global remove command: `pnpm remove -g @punch-bot/cli`, `yarn global remove @punch-bot/cli`, or `bun uninstall -g @punch-bot/cli`.
 
 Then run it in a project directory:
 

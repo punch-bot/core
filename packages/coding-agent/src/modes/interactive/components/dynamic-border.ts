@@ -1,4 +1,4 @@
-import type { Component } from "@punch/tui";
+import type { Component } from "@punch-bot/tui";
 import { theme } from "../theme/theme.ts";
 
 /**

@@ -1,5 +1,5 @@
-import type { AuthInfoLink, OAuthDeviceCodeInfo } from "@punch/ai";
-import { Container, type Focusable, getKeybindings, Input, Spacer, Text, type TUI } from "@punch/tui";
+import type { AuthInfoLink, OAuthDeviceCodeInfo } from "@punch-bot/ai";
+import { Container, type Focusable, getKeybindings, Input, Spacer, Text, type TUI } from "@punch-bot/tui";
 import { openBrowser } from "../../../utils/open-browser.ts";
 import { theme } from "../theme/theme.ts";
 import { DynamicBorder } from "./dynamic-border.ts";

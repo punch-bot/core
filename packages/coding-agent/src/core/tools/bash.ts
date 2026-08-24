@@ -1,7 +1,7 @@
 import { constants } from "node:fs";
 import { access as fsAccess } from "node:fs/promises";
-import type { AgentTool } from "@punch/agent";
-import { Container, Text, truncateToWidth } from "@punch/tui";
+import type { AgentTool } from "@punch-bot/agent";
+import { Container, Text, truncateToWidth } from "@punch-bot/tui";
 import { spawn } from "child_process";
 import { type Static, Type } from "typebox";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.ts";

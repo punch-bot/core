@@ -42,8 +42,8 @@ import {
 	type Tool,
 	type ToolCall,
 	type ToolResultMessage,
-} from "@punch/ai";
-import type { ExtensionAPI } from "@punch/cli";
+} from "@punch-bot/ai";
+import type { ExtensionAPI } from "@punch-bot/cli";
 
 // =============================================================================
 // OAuth implementation adapted for the legacy extension compatibility interface.

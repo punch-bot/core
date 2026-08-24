@@ -1,5 +1,5 @@
-import type { Usage } from "@punch/ai";
-import { Container } from "@punch/tui";
+import type { Usage } from "@punch-bot/ai";
+import { Container } from "@punch-bot/tui";
 import { describe, expect, test, vi } from "vitest";
 import type { SessionEntry } from "../src/core/session-manager.ts";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";

@@ -13,9 +13,9 @@
  *   pi --extension examples/extensions/custom-compaction.ts
  */
 
-import { uuidv7 } from "@punch/ai";
-import type { ExtensionAPI } from "@punch/cli";
-import { convertToLlm, serializeConversation } from "@punch/cli";
+import { uuidv7 } from "@punch-bot/ai";
+import type { ExtensionAPI } from "@punch-bot/cli";
+import { convertToLlm, serializeConversation } from "@punch-bot/cli";
 
 export default function (pi: ExtensionAPI) {
 	pi.on("session_before_compact", async (event, ctx) => {

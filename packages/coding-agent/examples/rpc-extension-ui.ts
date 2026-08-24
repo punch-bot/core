@@ -27,7 +27,7 @@ import {
 	SelectList,
 	type TUI,
 	TuiMainScreen,
-} from "@punch/tui";
+} from "@punch-bot/tui";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 

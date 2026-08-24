@@ -1,4 +1,4 @@
-import { PiSessionOwnershipError } from "@punch/client";
+import { PiSessionOwnershipError } from "@punch-bot/client";
 import { describe, expect, test } from "vitest";
 import { RemoteSession } from "../../src/client/remote-session.ts";
 import { collectRequests, connectClient, MemoryServer, sessionSnapshot } from "./support.ts";

@@ -61,8 +61,8 @@ const ExtensionAuthoringJudge = createJudge<PiCodingAgentInput, ExtensionAuthori
 				output.extensionSource.matchAll(/\b(?:from|import)\s+["']([^"']+)["']/g),
 				(match) => match[1],
 			);
-			if (!imports.includes("@punch/cli")) {
-				failures.push("extension does not import the canonical @punch/cli package");
+			if (!imports.includes("@punch-bot/cli")) {
+				failures.push("extension does not import the canonical @punch-bot/cli package");
 			}
 			if (imports.some((specifier) => specifier.startsWith("@mariozechner/"))) {
 				failures.push("extension imports a legacy @mariozechner package");

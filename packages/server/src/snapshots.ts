@@ -4,7 +4,7 @@ import {
 	PROTOCOL_VERSION,
 	type ServerSnapshot,
 	type SessionMetadata,
-} from "@punch/protocol";
+} from "@punch-bot/protocol";
 import type { ConnectionState } from "./connection.ts";
 import type { PiServerService } from "./types.ts";
 

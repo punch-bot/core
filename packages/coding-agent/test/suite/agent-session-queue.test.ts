@@ -1,6 +1,6 @@
-import type { AgentTool } from "@punch/agent";
-import { fauxAssistantMessage, fauxToolCall } from "@punch/ai";
-import type { ExtensionAPI } from "@punch/cli";
+import type { AgentTool } from "@punch-bot/agent";
+import { fauxAssistantMessage, fauxToolCall } from "@punch-bot/ai";
+import type { ExtensionAPI } from "@punch-bot/cli";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
 import { createHarness, getAssistantTexts, getMessageText, getUserTexts, type Harness } from "./harness.ts";

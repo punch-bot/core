@@ -5,8 +5,8 @@
  * (logo + keybinding hints) with a custom component showing the pi mascot.
  */
 
-import type { ExtensionAPI, Theme } from "@punch/cli";
-import { VERSION } from "@punch/cli";
+import type { ExtensionAPI, Theme } from "@punch-bot/cli";
+import { VERSION } from "@punch-bot/cli";
 
 // --- PI MASCOT ---
 // Based on pi_mascot.ts - the pi agent character

@@ -1,5 +1,5 @@
 {
-	"name": "@punch/protocol",
+	"name": "@punch-bot/protocol",
 	"version": "0.84.2",
 	"description": "Transport-neutral CBOR protocol for remote pi sessions",
 	"type": "module",

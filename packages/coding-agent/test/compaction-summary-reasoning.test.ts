@@ -1,5 +1,5 @@
-import type { AgentMessage } from "@punch/agent";
-import type { AssistantMessage, Context, Model } from "@punch/ai";
+import type { AgentMessage } from "@punch-bot/agent";
+import type { AssistantMessage, Context, Model } from "@punch-bot/ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	type CompactionPreparation,
@@ -13,8 +13,8 @@ const { completeSimpleMock } = vi.hoisted(() => ({
 	completeSimpleMock: vi.fn(),
 }));
 
-vi.mock("@punch/ai/compat", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("@punch/ai/compat")>();
+vi.mock("@punch-bot/ai/compat", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("@punch-bot/ai/compat")>();
 	return {
 		...actual,
 		completeSimple: completeSimpleMock,

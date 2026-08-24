@@ -145,7 +145,7 @@ import {
   type SessionSearch,
   type SessionSearchHit,
   type SessionSearchOptions,
-} from "@punch/agent";
+} from "@punch-bot/agent";
 
 // JSONL-backed code can provide this locally from existing JSONL list/load helpers.
 async function* jsonlReadables(jsonl: JsonlSessionRepoOptions, options: { cwd?: string } = {}) {

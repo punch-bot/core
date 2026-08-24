@@ -1,6 +1,6 @@
-import { PiClient } from "@punch/client";
-import { createAssistantMessageEventStream, Type } from "@punch/ai";
-import { complete, getModel, getProviders, streamSimple } from "@punch/ai/compat";
+import { PiClient } from "@punch-bot/client";
+import { createAssistantMessageEventStream, Type } from "@punch-bot/ai";
+import { complete, getModel, getProviders, streamSimple } from "@punch-bot/ai/compat";
 import {
 	Agent,
 	bashExecutionToText,
@@ -17,8 +17,8 @@ import {
 	streamProxy,
 	toError,
 	truncateHead,
-} from "@punch/agent";
-import { decodeCbor, encodeCbor, PROTOCOL_VERSION } from "@punch/protocol";
+} from "@punch-bot/agent";
+import { decodeCbor, encodeCbor, PROTOCOL_VERSION } from "@punch-bot/protocol";
 
 // Keep this entry browser-safe. It is bundled by scripts/check-browser-smoke.mjs
 // to catch accidental Node-only runtime imports in browser-facing package exports.

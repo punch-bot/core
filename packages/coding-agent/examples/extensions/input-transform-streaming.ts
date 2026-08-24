@@ -11,7 +11,7 @@
  * Start pi with this extension:
  *   pi -e ./examples/extensions/input-transform-streaming.ts
  */
-import type { ExtensionAPI } from "@punch/cli";
+import type { ExtensionAPI } from "@punch-bot/cli";
 
 const TRIGGER = /\b(changes?|diff|modified)\b/i;
 

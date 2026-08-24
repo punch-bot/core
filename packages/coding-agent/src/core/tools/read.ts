@@ -1,7 +1,7 @@
 import { basename, dirname, isAbsolute, relative, resolve as resolvePath, sep } from "node:path";
-import type { AgentTool } from "@punch/agent";
-import type { Api, ImageContent, Model, TextContent } from "@punch/ai";
-import { Text } from "@punch/tui";
+import type { AgentTool } from "@punch-bot/agent";
+import type { Api, ImageContent, Model, TextContent } from "@punch-bot/ai";
+import { Text } from "@punch-bot/tui";
 import { constants } from "fs";
 import { access as fsAccess, readFile as fsReadFile } from "fs/promises";
 import { type Static, Type } from "typebox";

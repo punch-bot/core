@@ -1,4 +1,4 @@
-import { Box, Container, Markdown, type MarkdownTheme } from "@punch/tui";
+import { Box, Container, Markdown, type MarkdownTheme } from "@punch-bot/tui";
 import type { MarkdownTransformer } from "../../../core/extensions/types.ts";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
 import { createMarkdownTransform } from "./markdown-transform.ts";

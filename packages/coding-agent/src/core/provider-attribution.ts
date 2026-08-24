@@ -1,4 +1,4 @@
-import type { Api, Model, ProviderHeaders } from "@punch/ai";
+import type { Api, Model, ProviderHeaders } from "@punch-bot/ai";
 import type { SettingsManager } from "./settings-manager.ts";
 import { isInstallTelemetryEnabled } from "./telemetry.ts";
 

@@ -8,8 +8,8 @@ import type {
 	Session as CoreSession,
 	Entry,
 	MessageEntry,
-} from "@punch/agent";
-import type { Usage } from "@punch/ai";
+} from "@punch-bot/agent";
+import type { Usage } from "@punch-bot/ai";
 import { afterEach, vi } from "vitest";
 import type { SqliteDatabaseFactory, SqliteSessionMetadata } from "../src/index.ts";
 

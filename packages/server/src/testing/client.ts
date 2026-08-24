@@ -8,7 +8,7 @@ import {
 	type ResponseEnvelope,
 	type ServerMessage,
 	ServerMessageDecoder,
-} from "@punch/protocol";
+} from "@punch-bot/protocol";
 import { Deferred } from "./service.ts";
 
 interface MessageWaiter {

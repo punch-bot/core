@@ -1,4 +1,4 @@
-import { type ByteTransport, type ByteTransportHandlers, PiClient } from "@punch/client";
+import { type ByteTransport, type ByteTransportHandlers, PiClient } from "@punch-bot/client";
 import {
 	type ClientMessage,
 	ClientMessageDecoder,
@@ -8,7 +8,7 @@ import {
 	type ServerMessage,
 	type ServerSnapshot,
 	type SessionSnapshot,
-} from "@punch/protocol";
+} from "@punch-bot/protocol";
 import { RemoteSession, type RemoteSessionOptions } from "../../src/client/remote-session.ts";
 
 export class MemoryServer {

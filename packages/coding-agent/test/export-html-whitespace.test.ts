@@ -1,4 +1,4 @@
-import type { Component } from "@punch/tui";
+import type { Component } from "@punch-bot/tui";
 import { readFileSync } from "fs";
 import { describe, expect, it } from "vitest";
 import { ansiLinesToHtml } from "../src/core/export-html/ansi-to-html.ts";

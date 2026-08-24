@@ -1,5 +1,5 @@
-import { SessionError } from "@punch/agent";
-import { uuidv7 } from "@punch/ai";
+import { SessionError } from "@punch-bot/agent";
+import { uuidv7 } from "@punch-bot/ai";
 import { sql } from "./sql.ts";
 import {
 	copyBranchEntriesThroughSeq,

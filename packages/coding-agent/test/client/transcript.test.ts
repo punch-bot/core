@@ -1,4 +1,4 @@
-import type { SessionSnapshot } from "@punch/protocol";
+import type { SessionSnapshot } from "@punch-bot/protocol";
 import { describe, expect, test } from "vitest";
 import {
 	applyTranscriptProgress,

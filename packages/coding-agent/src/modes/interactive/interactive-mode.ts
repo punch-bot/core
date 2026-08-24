@@ -7,9 +7,9 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { AgentMessage, ThinkingLevel } from "@punch/agent";
-import type { AuthEvent, AuthPrompt } from "@punch/ai";
-import type { AssistantMessage, ImageContent, Message, Model, Usage } from "@punch/ai/compat";
+import type { AgentMessage, ThinkingLevel } from "@punch-bot/agent";
+import type { AuthEvent, AuthPrompt } from "@punch-bot/ai";
+import type { AssistantMessage, ImageContent, Message, Model, Usage } from "@punch-bot/ai/compat";
 import type {
 	AutocompleteItem,
 	AutocompleteProvider,
@@ -22,8 +22,8 @@ import type {
 	SlashCommand,
 	Terminal,
 	TuiMainScreenRenderState,
-} from "@punch/tui";
-import * as TuiLayouts from "@punch/tui";
+} from "@punch-bot/tui";
+import * as TuiLayouts from "@punch-bot/tui";
 import {
 	CombinedAutocompleteProvider,
 	type Component,
@@ -42,7 +42,7 @@ import {
 	TuiAltScreen,
 	TuiMainScreen,
 	visibleWidth,
-} from "@punch/tui";
+} from "@punch-bot/tui";
 import chalk from "chalk";
 import { spawn } from "child_process";
 import {

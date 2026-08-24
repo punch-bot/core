@@ -1,4 +1,4 @@
-import { type AssistantMessage, type AssistantMessageEvent, EventStream, getModel } from "@punch/ai/compat";
+import { type AssistantMessage, type AssistantMessageEvent, EventStream, getModel } from "@punch-bot/ai/compat";
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
 import {

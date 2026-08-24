@@ -1,6 +1,6 @@
-import { CustomEditor, type ExtensionAPI, type ExtensionContext, type KeybindingsManager } from "@punch/cli";
-import type { Component, EditorTheme, TUI } from "@punch/tui";
-import { truncateToWidth, visibleWidth } from "@punch/tui";
+import { CustomEditor, type ExtensionAPI, type ExtensionContext, type KeybindingsManager } from "@punch-bot/cli";
+import type { Component, EditorTheme, TUI } from "@punch-bot/tui";
+import { truncateToWidth, visibleWidth } from "@punch-bot/tui";
 
 function fitBorder(
 	left: string,

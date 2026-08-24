@@ -3,10 +3,10 @@
 	"compilerOptions": {
 		"noEmit": true,
 		"paths": {
-			"@punch/cli": ["./src/index.ts"],
-			"@punch/cli/hooks": ["./src/core/hooks/index.ts"],
-			"@punch/tui": ["../tui/src/index.ts"],
-			"@punch/ai": ["../ai/src/index.ts"],
+			"@punch-bot/cli": ["./src/index.ts"],
+			"@punch-bot/cli/hooks": ["./src/core/hooks/index.ts"],
+			"@punch-bot/tui": ["../tui/src/index.ts"],
+			"@punch-bot/ai": ["../ai/src/index.ts"],
 			"typebox": ["../../node_modules/typebox"]
 		},
 		"skipLibCheck": true

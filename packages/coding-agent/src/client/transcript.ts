@@ -1,4 +1,4 @@
-import type { JsonValue, SessionSnapshot, TranscriptItem, TranscriptProgress } from "@punch/protocol";
+import type { JsonValue, SessionSnapshot, TranscriptItem, TranscriptProgress } from "@punch-bot/protocol";
 
 export interface TranscriptState {
 	readonly snapshot: SessionSnapshot;

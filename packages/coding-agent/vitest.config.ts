@@ -23,11 +23,11 @@ export default mergeConfig(
 		resolve: {
 			alias: [
 				{
-					find: /^@punch\/client$/,
+					find: /^@punch-bot\/client$/,
 					replacement: fileURLToPath(new URL("../client/src/index.ts", import.meta.url)),
 				},
 				{
-					find: /^@punch\/protocol$/,
+					find: /^@punch-bot\/protocol$/,
 					replacement: fileURLToPath(new URL("../protocol/src/index.ts", import.meta.url)),
 				},
 				{

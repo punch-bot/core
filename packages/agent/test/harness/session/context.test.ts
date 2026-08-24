@@ -1,5 +1,5 @@
-import type { AgentMessage } from "@punch/agent";
-import type { AssistantMessage } from "@punch/ai";
+import type { AgentMessage } from "@punch-bot/agent";
+import type { AssistantMessage } from "@punch-bot/ai";
 import { describe, expect, it } from "vitest";
 import { buildSessionContext } from "../../../src/harness/session/context.ts";
 import type { Entry } from "../../../src/harness/session/types.ts";

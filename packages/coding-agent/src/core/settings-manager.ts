@@ -1,6 +1,6 @@
-import type { ThinkingLevel } from "@punch/agent";
-import type { Transport } from "@punch/ai";
-import type { TuiMode as RendererTuiMode, ScrollViewScrollbar } from "@punch/tui";
+import type { ThinkingLevel } from "@punch-bot/agent";
+import type { Transport } from "@punch-bot/ai";
+import type { TuiMode as RendererTuiMode, ScrollViewScrollbar } from "@punch-bot/tui";
 import { randomUUID } from "crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";

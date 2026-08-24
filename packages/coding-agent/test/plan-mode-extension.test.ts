@@ -1,5 +1,5 @@
-import type { AgentMessage } from "@punch/agent";
-import type { AssistantMessage } from "@punch/ai";
+import type { AgentMessage } from "@punch-bot/agent";
+import type { AssistantMessage } from "@punch-bot/ai";
 import { describe, expect, it, vi } from "vitest";
 import planModeExtension from "../examples/extensions/plan-mode/index.ts";
 import type { ExtensionAPI, ExtensionContext } from "../src/core/extensions/index.ts";

@@ -1,5 +1,5 @@
 {
-	"name": "@punch/telemetry",
+	"name": "@punch-bot/telemetry",
 	"version": "0.84.2",
 	"description": "Vendor-neutral telemetry contracts and typed schema utilities for pi",
 	"type": "module",

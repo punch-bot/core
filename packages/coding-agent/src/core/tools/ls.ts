@@ -1,6 +1,6 @@
 import { readdir as fsReaddir, stat as fsStat } from "node:fs/promises";
-import type { AgentTool } from "@punch/agent";
-import { Text } from "@punch/tui";
+import type { AgentTool } from "@punch-bot/agent";
+import { Text } from "@punch-bot/tui";
 import nodePath from "path";
 import { type Static, Type } from "typebox";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.ts";

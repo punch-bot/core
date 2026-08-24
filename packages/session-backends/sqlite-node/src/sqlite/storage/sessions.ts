@@ -1,4 +1,4 @@
-import { assertJsonSerializable, SessionError } from "@punch/agent";
+import { assertJsonSerializable, SessionError } from "@punch-bot/agent";
 import { sql } from "../sql.ts";
 import type { SqliteDatabase, SqliteSessionMetadata } from "../types.ts";
 

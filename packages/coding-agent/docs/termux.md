@@ -17,7 +17,7 @@ pkg update && pkg upgrade
 pkg install nodejs termux-api git
 
 # Install pi
-npm install -g --ignore-scripts @punch/cli
+npm install -g --ignore-scripts @punch-bot/cli
 
 # Create config directory
 mkdir -p ~/.pi/agent

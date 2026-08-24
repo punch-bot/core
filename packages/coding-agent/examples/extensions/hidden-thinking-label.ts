@@ -18,7 +18,7 @@
  *   /thinking-label          Reset to the default label
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@punch/cli";
+import type { ExtensionAPI, ExtensionContext } from "@punch-bot/cli";
 
 const DEFAULT_LABEL = "Pondering...";
 

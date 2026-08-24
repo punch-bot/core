@@ -9,7 +9,7 @@ import type {
 	ModelsRefreshResult,
 	Provider,
 	ProviderHeaders,
-} from "@punch/ai";
+} from "@punch-bot/ai";
 import type { ModelRuntime } from "./model-runtime.ts";
 import type { AuthStatus, ProviderConfigInput } from "./provider-composer.ts";
 

@@ -5,7 +5,7 @@
  * Useful to ensure work is committed before switching context.
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@punch/cli";
+import type { ExtensionAPI, ExtensionContext } from "@punch-bot/cli";
 
 async function checkDirtyRepo(
 	pi: ExtensionAPI,

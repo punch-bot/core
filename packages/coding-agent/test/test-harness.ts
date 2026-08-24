@@ -11,8 +11,8 @@ import { createInMemoryModelRegistry, getModelRuntime } from "./model-runtime-te
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentTool } from "@punch/agent";
-import { Agent } from "@punch/agent";
+import type { AgentTool } from "@punch-bot/agent";
+import { Agent } from "@punch-bot/agent";
 import type {
 	AssistantMessage,
 	AssistantMessageEvent,
@@ -25,8 +25,8 @@ import type {
 	ThinkingContent,
 	ToolCall,
 	Usage,
-} from "@punch/ai";
-import { createAssistantMessageEventStream } from "@punch/ai";
+} from "@punch-bot/ai";
+import { createAssistantMessageEventStream } from "@punch-bot/ai";
 import { AgentSession, type AgentSessionEvent } from "../src/core/agent-session.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import { SessionManager } from "../src/core/session-manager.ts";

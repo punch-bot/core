@@ -5,7 +5,7 @@
  * from cwd and ~/.pi/agent. Model chosen from settings or first available.
  */
 
-import { createAgentSession } from "@punch/cli";
+import { createAgentSession } from "@punch-bot/cli";
 
 const { session } = await createAgentSession();
 

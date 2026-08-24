@@ -1,4 +1,4 @@
-import { fauxAssistantMessage, fauxToolCall } from "@punch/ai";
+import { fauxAssistantMessage, fauxToolCall } from "@punch-bot/ai";
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
 import type { ExtensionFactory } from "../../../src/index.ts";

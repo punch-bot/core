@@ -1,4 +1,4 @@
-import type { CredentialStore } from "@punch/ai";
+import type { CredentialStore } from "@punch-bot/ai";
 import { ModelRegistry } from "../src/core/model-registry.ts";
 import { ModelRuntime } from "../src/core/model-runtime.ts";
 import { InMemoryCodingAgentModelsStore } from "../src/core/models-store.ts";

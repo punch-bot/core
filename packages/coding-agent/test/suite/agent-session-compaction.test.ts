@@ -1,4 +1,4 @@
-import type { AgentMessage } from "@punch/agent";
+import type { AgentMessage } from "@punch-bot/agent";
 import {
 	type AssistantMessage,
 	type Context,
@@ -6,7 +6,7 @@ import {
 	fauxAssistantMessage,
 	type Model,
 	type SimpleStreamOptions,
-} from "@punch/ai";
+} from "@punch-bot/ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { estimateTokens } from "../../src/core/compaction/index.ts";
 import { createHarness, getUserTexts, type Harness } from "./harness.ts";

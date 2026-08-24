@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { registerBunOAuthFlows } from "@punch/ai/bun-oauth";
+import { registerBunOAuthFlows } from "@punch-bot/ai/bun-oauth";
 import { APP_NAME } from "../config.ts";
 
 process.title = APP_NAME;

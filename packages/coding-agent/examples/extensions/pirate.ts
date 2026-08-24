@@ -10,7 +10,7 @@
  * 3. When enabled, the agent will respond like a pirate
  */
 
-import type { ExtensionAPI } from "@punch/cli";
+import type { ExtensionAPI } from "@punch-bot/cli";
 
 export default function pirateExtension(pi: ExtensionAPI) {
 	let pirateMode = false;

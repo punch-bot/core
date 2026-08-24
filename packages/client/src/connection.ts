@@ -6,7 +6,7 @@ import {
 	type ServerMessage,
 	ServerMessageDecoder,
 	type ServerSnapshot,
-} from "@punch/protocol";
+} from "@punch-bot/protocol";
 import { PiDisconnectedError, PiServerError, toDisconnectedError, toError } from "./errors.ts";
 import { createPromiseResolvers, type PromiseResolvers } from "./promise.ts";
 import type { ByteTransport, ByteTransportFactory, ByteTransportHandlers } from "./transport.ts";

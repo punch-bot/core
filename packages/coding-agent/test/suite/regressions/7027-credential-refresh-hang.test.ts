@@ -1,4 +1,4 @@
-import type { Api, Model, Provider } from "@punch/ai";
+import type { Api, Model, Provider } from "@punch-bot/ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AuthStorage } from "../../../src/core/auth-storage.ts";
 import { ModelRuntime } from "../../../src/core/model-runtime.ts";

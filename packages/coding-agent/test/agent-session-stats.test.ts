@@ -1,5 +1,11 @@
-import { Agent } from "@punch/agent";
-import { type AssistantMessage, getModel, streamSimple, type ToolResultMessage, type Usage } from "@punch/ai/compat";
+import { Agent } from "@punch-bot/agent";
+import {
+	type AssistantMessage,
+	getModel,
+	streamSimple,
+	type ToolResultMessage,
+	type Usage,
+} from "@punch-bot/ai/compat";
 import { describe, expect, it } from "vitest";
 import { AgentSession } from "../src/core/agent-session.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";

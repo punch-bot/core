@@ -1,4 +1,4 @@
-import { Container, getKeybindings, Spacer, Text } from "@punch/tui";
+import { Container, getKeybindings, Spacer, Text } from "@punch-bot/tui";
 import {
 	getProjectTrustOptions,
 	type ProjectTrustOption,

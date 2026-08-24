@@ -1,4 +1,11 @@
-import type { Command, ModelRef, ResultForCommand, ServerEvent, SessionSnapshot, ThinkingLevel } from "@punch/protocol";
+import type {
+	Command,
+	ModelRef,
+	ResultForCommand,
+	ServerEvent,
+	SessionSnapshot,
+	ThinkingLevel,
+} from "@punch-bot/protocol";
 import type { Unsubscribe } from "./types.ts";
 
 type SessionCommand = Extract<Command, { sessionId: string }>;

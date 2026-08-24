@@ -166,8 +166,8 @@ describe("detectInstallMethod", () => {
 		);
 
 		expect(detectInstallMethod()).toBe("pnpm");
-		expect(getUpdateInstruction("@punch/cli")).toBe(
-			"Run: pnpm install -g --ignore-scripts --config.minimumReleaseAge=0 @punch/cli",
+		expect(getUpdateInstruction("@punch-bot/cli")).toBe(
+			"Run: pnpm install -g --ignore-scripts --config.minimumReleaseAge=0 @punch-bot/cli",
 		);
 	});
 
@@ -175,37 +175,37 @@ describe("detectInstallMethod", () => {
 		setExecPath("/usr/local/bin/node");
 
 		expect(detectInstallMethod()).toBe("unknown");
-		expect(getSelfUpdateCommand("@punch/cli")).toBeUndefined();
-		expect(getUpdateInstruction("@punch/cli")).toBe(
-			"Update @punch/cli using the package manager, wrapper, or source checkout that provides this installation.",
+		expect(getSelfUpdateCommand("@punch-bot/cli")).toBeUndefined();
+		expect(getUpdateInstruction("@punch-bot/cli")).toBe(
+			"Update @punch-bot/cli using the package manager, wrapper, or source checkout that provides this installation.",
 		);
 	});
 
 	test("self-updates npm installs from custom prefixes", () => {
 		const { prefix } = createNpmPrefixInstall();
 
-		const command = getSelfUpdateCommand("@punch/cli");
+		const command = getSelfUpdateCommand("@punch-bot/cli");
 
 		expect(detectInstallMethod()).toBe("npm");
 		expect(command).toEqual({
 			command: "npm",
-			args: ["--prefix", prefix, "install", "-g", "--ignore-scripts", "--min-release-age=0", "@punch/cli"],
-			display: `npm --prefix ${prefix} install -g --ignore-scripts --min-release-age=0 @punch/cli`,
+			args: ["--prefix", prefix, "install", "-g", "--ignore-scripts", "--min-release-age=0", "@punch-bot/cli"],
+			display: `npm --prefix ${prefix} install -g --ignore-scripts --min-release-age=0 @punch-bot/cli`,
 		});
 	});
 
 	test("self-updates exact npm versions without uninstalling the current package", () => {
 		const { prefix } = createNpmPrefixInstall();
 
-		const command = getSelfUpdateCommand("@punch/cli", undefined, {
-			packageName: "@punch/cli",
-			installSpec: "@punch/cli@1.2.3",
+		const command = getSelfUpdateCommand("@punch-bot/cli", undefined, {
+			packageName: "@punch-bot/cli",
+			installSpec: "@punch-bot/cli@1.2.3",
 		});
 
 		expect(command).toEqual({
 			command: "npm",
-			args: ["--prefix", prefix, "install", "-g", "--ignore-scripts", "--min-release-age=0", "@punch/cli@1.2.3"],
-			display: `npm --prefix ${prefix} install -g --ignore-scripts --min-release-age=0 @punch/cli@1.2.3`,
+			args: ["--prefix", prefix, "install", "-g", "--ignore-scripts", "--min-release-age=0", "@punch-bot/cli@1.2.3"],
+			display: `npm --prefix ${prefix} install -g --ignore-scripts --min-release-age=0 @punch-bot/cli@1.2.3`,
 		});
 	});
 
@@ -236,19 +236,19 @@ describe("detectInstallMethod", () => {
 	test("self-update respects configured npmCommand", () => {
 		const { prefix } = createNpmPrefixInstall();
 
-		const command = getSelfUpdateCommand("@punch/cli", ["npm", "--prefix", prefix]);
+		const command = getSelfUpdateCommand("@punch-bot/cli", ["npm", "--prefix", prefix]);
 
 		expect(command).toEqual({
 			command: "npm",
-			args: ["--prefix", prefix, "install", "-g", "--ignore-scripts", "--min-release-age=0", "@punch/cli"],
-			display: `npm --prefix ${prefix} install -g --ignore-scripts --min-release-age=0 @punch/cli`,
+			args: ["--prefix", prefix, "install", "-g", "--ignore-scripts", "--min-release-age=0", "@punch-bot/cli"],
+			display: `npm --prefix ${prefix} install -g --ignore-scripts --min-release-age=0 @punch-bot/cli`,
 		});
 	});
 
 	test("self-update treats empty npmCommand as unset", () => {
 		const { prefix } = createNpmPrefixInstall();
 
-		const command = getSelfUpdateCommand("@punch/cli", []);
+		const command = getSelfUpdateCommand("@punch-bot/cli", []);
 
 		expect(command?.args).toEqual([
 			"--prefix",
@@ -257,17 +257,17 @@ describe("detectInstallMethod", () => {
 			"-g",
 			"--ignore-scripts",
 			"--min-release-age=0",
-			"@punch/cli",
+			"@punch-bot/cli",
 		]);
 	});
 
 	test("quotes npm self-update display paths", () => {
 		const { prefix } = createNpmPrefixInstall("pi prefix ");
 
-		const command = getSelfUpdateCommand("@punch/cli");
+		const command = getSelfUpdateCommand("@punch-bot/cli");
 
 		expect(command?.display).toBe(
-			`npm --prefix "${prefix}" install -g --ignore-scripts --min-release-age=0 @punch/cli`,
+			`npm --prefix "${prefix}" install -g --ignore-scripts --min-release-age=0 @punch-bot/cli`,
 		);
 	});
 
@@ -277,21 +277,21 @@ describe("detectInstallMethod", () => {
 		setExecPath(`${packageDir}\\dist\\cli.js`);
 
 		expect(detectInstallMethod()).toBe("npm");
-		expect(getUpdateInstruction("@punch/cli")).toBe(
-			"Run: npm install -g --ignore-scripts --min-release-age=0 @punch/cli",
+		expect(getUpdateInstruction("@punch-bot/cli")).toBe(
+			"Run: npm install -g --ignore-scripts --min-release-age=0 @punch-bot/cli",
 		);
 	});
 
 	test("self-updates bun global installs from bun pm bin", () => {
 		createBunGlobalInstall();
 
-		const command = getSelfUpdateCommand("@punch/cli");
+		const command = getSelfUpdateCommand("@punch-bot/cli");
 
 		expect(detectInstallMethod()).toBe("bun");
 		expect(command).toEqual({
 			command: "bun",
-			args: ["install", "-g", "--ignore-scripts", "--minimum-release-age=0", "@punch/cli"],
-			display: "bun install -g --ignore-scripts --minimum-release-age=0 @punch/cli",
+			args: ["install", "-g", "--ignore-scripts", "--minimum-release-age=0", "@punch-bot/cli"],
+			display: "bun install -g --ignore-scripts --minimum-release-age=0 @punch-bot/cli",
 		});
 	});
 
@@ -325,7 +325,7 @@ describe("detectInstallMethod", () => {
 		const temp = mkdtempSync(join(tmpdir(), "pi-pnpm11-"));
 		const binDir = join(temp, "bin");
 		const root = join(temp, "Library", "pnpm", "global", "v11");
-		const packageName = "@punch/cli";
+		const packageName = "@punch-bot/cli";
 		const globalPackageDir = join(root, "11e9a", "node_modules", "@earendil-works", "pi-coding-agent");
 		const storePackageDir = join(
 			temp,
@@ -419,7 +419,7 @@ describe("detectInstallMethod", () => {
 		const { packageDir } = createNpmPrefixInstall();
 		chmodSync(packageDir, 0o500);
 
-		expect(getSelfUpdateCommand("@punch/cli")).toBeUndefined();
-		expect(getSelfUpdateUnavailableInstruction("@punch/cli")).toContain("the install path is not writable");
+		expect(getSelfUpdateCommand("@punch-bot/cli")).toBeUndefined();
+		expect(getSelfUpdateUnavailableInstruction("@punch-bot/cli")).toContain("the install path is not writable");
 	});
 });

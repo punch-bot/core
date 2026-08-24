@@ -1,5 +1,5 @@
-import type { AgentTool, ThinkingLevel } from "@punch/agent";
-import { fauxAssistantMessage, fauxToolCall, type Model, type Usage } from "@punch/ai";
+import type { AgentTool, ThinkingLevel } from "@punch-bot/agent";
+import { fauxAssistantMessage, fauxToolCall, type Model, type Usage } from "@punch-bot/ai";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
 import type { BuildSystemPromptOptions, ExtensionAPI } from "../../src/index.ts";

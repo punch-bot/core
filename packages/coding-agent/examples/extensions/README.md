@@ -142,7 +142,7 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 See [docs/extensions.md](../../docs/extensions.md) for full documentation.
 
 ```typescript
-import type { ExtensionAPI } from "@punch/cli";
+import type { ExtensionAPI } from "@punch-bot/cli";
 import { Type } from "typebox";
 
 export default function (pi: ExtensionAPI) {
@@ -184,7 +184,7 @@ export default function (pi: ExtensionAPI) {
 
 **Use StringEnum for string parameters** (required for Google API compatibility):
 ```typescript
-import { StringEnum } from "@punch/ai";
+import { StringEnum } from "@punch-bot/ai";
 
 // Good
 action: StringEnum(["list", "add"] as const)

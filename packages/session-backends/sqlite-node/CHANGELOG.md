@@ -4,7 +4,7 @@
 
 ### Breaking Changes
 
-- Renamed package from `@earendil-works/pi-session-backend-sqlite-node` to `@punch/sqlite-node`.
+- Renamed package from `@earendil-works/pi-session-backend-sqlite-node` to `@punch-bot/sqlite-node`.
 
 ## [0.84.2] - 2026-08-14
 

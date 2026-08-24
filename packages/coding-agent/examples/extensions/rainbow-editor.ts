@@ -4,7 +4,7 @@
  * Usage: pi --extension ./examples/extensions/rainbow-editor.ts
  */
 
-import { CustomEditor, type ExtensionAPI } from "@punch/cli";
+import { CustomEditor, type ExtensionAPI } from "@punch-bot/cli";
 
 // Base colors (coral → yellow → green → teal → blue → purple → pink)
 const COLORS: [number, number, number][] = [

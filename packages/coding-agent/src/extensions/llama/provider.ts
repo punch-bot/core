@@ -6,8 +6,8 @@ import type {
 	Provider,
 	ProviderStreamOptions,
 	RefreshModelsContext,
-} from "@punch/ai";
-import { stream, streamSimple } from "@punch/ai/compat";
+} from "@punch-bot/ai";
+import { stream, streamSimple } from "@punch-bot/ai/compat";
 import { LlamaClient, type LlamaModelInfo, llamaInferenceUrl, normalizeLlamaServerUrl } from "./client.ts";
 
 export const LLAMA_PROVIDER_ID = "llama.cpp";

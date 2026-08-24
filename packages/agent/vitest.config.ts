@@ -16,10 +16,10 @@ export default defineConfig({
 	},
 	resolve: {
 		alias: [
-			{ find: /^@punch\/telemetry$/, replacement: telemetrySrcIndex },
-			{ find: /^@punch\/agent$/, replacement: agentSrcIndex },
-			{ find: /^@punch\/ai$/, replacement: aiSrcIndex },
-			{ find: /^@punch\/ai\/compat$/, replacement: aiSrcCompat },
+			{ find: /^@punch-bot\/telemetry$/, replacement: telemetrySrcIndex },
+			{ find: /^@punch-bot\/agent$/, replacement: agentSrcIndex },
+			{ find: /^@punch-bot\/ai$/, replacement: aiSrcIndex },
+			{ find: /^@punch-bot\/ai\/compat$/, replacement: aiSrcCompat },
 			{ find: /^@earendil-works\/pi-telemetry$/, replacement: telemetrySrcIndex },
 			{ find: /^@earendil-works\/pi-agent-core$/, replacement: agentSrcIndex },
 			{ find: /^@earendil-works\/pi-ai$/, replacement: aiSrcIndex },

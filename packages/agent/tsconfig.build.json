@@ -3,9 +3,9 @@
 	"compilerOptions": {
 		"outDir": "./dist",
 		"paths": {
-			"@punch/telemetry": ["../telemetry/dist/index.d.ts"],
-			"@punch/ai": ["../ai/dist/index.d.ts"],
-			"@punch/ai/*": ["../ai/dist/*.d.ts", "../ai/dist/providers/*.d.ts"]
+			"@punch-bot/telemetry": ["../telemetry/dist/index.d.ts"],
+			"@punch-bot/ai": ["../ai/dist/index.d.ts"],
+			"@punch-bot/ai/*": ["../ai/dist/*.d.ts", "../ai/dist/providers/*.d.ts"]
 		},
 		"rootDir": "./src"
 	},

@@ -1,4 +1,4 @@
-import type { AgentMessage } from "@punch/agent";
+import type { AgentMessage } from "@punch-bot/agent";
 import { describe, expect, it } from "vitest";
 import { collectEntriesForBranchSummary } from "../../src/harness/compaction/branch-summarization.ts";
 import { InMemorySessionStorage, Session } from "../../src/harness/session/index.ts";

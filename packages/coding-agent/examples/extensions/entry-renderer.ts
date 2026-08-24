@@ -8,8 +8,8 @@
  * Usage: /status-card [message]
  */
 
-import type { ExtensionAPI } from "@punch/cli";
-import { Box, Text } from "@punch/tui";
+import type { ExtensionAPI } from "@punch-bot/cli";
+import { Box, Text } from "@punch-bot/tui";
 
 interface StatusCardData {
 	message: string;

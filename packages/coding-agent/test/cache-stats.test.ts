@@ -1,4 +1,4 @@
-import type { AssistantMessage } from "@punch/ai";
+import type { AssistantMessage } from "@punch-bot/ai";
 import { describe, expect, it } from "vitest";
 import {
 	collectCacheMisses,

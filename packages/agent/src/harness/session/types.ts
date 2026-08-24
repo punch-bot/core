@@ -1,4 +1,4 @@
-import type { StopReason, Usage } from "@punch/ai";
+import type { StopReason, Usage } from "@punch-bot/ai";
 import "../messages.ts";
 import type { AgentMessage } from "../../types.ts";
 import type { Session } from "./session.ts";

@@ -1,5 +1,5 @@
-import type { ThinkingLevel } from "@punch/agent";
-import { getSupportedThinkingLevels, type Model, type Transport } from "@punch/ai";
+import type { ThinkingLevel } from "@punch-bot/agent";
+import { getSupportedThinkingLevels, type Model, type Transport } from "@punch-bot/ai";
 import {
 	type Component,
 	Container,
@@ -10,7 +10,7 @@ import {
 	SettingsList,
 	Spacer,
 	Text,
-} from "@punch/tui";
+} from "@punch-bot/tui";
 import { formatHttpIdleTimeoutMs, HTTP_IDLE_TIMEOUT_CHOICES } from "../../../core/http-dispatcher.ts";
 import type {
 	DefaultProjectTrust,

@@ -6,7 +6,7 @@ import type {
 	TextContent,
 	ThinkingBudgets,
 	Transport,
-} from "@punch/ai";
+} from "@punch-bot/ai";
 import { runAgentLoop, runAgentLoopContinue } from "./agent-loop.ts";
 import { getDefaultStreamFn } from "./stream-fn.ts";
 import type {

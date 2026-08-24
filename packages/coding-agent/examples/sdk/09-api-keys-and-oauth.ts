@@ -4,7 +4,7 @@
  * Configure provider auth through ModelRuntime.
  */
 
-import { createAgentSession, ModelRuntime, SessionManager } from "@punch/cli";
+import { createAgentSession, ModelRuntime, SessionManager } from "@punch-bot/cli";
 
 const modelRuntime = await ModelRuntime.create();
 const { session: defaultAuthSession } = await createAgentSession({

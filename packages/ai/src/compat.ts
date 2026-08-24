@@ -4,8 +4,8 @@
  * the api-registry, generated catalog reads (`getModel`/`getModels`/
  * `getProviders`), per-API lazy stream wrappers, and image generation.
  *
- * Existing apps switch imports from "@punch/ai" to
- * "@punch/ai/compat" unchanged; new code uses `createModels()`
+ * Existing apps switch imports from "@punch-bot/ai" to
+ * "@punch-bot/ai/compat" unchanged; new code uses `createModels()`
  * and the provider factories. This module is deleted with the coding-agent
  * ModelManager migration.
  */
@@ -59,13 +59,13 @@ import type {
 	StreamOptions,
 } from "./types.ts";
 
-/** @deprecated Static catalog read. Use `getBuiltinModel` from "@punch/ai/providers/all" or `Models.getModel()`. */
+/** @deprecated Static catalog read. Use `getBuiltinModel` from "@punch-bot/ai/providers/all" or `Models.getModel()`. */
 export const getModel = getBuiltinModel;
 
-/** @deprecated Static catalog read. Use `getBuiltinModels` from "@punch/ai/providers/all" or `Models.getModels()`. */
+/** @deprecated Static catalog read. Use `getBuiltinModels` from "@punch-bot/ai/providers/all" or `Models.getModels()`. */
 export const getModels = getBuiltinModels;
 
-/** @deprecated Static catalog read. Use `getBuiltinProviders` from "@punch/ai/providers/all" or `Models.getProviders()`. */
+/** @deprecated Static catalog read. Use `getBuiltinProviders` from "@punch-bot/ai/providers/all" or `Models.getProviders()`. */
 export const getProviders = getBuiltinProviders;
 
 export type ApiStreamFunction = (

@@ -4,7 +4,7 @@
  * Shows how to select a specific model and thinking level.
  */
 
-import { createAgentSession, ModelRuntime } from "@punch/cli";
+import { createAgentSession, ModelRuntime } from "@punch-bot/cli";
 
 const modelRuntime = await ModelRuntime.create();
 

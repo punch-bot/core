@@ -4,7 +4,7 @@
 
 ### Breaking Changes
 
-- Renamed package from `@earendil-works/pi-client` to `@punch/client`.
+- Renamed package from `@earendil-works/pi-client` to `@punch-bot/client`.
 
 ## [0.84.2] - 2026-08-14
 

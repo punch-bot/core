@@ -1,4 +1,4 @@
-import type { TelemetryContext } from "@punch/telemetry";
+import type { TelemetryContext } from "@punch-bot/telemetry";
 import type { AnthropicOptions } from "./api/anthropic-messages.ts";
 import type { AzureOpenAIResponsesOptions } from "./api/azure-openai-responses.ts";
 import type { BedrockOptions } from "./api/bedrock-converse-stream.ts";

@@ -1,4 +1,4 @@
-import type { TUI } from "@punch/tui";
+import type { TUI } from "@punch-bot/tui";
 import { describe, expect, it, vi } from "vitest";
 import { createInteractiveTuiReference } from "../../../src/modes/interactive/interactive-mode.ts";
 

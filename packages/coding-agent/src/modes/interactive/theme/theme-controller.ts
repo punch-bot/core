@@ -1,4 +1,4 @@
-import type { TUI } from "@punch/tui";
+import type { TUI } from "@punch-bot/tui";
 import type { SettingsManager } from "../../../core/settings-manager.ts";
 import {
 	detectTerminalBackgroundFromEnv,

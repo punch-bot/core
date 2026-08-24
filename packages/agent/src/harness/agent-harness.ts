@@ -9,7 +9,7 @@ import type {
 	RetryPolicy,
 	SimpleStreamOptions,
 	Usage,
-} from "@punch/ai";
+} from "@punch-bot/ai";
 import type { AgentMessage, AgentTool, QueueMode, ThinkingLevel } from "../types.ts";
 import type { CompactionSettings } from "./compaction/compaction.ts";
 import { type Result as ResultValue, TaggedError } from "./result.ts";

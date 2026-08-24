@@ -4,8 +4,8 @@
  * Escape in editor returns to options, Escape in options cancels
  */
 
-import type { ExtensionAPI } from "@punch/cli";
-import { Editor, type EditorTheme, Key, matchesKey, Text, visibleWidth, wrapTextWithAnsi } from "@punch/tui";
+import type { ExtensionAPI } from "@punch-bot/cli";
+import { Editor, type EditorTheme, Key, matchesKey, Text, visibleWidth, wrapTextWithAnsi } from "@punch-bot/tui";
 import { Type } from "typebox";
 
 interface OptionWithDesc {

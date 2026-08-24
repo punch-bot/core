@@ -15,8 +15,8 @@ export default mergeConfig(
 		},
 		resolve: {
 			alias: [
-				{ find: /^@punch\/coding-agent$/, replacement: workspaceSourcePaths.codingAgentIndex },
-				{ find: /^@punch\/cli$/, replacement: workspaceSourcePaths.codingAgentIndex },
+				{ find: /^@punch-bot\/coding-agent$/, replacement: workspaceSourcePaths.codingAgentIndex },
+				{ find: /^@punch-bot\/cli$/, replacement: workspaceSourcePaths.codingAgentIndex },
 				{ find: /^@earendil-works\/pi-coding-agent$/, replacement: workspaceSourcePaths.codingAgentIndex },
 			],
 		},
