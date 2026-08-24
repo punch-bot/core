@@ -11,7 +11,7 @@ import {
 	getAgentDir,
 	type PromptTemplate,
 	SessionManager,
-} from "@earendil-works/pi-coding-agent";
+} from "@punch/cli";
 
 // Define custom templates
 const deployTemplate: PromptTemplate = {

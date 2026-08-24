@@ -12,6 +12,9 @@ export default defineConfig({
 		silent: "passed-only",
 	},
 	resolve: {
-		alias: [{ find: /^@earendil-works\/pi-telemetry$/, replacement: telemetrySrcIndex }],
+		alias: [
+			{ find: /^@punch\/telemetry$/, replacement: telemetrySrcIndex },
+			{ find: /^@earendil-works\/pi-telemetry$/, replacement: telemetrySrcIndex },
+		],
 	},
 });

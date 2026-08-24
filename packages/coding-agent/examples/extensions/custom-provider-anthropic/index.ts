@@ -42,8 +42,8 @@ import {
 	type Tool,
 	type ToolCall,
 	type ToolResultMessage,
-} from "@earendil-works/pi-ai";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+} from "@punch/ai";
+import type { ExtensionAPI } from "@punch/cli";
 
 // =============================================================================
 // OAuth implementation adapted for the legacy extension compatibility interface.

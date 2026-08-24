@@ -23,6 +23,14 @@ export default mergeConfig(
 		resolve: {
 			alias: [
 				{
+					find: /^@punch\/client$/,
+					replacement: fileURLToPath(new URL("../client/src/index.ts", import.meta.url)),
+				},
+				{
+					find: /^@punch\/protocol$/,
+					replacement: fileURLToPath(new URL("../protocol/src/index.ts", import.meta.url)),
+				},
+				{
 					find: /^@earendil-works\/pi-client$/,
 					replacement: fileURLToPath(new URL("../client/src/index.ts", import.meta.url)),
 				},

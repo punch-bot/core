@@ -9,7 +9,7 @@ import {
 	type ServerEvent,
 	type ServerSnapshot,
 	type SessionMetadata,
-} from "@earendil-works/pi-protocol";
+} from "@punch/protocol";
 import { Connection } from "./connection.ts";
 import {
 	PiClientDisposedError,

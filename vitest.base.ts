@@ -16,6 +16,17 @@ export const workspaceSourcePaths = {
 export default defineConfig({
 	resolve: {
 		alias: [
+			{ find: /^@punch\/telemetry$/, replacement: workspaceSourcePaths.telemetryIndex },
+			{ find: /^@punch\/telemetry\/testing$/, replacement: workspaceSourcePaths.telemetryTesting },
+			{ find: /^@punch\/ai$/, replacement: workspaceSourcePaths.aiIndex },
+			{ find: /^@punch\/ai\/compat$/, replacement: workspaceSourcePaths.aiCompat },
+			{ find: /^@punch\/ai\/oauth$/, replacement: workspaceSourcePaths.aiOAuth },
+			{
+				find: /^@punch\/ai\/providers\/(.+)$/,
+				replacement: `${workspaceSourcePaths.aiProviders}/$1.ts`,
+			},
+			{ find: /^@punch\/agent$/, replacement: workspaceSourcePaths.agentIndex },
+			{ find: /^@punch\/tui$/, replacement: workspaceSourcePaths.tuiIndex },
 			{ find: /^@earendil-works\/pi-telemetry$/, replacement: workspaceSourcePaths.telemetryIndex },
 			{ find: /^@earendil-works\/pi-telemetry\/testing$/, replacement: workspaceSourcePaths.telemetryTesting },
 			{ find: /^@earendil-works\/pi-ai$/, replacement: workspaceSourcePaths.aiIndex },

@@ -1,12 +1,12 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
+import { fauxAssistantMessage, fauxToolCall } from "@punch/ai";
 import { describe, expect, it, vi } from "vitest";
 import subagentExtension from "../../../examples/extensions/subagent/index.ts";
 import type { ExtensionUIContext } from "../../../src/core/extensions/index.ts";
 import { createHarness, getMessageText } from "../harness.ts";
 
-vi.mock("@earendil-works/pi-coding-agent", () => ({
+vi.mock("@punch/cli", () => ({
 	CONFIG_DIR_NAME: ".pi",
 	getAgentDir: () => "/missing-user-agent-dir",
 	getMarkdownTheme: () => ({}),

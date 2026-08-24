@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { ThinkingLevel } from "@punch/agent";
 import {
 	type EditorTheme,
 	getCapabilities,
@@ -8,7 +8,7 @@ import {
 	type RgbColor,
 	type SelectListTheme,
 	type SettingsListTheme,
-} from "@earendil-works/pi-tui";
+} from "@punch/tui";
 import chalk from "chalk";
 import { type Static, Type } from "typebox";
 import { Compile } from "typebox/compile";
@@ -839,14 +839,16 @@ export function getDefaultTheme(): string {
 // ============================================================================
 
 // Use globalThis to share theme across module loaders (tsx + jiti in dev mode)
-const THEME_KEY = Symbol.for("@earendil-works/pi-coding-agent:theme");
+const THEME_KEY = Symbol.for("@punch/cli:theme");
+const THEME_KEY_LEGACY = Symbol.for("@earendil-works/pi-coding-agent:theme");
 const THEME_KEY_OLD = Symbol.for("@mariozechner/pi-coding-agent:theme");
 
 // Export theme as a getter that reads from globalThis
 // This ensures all module instances (tsx, jiti) see the same theme
 export const theme: Theme = new Proxy({} as Theme, {
 	get(_target, prop) {
-		const t = (globalThis as Record<symbol, Theme>)[THEME_KEY];
+		const globals = globalThis as Record<symbol, Theme>;
+		const t = globals[THEME_KEY] ?? globals[THEME_KEY_LEGACY] ?? globals[THEME_KEY_OLD];
 		if (!t) throw new Error("Theme not initialized. Call initTheme() first.");
 		return (t as unknown as Record<string | symbol, unknown>)[prop];
 	},
@@ -854,6 +856,7 @@ export const theme: Theme = new Proxy({} as Theme, {
 
 function setGlobalTheme(t: Theme): void {
 	(globalThis as Record<symbol, Theme>)[THEME_KEY] = t;
+	(globalThis as Record<symbol, Theme>)[THEME_KEY_LEGACY] = t;
 	(globalThis as Record<symbol, Theme>)[THEME_KEY_OLD] = t;
 }
 

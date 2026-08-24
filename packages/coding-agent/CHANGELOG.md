@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Renamed package from `@earendil-works/pi-coding-agent` to `@punch/cli`.
+
 ### Added
 
 - Added transcript usage notices for compaction and branch summaries when cache miss notices are enabled.

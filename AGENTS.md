@@ -1,3 +1,22 @@
+# Punch
+
+This is [`punch-bot/core`](https://github.com/punch-bot/core), a fork of the [pi agent harness](https://github.com/earendil-works/pi). npm packages are `@punch/*`. The CLI binary, config dir, and most env vars are still `pi` / `.pi` / `PI_*` until a later rebrand.
+
+Directory names did not change with the npm rename. `@punch/cli` lives in `packages/coding-agent`.
+
+| npm name | Directory |
+|----------|-----------|
+| `@punch/cli` | `packages/coding-agent` |
+| `@punch/agent` | `packages/agent` |
+| `@punch/ai` | `packages/ai` |
+| `@punch/tui` | `packages/tui` |
+| `@punch/telemetry` | `packages/telemetry` |
+| `@punch/protocol` | `packages/protocol` |
+| `@punch/client` | `packages/client` |
+| `@punch/server` | `packages/server` |
+| `@punch/sqlite-node` | `packages/session-backends/sqlite-node` |
+| `@punch/evals` | `packages/evals` |
+
 # Development Rules
 
 ## Conversational Style
@@ -50,7 +69,7 @@
 
 ## Git
 
-Multiple pi sessions may be running in this cwd at the same time, each modifying different files. Git operations that touch unstaged, staged, or untracked files outside your own changes will stomp on other sessions' work. Follow these rules:
+Multiple agent sessions may be running in this cwd at the same time, each modifying different files. Git operations that touch unstaged, staged, or untracked files outside your own changes will stomp on other sessions' work. Follow these rules:
 
 Committing:
 
@@ -94,7 +113,7 @@ When closing issues via commit:
 
 - Include `fixes #<number>` or `closes #<number>` in the message so merging auto-closes the issue. For multiple issues, repeat the keyword per issue (`closes #1, closes #2`); a shared keyword (`closes #1, #2`) only closes the first.
 
-## Testing pi Interactive Mode with tmux
+## Testing Interactive Mode with tmux
 
 Run the TUI in a controlled terminal (from the repo root):
 
@@ -121,8 +140,8 @@ Rules:
 
 Attribution:
 
-- Internal (from issues): `Fixed foo bar ([#123](https://github.com/earendil-works/pi-mono/issues/123))`
-- External contributions: `Added feature X ([#456](https://github.com/earendil-works/pi-mono/pull/456) by [@username](https://github.com/username))`
+- Internal (from issues): `Fixed foo bar ([#123](https://github.com/punch-bot/core/issues/123))`
+- External contributions: `Added feature X ([#456](https://github.com/punch-bot/core/pull/456) by [@username](https://github.com/username))`
 
 ## Releasing
 

@@ -6,15 +6,15 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const packages = [
-	{ directory: "packages/telemetry", name: "@earendil-works/pi-telemetry" },
-	{ directory: "packages/ai", name: "@earendil-works/pi-ai" },
-	{ directory: "packages/tui", name: "@earendil-works/pi-tui" },
-	{ directory: "packages/agent", name: "@earendil-works/pi-agent-core" },
-	{ directory: "packages/protocol", name: "@earendil-works/pi-protocol" },
-	{ directory: "packages/client", name: "@earendil-works/pi-client" },
-	{ directory: "packages/session-backends/sqlite-node", name: "@earendil-works/pi-session-backend-sqlite-node" },
-	{ directory: "packages/server", name: "@earendil-works/pi-server" },
-	{ directory: "packages/coding-agent", name: "@earendil-works/pi-coding-agent" },
+	{ directory: "packages/telemetry", name: "@punch/telemetry" },
+	{ directory: "packages/ai", name: "@punch/ai" },
+	{ directory: "packages/tui", name: "@punch/tui" },
+	{ directory: "packages/agent", name: "@punch/agent" },
+	{ directory: "packages/protocol", name: "@punch/protocol" },
+	{ directory: "packages/client", name: "@punch/client" },
+	{ directory: "packages/session-backends/sqlite-node", name: "@punch/sqlite-node" },
+	{ directory: "packages/server", name: "@punch/server" },
+	{ directory: "packages/coding-agent", name: "@punch/cli" },
 ];
 
 function printUsage() {
@@ -205,7 +205,7 @@ const options = parseArgs();
 const repoRoot = process.cwd();
 const rootPackageJson = readPackageJson(repoRoot);
 
-if (rootPackageJson.name !== "pi-monorepo") {
+if (rootPackageJson.name !== "punch-monorepo") {
 	throw new Error("Run this script from the repository root");
 }
 

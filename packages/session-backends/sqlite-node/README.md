@@ -1,6 +1,6 @@
-# @earendil-works/pi-session-backend-sqlite-node
+# @punch/sqlite-node
 
-Node sqlite session backend for `@earendil-works/pi-agent-core` sessions. Provides the
+Node sqlite session backend for `@punch/agent` sessions. Provides the
 `node:sqlite` adapter (`SqliteDatabase` implementation), SQLite session repository,
 migrations, materialized views, and optional FTS search.
 

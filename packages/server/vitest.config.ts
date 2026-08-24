@@ -9,6 +9,7 @@ export default defineConfig({
 	},
 	resolve: {
 		alias: {
+			"@punch/protocol": fileURLToPath(new URL("../protocol/src/index.ts", import.meta.url)),
 			"@earendil-works/pi-protocol": fileURLToPath(new URL("../protocol/src/index.ts", import.meta.url)),
 		},
 	},
