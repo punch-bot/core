@@ -17,7 +17,8 @@ import { DynamicBorder } from "./dynamic-border.ts";
 const QUESTION_SELECT_LIST_LAYOUT: SelectListLayoutOptions = { minPrimaryColumnWidth: 12, maxPrimaryColumnWidth: 48 };
 
 const OTHER_VALUE = "__other__";
-const DONE_VALUE = "__done__";
+
+let doneSeq = 0;
 
 export class QuestionSelectorComponent extends Container implements Focusable {
 	private searchInput: Input;
@@ -27,6 +28,7 @@ export class QuestionSelectorComponent extends Container implements Focusable {
 	private onAnswer: (answer: string) => void;
 	private onCancel: () => void;
 	private multi = false;
+	private doneValue: string;
 	private selected: string[] = [];
 	private customInputMode = false;
 	private _focused = false;
@@ -45,9 +47,10 @@ export class QuestionSelectorComponent extends Container implements Focusable {
 		this.onAnswer = onAnswer;
 		this.onCancel = onCancel;
 		this.multi = question.multi;
+		this.doneValue = `__done__${++doneSeq}`;
 		const items = question.options.map((option) => ({ value: option, label: option }));
 		if (this.multi && items.length > 0) {
-			items.push({ value: DONE_VALUE, label: "Done" });
+			items.push({ value: this.doneValue, label: "Done" });
 		}
 		if (question.input.length > 0) {
 			items.push({ value: OTHER_VALUE, label: "Other…" });
@@ -114,7 +117,7 @@ export class QuestionSelectorComponent extends Container implements Focusable {
 				this._focused = true;
 				return;
 			}
-			if (item.value === DONE_VALUE) {
+			if (item.value === this.doneValue) {
 				if (this.selected.length > 0) {
 					this.onAnswer(this.selected.join(", "));
 				}

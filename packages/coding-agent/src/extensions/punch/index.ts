@@ -4,7 +4,7 @@ import { StringEnum } from "@punch-bot/ai";
 import { Type } from "typebox";
 
 import type { ExtensionAPI } from "../../core/extensions/types.ts";
-import { getAuthHeader } from "./auth.ts";
+import { getAuthHeader, isAuthConfigured } from "./auth.ts";
 import { startScheduler } from "./routines.ts";
 import { startPunchServer } from "./server.ts";
 
@@ -68,8 +68,8 @@ export default function punchExtension(pi: ExtensionAPI): void {
 				break;
 		}
 	});
-	if (!process.env.PI_SERVER_PASSWORD && !process.env.OPENCODE_SERVER_PASSWORD) {
-		console.warn("punch server disabled: PI_SERVER_PASSWORD not set");
+	if (!isAuthConfigured()) {
+		console.warn("punch server disabled: no auth credentials configured");
 	}
 	startPunchServer();
 

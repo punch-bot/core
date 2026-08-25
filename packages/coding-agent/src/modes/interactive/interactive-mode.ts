@@ -3318,11 +3318,11 @@ export class InteractiveMode {
 										question,
 										(answer) => {
 											done();
-											showQuestion(index + 1);
 											void (async () => {
 												try {
 													await this.session.waitForIdle();
 													await this.session.prompt(answer);
+													showQuestion(index + 1);
 												} catch (err) {
 													console.error(err);
 												}

@@ -54,6 +54,13 @@ export function mcpApiKeyEnvVarCandidates(serverName: string): string[] {
 	return candidates;
 }
 
+function uniqueLegacyMcpApiKeyEnvVar(serverName: string): string | undefined {
+	const upper = (serverName || "").toUpperCase();
+	const safe = upper.replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+	if (upper !== safe) return undefined;
+	return legacyMcpApiKeyEnvVar(serverName);
+}
+
 function splitCommandString(input: string): string[] {
 	const parts: string[] = [];
 	let current = "";
@@ -231,13 +238,16 @@ function stripCredentialHeaders(headers: Record<string, string>): Record<string,
 
 export function applyApiKeyAuthToAdapter(out: McpAdapterEntry, entry: McpRegistryEntry, serverName: string): void {
 	if (!usesApiKeyAuth(entry)) return;
+	const legacy = uniqueLegacyMcpApiKeyEnvVar(serverName);
 	const candidates = entry.apiKeyEnv
 		? [entry.apiKeyEnv]
-		: mcpApiKeyEnvVarCandidates(serverName).filter((v) => process.env[v] !== undefined && process.env[v] !== "");
+		: [mcpApiKeyEnvVar(serverName), legacy].filter(
+				(v): v is string => v !== undefined && process.env[v] !== undefined && process.env[v] !== "",
+			);
 	const envVar = candidates[0] ?? mcpApiKeyEnvVar(serverName);
 	const ref = `\${${envVar}}`;
 	const apiKeyHeader = entry.apiKeyHeader;
-	if (apiKeyHeader && apiKeyHeader.toLowerCase() !== "authorization") {
+	if (apiKeyHeader && apiKeyHeader.toLowerCase() !== "authorization" && out.url) {
 		const stripped = out.headers ? stripCredentialHeaders(out.headers) : {};
 		out.headers = { ...stripped, [apiKeyHeader]: ref };
 		return;

@@ -94,16 +94,35 @@ function safeWorkspace(p: unknown): string {
 	if (!resolved.startsWith(root + path.sep) || resolved === root) {
 		throw new Error("Workspace must be an absolute path under the workspace root.");
 	}
+	let realRoot: string;
 	try {
-		const realResolved = realpathSync(resolved);
-		const realRoot = realpathSync(root);
-		if (!realResolved.startsWith(realRoot + path.sep)) {
-			throw new Error("Workspace must be an absolute path under the workspace root.");
-		}
+		realRoot = realpathSync(root);
 	} catch {
-		throw new Error("Workspace must be an absolute path under the workspace root.");
+		return resolved;
 	}
-	return resolved;
+	let existing = resolved;
+	while (true) {
+		let realExisting: string | null = null;
+		try {
+			realExisting = realpathSync(existing);
+		} catch {}
+		if (realExisting !== null) {
+			if (realExisting !== realRoot && !realExisting.startsWith(realRoot + path.sep)) {
+				throw new Error("Workspace must be an absolute path under the workspace root.");
+			}
+			const suffix = resolved.slice(existing.length);
+			const fullReal = `${realExisting}${suffix}`;
+			if (!fullReal.startsWith(realRoot + path.sep)) {
+				throw new Error("Workspace must be an absolute path under the workspace root.");
+			}
+			return resolved;
+		}
+		const parent = path.dirname(existing);
+		if (parent === existing) {
+			return resolved;
+		}
+		existing = parent;
+	}
 }
 
 function git(args: string[], cwd?: string): string {

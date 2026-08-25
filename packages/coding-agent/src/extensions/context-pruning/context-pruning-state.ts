@@ -192,16 +192,16 @@ export function recompressBlock(
 	);
 	const allMessageIds: string[] = [];
 	const seenIds = new Set<string>();
-	for (const block of parents) {
-		for (const id of block.messageIds) {
-			if (seenIds.has(id)) throw new Error(`parent blocks overlap on message id ${id}`);
-			seenIds.add(id);
-		}
-	}
 	let sourceCharacters = 0;
 	for (const block of parents) {
-		allMessageIds.push(...block.messageIds);
-		sourceCharacters += block.sourceCharacters || 0;
+		let added = false;
+		for (const id of block.messageIds) {
+			if (seenIds.has(id)) continue;
+			seenIds.add(id);
+			allMessageIds.push(id);
+			added = true;
+		}
+		if (added) sourceCharacters += block.sourceCharacters || 0;
 	}
 	if (!isValidSummary(summary, sourceCharacters)) {
 		throw new Error(

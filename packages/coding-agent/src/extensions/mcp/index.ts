@@ -7,12 +7,14 @@ import { type McpAdapterEntry, type McpRegistry, punchRegistryToMcpServers } fro
 import { type McpTransport, StdioMcpTransport, StreamableHttpMcpTransport } from "./mcp-transport.ts";
 
 const clients: McpClient[] = [];
+let shuttingDown = false;
 
 function trackClient(client: McpClient): void {
 	clients.push(client);
 }
 
 function closeClients(): void {
+	shuttingDown = true;
 	for (const client of clients) {
 		void client.close();
 	}
@@ -60,6 +62,10 @@ async function registerMcpServer(pi: ExtensionAPI, name: string, entry: McpAdapt
 	let tools: Awaited<ReturnType<McpClient["listTools"]>>;
 	try {
 		await client.start();
+		if (shuttingDown) {
+			void client.close();
+			return;
+		}
 		tools = await client.listTools();
 	} catch (err) {
 		pi.sendUserMessage(`mcp: failed to connect to server "${name}": ${(err as Error).message}`);
@@ -127,6 +133,7 @@ export default function mcpExtension(pi: ExtensionAPI): void {
 	const configPath = process.env.PI_MCP_FILE || path.join(process.cwd(), ".pi", "mcp.json");
 	void readFile(configPath, "utf8")
 		.then((raw) => {
+			if (shuttingDown) return;
 			const registry = JSON.parse(raw) as McpRegistry;
 			const servers = punchRegistryToMcpServers(registry);
 			for (const [name, entry] of Object.entries(servers)) {
@@ -139,5 +146,8 @@ export default function mcpExtension(pi: ExtensionAPI): void {
 				pi.sendUserMessage(`mcp: failed to load ${configPath}: ${(err as Error).message}`);
 			}
 		});
-	pi.on("session_shutdown", closeClients);
+	pi.on("session_shutdown", () => {
+		shuttingDown = true;
+		closeClients();
+	});
 }

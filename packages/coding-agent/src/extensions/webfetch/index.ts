@@ -1,5 +1,8 @@
+import type { LookupAddress, LookupOptions } from "node:dns";
 import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
 import { Type } from "typebox";
+import { Agent, request } from "undici";
 import type { ExtensionAPI } from "../../core/extensions/types.ts";
 
 function stripHtml(html: string): string {
@@ -17,17 +20,38 @@ function stripHtml(html: string): string {
 		.trim();
 }
 
+function expandIpv6(address: string): string {
+	const withoutZone = address.split("%")[0];
+	if (!withoutZone.includes("::")) return withoutZone;
+	const [head, tail] = withoutZone.split("::");
+	const headParts = head ? head.split(":") : [];
+	const tailParts = tail ? tail.split(":") : [];
+	const missing = Math.max(0, 8 - headParts.length - tailParts.length);
+	return [...headParts, ...Array(missing).fill("0"), ...tailParts].join(":");
+}
+
 function isBlockedIp(ip: string): boolean {
 	const v = ip.toLowerCase();
 	if (v === "::1" || v === "::" || v === "0.0.0.0") return true;
 	if (v.startsWith("::ffff:")) return isBlockedIp(v.slice(7));
-	if (v.startsWith("fc") || v.startsWith("fd")) return true;
-	if (v.startsWith("fe80")) return true;
+	if (v.includes(":")) {
+		const first = Number.parseInt(expandIpv6(v).split(":")[0], 16);
+		if (Number.isNaN(first)) return false;
+		if (first >= 0xfc00 && first <= 0xfdff) return true;
+		if (first >= 0xfe80 && first <= 0xfebf) return true;
+		return false;
+	}
 	if (/^127\./.test(v) || /^169\.254\./.test(v) || /^10\./.test(v) || /^192\.168\./.test(v)) return true;
 	return /^172\.(1[6-9]|2\d|3[01])\./.test(v);
 }
 
-async function assertSafeWebUrl(value: string): Promise<URL> {
+interface SafeTarget {
+	url: URL;
+	hostname: string;
+	addresses: string[];
+}
+
+async function resolveSafe(value: string): Promise<SafeTarget> {
 	let parsed: URL;
 	try {
 		parsed = new URL(value);
@@ -37,52 +61,95 @@ async function assertSafeWebUrl(value: string): Promise<URL> {
 	if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
 		throw new Error("Only http and https URLs are supported");
 	}
-	const hostname = parsed.hostname.toLowerCase();
+	let hostname = parsed.hostname.toLowerCase();
+	if (hostname.startsWith("[") && hostname.endsWith("]")) hostname = hostname.slice(1, -1);
 	if (hostname === "localhost") {
 		throw new Error("URLs pointing at loopback addresses are not allowed");
 	}
 	let addresses: string[];
-	try {
-		addresses = (await lookup(hostname, { all: true })).map((entry) => entry.address);
-	} catch {
-		throw new Error(`Could not resolve host: ${hostname}`);
+	const literalFamily = isIP(hostname);
+	if (literalFamily !== 0) {
+		addresses = [hostname];
+	} else {
+		try {
+			addresses = (await lookup(hostname, { all: true })).map((entry) => entry.address);
+		} catch {
+			throw new Error(`Could not resolve host: ${hostname}`);
+		}
 	}
 	for (const address of addresses) {
 		if (isBlockedIp(address)) {
 			throw new Error("URLs pointing at loopback, private, or link-local addresses are not allowed");
 		}
 	}
-	return parsed;
+	return { url: parsed, hostname, addresses };
+}
+
+function pinnedAgent(target: SafeTarget): Agent {
+	return new Agent({
+		connect: {
+			lookup: (
+				host: string,
+				options: LookupOptions,
+				callback: (err: NodeJS.ErrnoException | null, address: string | LookupAddress[], family?: number) => void,
+			) => {
+				if (host !== target.hostname) {
+					callback(new Error(`unexpected host ${host}`), []);
+					return;
+				}
+				const entries: LookupAddress[] = target.addresses.map((address) => ({
+					address,
+					family: isIP(address) === 6 ? 6 : 4,
+				}));
+				if (options.all) {
+					callback(null, entries);
+					return;
+				}
+				const first = entries[0];
+				callback(null, first.address, first.family);
+			},
+		},
+	});
 }
 
 const MAX_REDIRECTS = 5;
 
-async function fetchText(url: string, maxChars: number): Promise<{ text: string; contentType: string }> {
+async function fetchText(url: string, rawLimit: number): Promise<{ text: string; contentType: string }> {
 	let current = url;
 	for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
-		const target = await assertSafeWebUrl(current);
-		const res = await fetch(target.toString(), { signal: AbortSignal.timeout(15_000), redirect: "manual" });
-		if (res.status >= 300 && res.status < 400) {
-			const location = res.headers.get("location");
-			if (!location) throw new Error(`HTTP ${res.status} with no redirect location`);
+		const target = await resolveSafe(current);
+		const agent = pinnedAgent(target);
+		let statusCode: number;
+		let headers: Record<string, string | string[] | undefined>;
+		let stream: NodeJS.ReadableStream;
+		try {
+			const res = await request(target.url.toString(), {
+				dispatcher: agent,
+				method: "GET",
+				signal: AbortSignal.timeout(15_000),
+			});
+			statusCode = res.statusCode;
+			headers = res.headers;
+			stream = res.body;
+		} finally {
+			void agent.close();
+		}
+		const location = headers.location;
+		if (statusCode >= 300 && statusCode < 400) {
+			if (!location) throw new Error(`HTTP ${statusCode} with no redirect location`);
 			if (redirects === MAX_REDIRECTS) throw new Error("Too many redirects");
-			current = new URL(location, target).toString();
+			current = new URL(location, target.url).toString();
 			continue;
 		}
-		if (!res.ok) throw new Error(`HTTP ${res.status}`);
-		const contentType = res.headers.get("content-type") || "";
-		const reader = res.body?.getReader();
-		if (!reader) return { text: "", contentType };
+		if (statusCode < 200 || statusCode >= 300) throw new Error(`HTTP ${statusCode}`);
+		const contentType = String(headers["content-type"] ?? "");
 		const decoder = new TextDecoder();
-		let body = "";
-		for (;;) {
-			const { done, value } = await reader.read();
-			if (done) break;
-			body += decoder.decode(value, { stream: true });
-			if (body.length >= maxChars) break;
+		let text = "";
+		for await (const chunk of stream) {
+			text += decoder.decode(chunk as Uint8Array, { stream: true });
+			if (text.length >= rawLimit) break;
 		}
-		await reader.cancel().catch(() => {});
-		return { text: body, contentType };
+		return { text, contentType };
 	}
 	throw new Error("Too many redirects");
 }
@@ -100,8 +167,9 @@ export default function webfetchExtension(pi: ExtensionAPI): void {
 		async execute(_toolCallId, args) {
 			const url = String(args.url);
 			const maxChars = Math.max(1, Math.floor(Number(args.maxChars) || 15000));
+			const rawLimit = Math.min(Math.max(maxChars * 8, 64 * 1024), 4 * 1024 * 1024);
 			try {
-				const { text, contentType } = await fetchText(url, maxChars);
+				const { text, contentType } = await fetchText(url, rawLimit);
 				const clean = contentType.includes("text/html") ? stripHtml(text) : text;
 				return { content: [{ type: "text" as const, text: clean.slice(0, maxChars) }], details: {} };
 			} catch (err) {
@@ -121,7 +189,7 @@ export default function webfetchExtension(pi: ExtensionAPI): void {
 					await guarded.route("**/*", async (route) => {
 						const reqUrl = (route as { request(): { url(): string } }).request().url();
 						try {
-							await assertSafeWebUrl(reqUrl);
+							await resolveSafe(reqUrl);
 							await (route as { continue(): Promise<void> }).continue();
 						} catch {
 							await (route as { abort(): Promise<void> }).abort();
