@@ -66,6 +66,7 @@ import {
 	detectCacheMiss,
 } from "../../core/cache-stats.ts";
 import { DEFAULT_THINKING_LEVEL, THINKING_LEVEL_OPTIONS } from "../../core/defaults.ts";
+import { deliveryFromMessage } from "../../core/delivery.ts";
 import type {
 	AutocompleteProviderFactory,
 	EditorFactory,
@@ -135,6 +136,7 @@ import {
 	formatAuthSelectorProviderType,
 	OAuthSelectorComponent,
 } from "./components/oauth-selector.ts";
+import { QuestionSelectorComponent } from "./components/question-selector.ts";
 import { ScopedModelsSelectorComponent } from "./components/scoped-models-selector.ts";
 import { SessionSelectorComponent } from "./components/session-selector.ts";
 import { SettingsSelectorComponent } from "./components/settings-selector.ts";
@@ -3306,6 +3308,21 @@ export class InteractiveMode {
 							component.setArgsComplete();
 						}
 						this.maybeShowCacheMissNotice(this.streamingMessage);
+						const delivery = deliveryFromMessage(event.message);
+						if (delivery.questions.length > 0) {
+							const question = delivery.questions[0];
+							this.showSelector((done) => {
+								const selector = new QuestionSelectorComponent(
+									question,
+									(answer) => {
+										done();
+										void this.session.prompt(answer);
+									},
+									() => done(),
+								);
+								return { component: selector, focus: selector };
+							});
+						}
 					}
 					this.streamingComponent = undefined;
 					this.streamingMessage = undefined;

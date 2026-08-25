@@ -28,11 +28,11 @@ export {
 export { type BashExecutorOptions, type BashResult, executeBashWithOperations } from "./bash-executor.ts";
 export type { CompactionResult } from "./compaction/index.ts";
 export {
+	buildEmbedFromJson,
 	type Delivery,
 	type DeliveryAttachment,
 	type DeliveryEmbed,
 	type DeliveryQuestion,
-	buildEmbedFromJson,
 	deliveryFromMessage,
 	extractAttachments,
 	extractEmbeds,
