@@ -9,6 +9,10 @@
 ### Added
 
 - Added transcript usage notices for compaction and branch summaries when cache miss notices are enabled.
+- Added a platform-neutral delivery event to RPC mode that parses `<embed>`, `<question>`, and `<attachment>` tags from assistant messages into structured JSON, plus a `read_file` command for fetching attachment bytes.
+- Added an interactive question prompt to the TUI that renders `<question>` delivery blocks as a selectable list.
+- Added built-in extensions for web search, page fetching, progress reporting, context pruning, headless browser automation, a self-implemented MCP client, and Punch-style collaboration and routine scheduling with an OAuth-gated HTTP backend.
+- Added `playwright`, `chrono-node`, and `cron-parser` dependencies for the new browser, routines, and collaboration extensions.
 
 ### Changed
 
