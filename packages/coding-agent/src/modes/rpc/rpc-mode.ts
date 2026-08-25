@@ -8,11 +8,18 @@
  * - Commands: JSON objects with `type` field, optional `id` for correlation
  * - Responses: JSON objects with `type: "response"`, `command`, `success`, and optional `data`/`error`
  * - Events: AgentSessionEvent objects streamed as they occur
+ * - Delivery: after each `message_end` event, a `delivery` event is emitted carrying the final
+ *   assistant message parsed into a platform-neutral envelope (plain text, embeds, questions,
+ *   attachments) so clients can render rich content on any platform.
  * - Extension UI: Extension UI requests are emitted, client responds with extension_ui_response
  */
 
 import * as crypto from "node:crypto";
+import * as fs from "node:fs";
+import { tmpdir } from "node:os";
+import * as path from "node:path";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
+import { deliveryFromMessage } from "../../core/delivery.ts";
 import type {
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
@@ -354,6 +361,9 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		unsubscribeBackpressure?.();
 		unsubscribe = session.subscribe((event) => {
 			output(toJsonEvent(event));
+			if (event.type === "message_end") {
+				output({ type: "delivery", delivery: deliveryFromMessage(event.message) });
+			}
 			if (event.type === "agent_settled") {
 				void checkShutdownRequested();
 			}
@@ -582,6 +592,40 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			case "abort_bash": {
 				session.abortBash();
 				return success(id, "abort_bash");
+			}
+
+			case "read_file": {
+				const roots = [session.sessionManager.getCwd(), tmpdir()];
+				const target = path.resolve(command.path);
+				const allowed = roots.some(
+					(root) => target === path.resolve(root) || target.startsWith(path.resolve(root) + path.sep),
+				);
+				if (!allowed) {
+					return error(id, "read_file", "Path is outside the allowed read roots");
+				}
+				let stat: fs.Stats;
+				try {
+					stat = fs.statSync(target);
+				} catch {
+					return error(id, "read_file", "File not found");
+				}
+				if (!stat.isFile()) {
+					return error(id, "read_file", "Not a file");
+				}
+				const maxBytes = command.maxBytes ?? 1024 * 1024;
+				const buffer = fs.readFileSync(target);
+				const truncated = buffer.length > maxBytes;
+				const data = truncated ? buffer.subarray(0, maxBytes) : buffer;
+				const isBinary = data.subarray(0, 8192).includes(0);
+				if (isBinary) {
+					return success(id, "read_file", {
+						base64: data.toString("base64"),
+						mimeType: "application/octet-stream",
+						size: data.length,
+						truncated,
+					});
+				}
+				return success(id, "read_file", { text: data.toString("utf8"), size: data.length, truncated });
 			}
 
 			// =================================================================
