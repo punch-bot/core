@@ -5,7 +5,41 @@ export interface UnixTransportAddress {
 	readonly path: string;
 }
 
+export interface HttpTransportAddress {
+	readonly transport: "http";
+	readonly url: string;
+	readonly host: string;
+	readonly port: number;
+}
+
 export type TransportAddress = UnixTransportAddress;
+
+export function parseHttpListenAddress(value: string): { address?: HttpTransportAddress; error?: string } {
+	let url: URL;
+	try {
+		url = new URL(value);
+	} catch {
+		return { error: `Invalid A2A listen address "${value}"` };
+	}
+	if (url.protocol !== "http:" && url.protocol !== "https:") {
+		return { error: `Unsupported A2A listen transport "${url.protocol}"` };
+	}
+	if (!url.hostname) {
+		return { error: `Invalid A2A listen address "${value}"` };
+	}
+	const port = url.port ? Number(url.port) : url.protocol === "https:" ? 443 : 80;
+	if (!Number.isInteger(port) || port <= 0 || port > 65_535) {
+		return { error: `Invalid A2A listen port in "${value}"` };
+	}
+	return {
+		address: {
+			transport: "http",
+			url: value.endsWith("/") ? value : `${value}/`,
+			host: url.hostname,
+			port,
+		},
+	};
+}
 
 export function parseTransportAddress(
 	value: string,

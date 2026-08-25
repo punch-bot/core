@@ -13,6 +13,7 @@ export interface AgentConfig {
 	description: string;
 	tools?: string[];
 	model?: string;
+	a2aUrl?: string;
 	systemPrompt: string;
 	source: "user" | "project";
 	filePath: string;
@@ -36,6 +37,7 @@ type AgentFrontmatter = {
 	description?: unknown;
 	tools?: unknown;
 	model?: unknown;
+	a2aUrl?: unknown;
 };
 
 /**
@@ -96,6 +98,7 @@ function loadAgentsFromDir(dir: string, source: "user" | "project"): AgentConfig
 			description: frontmatter.description,
 			tools: parseToolList(frontmatter.tools),
 			model: typeof frontmatter.model === "string" ? frontmatter.model : undefined,
+			a2aUrl: typeof frontmatter.a2aUrl === "string" ? frontmatter.a2aUrl : undefined,
 			systemPrompt: body,
 			source,
 			filePath,

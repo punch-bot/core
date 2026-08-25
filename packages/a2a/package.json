@@ -1,0 +1,59 @@
+{
+	"name": "@punch-bot/a2a",
+	"version": "0.84.2",
+	"description": "Agent2Agent (A2A) protocol integration for punch agents",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"files": [
+		"dist",
+		"README.md",
+		"CHANGELOG.md"
+	],
+	"scripts": {
+		"clean": "shx rm -rf dist",
+		"build": "tsgo -p tsconfig.build.json",
+		"test": "vitest --run",
+		"typecheck": "tsgo -p tsconfig.test.json",
+		"prepublishOnly": "npm run clean && npm run build"
+	},
+	"keywords": [
+		"pi",
+		"punch",
+		"a2a",
+		"agent2agent"
+	],
+	"author": "Earendil Works",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/punch-bot/core.git",
+		"directory": "packages/a2a"
+	},
+	"engines": {
+		"node": ">=22.19.0"
+	},
+	"dependencies": {
+		"@a2a-js/sdk": "1.0.1"
+	},
+	"peerDependencies": {
+		"express": "^5.1.0"
+	},
+	"peerDependenciesMeta": {
+		"express": {
+			"optional": false
+		}
+	},
+	"devDependencies": {
+		"@types/express": "5.0.3",
+		"express": "5.1.0",
+		"shx": "0.4.0",
+		"vitest": "4.1.9"
+	}
+}

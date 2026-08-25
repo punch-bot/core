@@ -16,6 +16,7 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { delegateToA2aAgent } from "@punch-bot/a2a";
 import type { AgentToolResult, ThinkingLevel } from "@punch-bot/agent";
 import type { Message } from "@punch-bot/ai";
 import { StringEnum } from "@punch-bot/ai";
@@ -331,6 +332,21 @@ async function runSingleAgent(
 	};
 
 	try {
+		if (agent.a2aUrl) {
+			const prompt = agent.systemPrompt.trim() ? `${agent.systemPrompt.trim()}\n\nTask: ${task}` : `Task: ${task}`;
+			const result = await delegateToA2aAgent({
+				url: agent.a2aUrl,
+				task: prompt,
+				signal,
+			});
+			currentResult.messages.push({
+				role: "assistant",
+				content: [{ type: "text", text: result.text }],
+			} as Message);
+			emitUpdate();
+			return currentResult;
+		}
+
 		if (agent.systemPrompt.trim()) {
 			const tmp = await writePromptToTempFile(agent.name, agent.systemPrompt);
 			tmpPromptDir = tmp.dir;

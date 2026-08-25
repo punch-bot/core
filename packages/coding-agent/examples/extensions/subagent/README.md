@@ -4,7 +4,7 @@ Delegate tasks to specialized subagents with isolated context windows.
 
 ## Features
 
-- **Isolated context**: Each subagent runs in a separate `pi` process
+- **Isolated context**: Each subagent runs in a separate `pi` process, or over A2A when `a2aUrl` is configured
 - **Streaming output**: See tool calls and progress as they happen
 - **Parallel streaming**: All parallel tasks stream updates simultaneously
 - **Markdown rendering**: Final output rendered with proper formatting (expanded view)
@@ -132,10 +132,13 @@ name: my-agent
 description: What this agent does
 tools: read, grep, find, ls
 model: claude-haiku-4-5
+a2aUrl: http://127.0.0.1:41241
 ---
 
 System prompt for the agent goes here.
 ```
+
+When `a2aUrl` is set, the subagent delegates to an external A2A agent (for example Hermes) instead of spawning a local `pi` subprocess.
 
 When `model` is omitted, the subagent inherits the dispatching session's active model and thinking level.
 

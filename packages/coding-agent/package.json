@@ -44,6 +44,7 @@
 		"prepublishOnly": "npm run clean && npm run build && npm run shrinkwrap"
 	},
 	"dependencies": {
+		"@punch-bot/a2a": "^0.84.2",
 		"@punch-bot/agent": "^0.84.2",
 		"@punch-bot/ai": "^0.84.2",
 		"@punch-bot/client": "^0.84.2",
@@ -53,6 +54,7 @@
 		"chalk": "5.6.2",
 		"cross-spawn": "7.0.6",
 		"diff": "8.0.4",
+		"express": "5.1.0",
 		"grok-mermaid": "0.2.2",
 		"highlight.js": "10.7.3",
 		"hosted-git-info": "9.0.3",
@@ -76,6 +78,7 @@
 		"@mariozechner/clipboard": "0.3.9"
 	},
 	"devDependencies": {
+		"@types/express": "5.0.3",
 		"@types/cross-spawn": "6.0.6",
 		"@types/hosted-git-info": "3.0.5",
 		"@types/node": "22.19.19",

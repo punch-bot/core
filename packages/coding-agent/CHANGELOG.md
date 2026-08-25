@@ -8,7 +8,8 @@
 
 ### Added
 
-- Added transcript usage notices for compaction and branch summaries when cache miss notices are enabled.
+- Added A2A server startup via `pi server --a2a-listen http://127.0.0.1:41241`.
+- Added A2A delegation support to the subagent extension via agent frontmatter `a2aUrl`.
 
 ### Changed
 
