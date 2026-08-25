@@ -13,6 +13,7 @@ const internalPackagePrefix = "@punch-bot/";
 const allowedInstallScriptPackages = new Map([
 	["@google/genai@1.52.0", "preinstall is a no-op in the published package"],
 	["protobufjs@7.6.5", "postinstall only warns about protobufjs version scheme mismatches"],
+	["fsevents@2.3.2", "optional macOS dep of playwright-core; install script is a no-op on other platforms"],
 ]);
 
 const args = new Set(process.argv.slice(2));
