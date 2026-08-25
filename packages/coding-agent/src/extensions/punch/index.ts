@@ -4,16 +4,19 @@ import { StringEnum } from "@punch-bot/ai";
 import { Type } from "typebox";
 
 import type { ExtensionAPI } from "../../core/extensions/types.ts";
+import { getAuthHeader } from "./auth.ts";
 import { startScheduler } from "./routines.ts";
 import { startPunchServer } from "./server.ts";
 
 const PORT = Number(process.env.PI_BOT_PORT) || 4098;
 const BOT_URL = process.env.PUNCH_BOT_URL || `http://localhost:${PORT}`;
-const AUTH =
-	"Basic " +
-	Buffer.from(
-		`${process.env.PI_SERVER_USERNAME || process.env.OPENCODE_SERVER_USERNAME || "opencode"}:${process.env.PI_SERVER_PASSWORD || process.env.OPENCODE_SERVER_PASSWORD || ""}`,
-	).toString("base64");
+
+function authHeader(): string {
+	const envUser = process.env.PI_SERVER_USERNAME || process.env.OPENCODE_SERVER_USERNAME || "opencode";
+	const envPass = process.env.PI_SERVER_PASSWORD || process.env.OPENCODE_SERVER_PASSWORD || "";
+	if (envPass) return `Basic ${Buffer.from(`${envUser}:${envPass}`).toString("base64")}`;
+	return getAuthHeader() ?? `Basic ${Buffer.from(`${envUser}:`).toString("base64")}`;
+}
 
 function safeBotUrl(): string | null {
 	const url = BOT_URL;
@@ -34,7 +37,7 @@ async function botFetch(path: string, init: RequestInit = {}): Promise<Record<st
 	if (!url) throw new Error("PUNCH_BOT_URL must use https or a localhost http endpoint");
 	const response = await fetch(`${url}${path}`, {
 		...init,
-		headers: { "content-type": "application/json", authorization: AUTH, ...(init.headers ?? {}) },
+		headers: { "content-type": "application/json", authorization: authHeader(), ...(init.headers ?? {}) },
 	});
 	const text = await response.text();
 	let data: unknown;
