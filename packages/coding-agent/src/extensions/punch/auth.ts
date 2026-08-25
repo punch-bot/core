@@ -1,5 +1,5 @@
-import { randomBytes } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { readFileSync, statSync } from "node:fs";
 import type { IncomingMessage } from "node:http";
 import * as path from "node:path";
 
@@ -19,6 +19,9 @@ const TOKEN_TTL_MS = (Number(process.env.PI_OAUTH_TOKEN_TTL) || 3600) * 1000;
 
 const tokens = new Map<string, TokenRecord>();
 
+let cachedUsers: UserRecord[] | undefined;
+let cachedUsersMtimeMs = -1;
+
 function defaultUser(): string {
 	return process.env.PI_SERVER_USERNAME || process.env.OPENCODE_SERVER_USERNAME || DEFAULT_USER;
 }
@@ -27,12 +30,22 @@ function usersFile(): string {
 	return path.join(process.cwd(), ".pi", "users.json");
 }
 
+function digest(value: string): Buffer {
+	return createHash("sha256").update(value).digest();
+}
+
 function loadUsers(): UserRecord[] {
+	const file = usersFile();
+	let mtimeMs = -1;
+	try {
+		mtimeMs = statSync(file).mtimeMs;
+	} catch {}
+	if (cachedUsers && cachedUsersMtimeMs === mtimeMs) return cachedUsers;
 	const users: UserRecord[] = [];
 	const password = process.env.PI_SERVER_PASSWORD || process.env.OPENCODE_SERVER_PASSWORD || "";
 	if (password) users.push({ name: defaultUser(), password });
 	try {
-		const parsed = JSON.parse(readFileSync(usersFile(), "utf8")) as unknown;
+		const parsed = JSON.parse(readFileSync(file, "utf8")) as unknown;
 		if (Array.isArray(parsed)) {
 			for (const entry of parsed) {
 				if (entry && typeof entry === "object") {
@@ -43,7 +56,13 @@ function loadUsers(): UserRecord[] {
 			}
 		}
 	} catch {}
+	cachedUsers = users;
+	cachedUsersMtimeMs = mtimeMs;
 	return users;
+}
+
+function isAuthConfigured(): boolean {
+	return loadUsers().length > 0;
 }
 
 function verifyBasic(header: string | undefined): string | null {
@@ -53,11 +72,22 @@ function verifyBasic(header: string | undefined): string | null {
 	const password = rest.join(":");
 	const users = loadUsers();
 	const user = users.find((u) => u.name === username || (username === DEFAULT_USER && u.name === defaultUser()));
-	if (!user || user.password !== password) return null;
+	if (!user) return null;
+	const provided = digest(password);
+	const expected = digest(user.password);
+	if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) return null;
 	return user.name;
 }
 
+function pruneTokens(): void {
+	const now = Date.now();
+	for (const [token, record] of tokens) {
+		if (record.expiresAt <= now) tokens.delete(token);
+	}
+}
+
 function issueToken(userId: string, scope = "sandbox"): { token: string; expiresAt: number } {
+	pruneTokens();
 	const token = randomBytes(32).toString("base64url");
 	const expiresAt = Date.now() + TOKEN_TTL_MS;
 	tokens.set(token, { userId, scope, expiresAt });
@@ -65,6 +95,7 @@ function issueToken(userId: string, scope = "sandbox"): { token: string; expires
 }
 
 function verifyToken(token: string): string | null {
+	pruneTokens();
 	const record = tokens.get(token);
 	if (!record || record.expiresAt <= Date.now()) return null;
 	return record.userId;
@@ -83,4 +114,4 @@ function authenticate(req: IncomingMessage): string {
 	return userId;
 }
 
-export { authenticate, issueToken, verifyToken };
+export { authenticate, isAuthConfigured, issueToken, verifyToken };

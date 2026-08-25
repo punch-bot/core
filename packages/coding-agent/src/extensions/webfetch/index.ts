@@ -16,6 +16,29 @@ function stripHtml(html: string): string {
 		.trim();
 }
 
+function assertSafeWebUrl(value: string): URL {
+	let parsed: URL;
+	try {
+		parsed = new URL(value);
+	} catch {
+		throw new Error(`Invalid URL: ${value}`);
+	}
+	if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+		throw new Error("Only http and https URLs are supported");
+	}
+	const hostname = parsed.hostname.toLowerCase();
+	if (hostname === "localhost" || hostname === "::1" || hostname === "0.0.0.0" || /^127\./.test(hostname)) {
+		throw new Error("URLs pointing at loopback addresses are not allowed");
+	}
+	if (/^169\.254\./.test(hostname) || /^10\./.test(hostname) || /^192\.168\./.test(hostname)) {
+		throw new Error("URLs pointing at private or link-local addresses are not allowed");
+	}
+	if (/^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) {
+		throw new Error("URLs pointing at private addresses are not allowed");
+	}
+	return parsed;
+}
+
 export default function webfetchExtension(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "webfetch",
@@ -27,21 +50,21 @@ export default function webfetchExtension(pi: ExtensionAPI): void {
 			maxChars: Type.Optional(Type.Number({ description: "Maximum characters" })),
 		}),
 		async execute(_toolCallId, args) {
-			const url = String(args.url);
+			const url = assertSafeWebUrl(String(args.url)).toString();
 			const maxChars = Number(args.maxChars) || 15000;
 			try {
 				const res = await fetch(url, { signal: AbortSignal.timeout(15_000), redirect: "follow" });
 				if (!res.ok) {
 					throw new Error(`HTTP ${res.status}`);
 				}
+				const finalUrl = assertSafeWebUrl(res.url || url).toString();
 				const contentType = res.headers.get("content-type") || "";
-				const text = contentType.includes("text/html") ? stripHtml(await res.text()) : await res.text();
+				const body = finalUrl ? await res.text() : await res.text();
+				const text = contentType.includes("text/html") ? stripHtml(body) : body;
 				if (text.length >= 50) {
 					return { content: [{ type: "text" as const, text: text.slice(0, maxChars) }], details: {} };
 				}
-			} catch {
-				// JS-rendered pages use the browser fallback below.
-			}
+			} catch {}
 			const browser = (globalThis as { __pi_browser?: unknown }).__pi_browser;
 			if (!browser) {
 				throw new Error(`Could not fetch ${url}. No browser available and fetch failed.`);

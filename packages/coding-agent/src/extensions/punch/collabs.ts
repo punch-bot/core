@@ -47,6 +47,10 @@ function load(): void {
 	}
 }
 
+function reload(): void {
+	load();
+}
+
 function save(): void {
 	mkdirSync(path.dirname(collabStateFile()), { recursive: true });
 	writeFileSync(collabStateFile(), JSON.stringify(records, null, 2), { mode: 0o600 });
@@ -64,9 +68,10 @@ function requireParticipant(collab: Collab, actor: string): void {
 }
 
 function write(collab: Collab): void {
+	reload();
 	const index = records.findIndex((c) => c.id === collab.id);
-	if (index !== -1) records[index] = collab;
-	else records.push(collab);
+	if (index === -1) throw new Error("Collaboration not found.");
+	records[index] = collab;
 	save();
 }
 
@@ -79,7 +84,7 @@ function safeWorkspace(p: unknown): string {
 	if (p.includes("\0")) throw new Error("Workspace must be an absolute path under the workspace root.");
 	const resolved = p.replace(/\/+$/, "");
 	const root = workspaceRoot().replace(/\/+$/, "");
-	if (!resolved.startsWith(root) || resolved === root) {
+	if (!resolved.startsWith(root + path.sep) || resolved === root) {
 		throw new Error("Workspace must be an absolute path under the workspace root.");
 	}
 	return resolved;
@@ -98,10 +103,12 @@ export function collabDir(): string {
 }
 
 export function listFor(actor: string): Collab[] {
+	reload();
 	return records.filter((c) => c.participants.includes(actor));
 }
 
 export function getFor(id: string, actor: string): Collab {
+	reload();
 	const collab = collabOrThrow(id);
 	requireParticipant(collab, actor);
 	return collab;
@@ -116,7 +123,13 @@ export function create(opts: { owner: string; reviewer: string; workspace: strin
 	if (!existsSync(path.join(source, ".git"))) {
 		git(["init", "--initial-branch=main", source]);
 	}
-	if (git(["rev-parse", "--verify", "HEAD"], source).length === 0 || !git(["rev-parse", "--verify", "HEAD"], source)) {
+	let hasHead = true;
+	try {
+		git(["rev-parse", "--verify", "HEAD"], source);
+	} catch {
+		hasHead = false;
+	}
+	if (!hasHead) {
 		git(["config", "user.name", `Punch ${opts.owner}`], source);
 		git(["config", "user.email", `${opts.owner}@punch.local`], source);
 		git(["add", "--all"], source);
@@ -128,9 +141,7 @@ export function create(opts: { owner: string; reviewer: string; workspace: strin
 	git(["--git-dir", repo, "update-ref", "refs/heads/main", base]);
 	try {
 		git(["remote", "remove", "punch-collab"], source);
-	} catch {
-		// remote may not exist yet
-	}
+	} catch {}
 	git(["remote", "add", "punch-collab", repo], source);
 	mkdirSync(clonePath, { recursive: true });
 	git(["clone", repo, clonePath]);
@@ -146,11 +157,14 @@ export function create(opts: { owner: string; reviewer: string; workspace: strin
 		createdAt: Date.now(),
 		updatedAt: Date.now(),
 	};
-	write(collab);
+	reload();
+	records.push(collab);
+	save();
 	return collab;
 }
 
 export function propose(opts: { id: string; actor: string; head: string }): Collab {
+	reload();
 	if (!SHA_PATTERN.test(opts.head)) throw new Error("Invalid proposal SHA.");
 	const collab = collabOrThrow(opts.id);
 	requireParticipant(collab, opts.actor);
@@ -182,6 +196,7 @@ export function propose(opts: { id: string; actor: string; head: string }): Coll
 }
 
 export function review(opts: { id: string; actor: string; approve: boolean; notes?: string }): Collab {
+	reload();
 	const collab = collabOrThrow(opts.id);
 	requireParticipant(collab, opts.actor);
 	const proposal = collab.proposal;

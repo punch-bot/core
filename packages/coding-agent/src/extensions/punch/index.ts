@@ -15,8 +15,24 @@ const AUTH =
 		`${process.env.PI_SERVER_USERNAME || process.env.OPENCODE_SERVER_USERNAME || "opencode"}:${process.env.PI_SERVER_PASSWORD || process.env.OPENCODE_SERVER_PASSWORD || ""}`,
 	).toString("base64");
 
+function safeBotUrl(): string | null {
+	const url = BOT_URL;
+	try {
+		const parsed = new URL(url);
+		if (parsed.protocol === "https:") return url;
+		if (
+			parsed.protocol === "http:" &&
+			(parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1" || parsed.hostname === "::1")
+		)
+			return url;
+	} catch {}
+	return null;
+}
+
 async function botFetch(path: string, init: RequestInit = {}): Promise<Record<string, unknown>> {
-	const response = await fetch(`${BOT_URL}${path}`, {
+	const url = safeBotUrl();
+	if (!url) throw new Error("PUNCH_BOT_URL must use https or a localhost http endpoint");
+	const response = await fetch(`${url}${path}`, {
 		...init,
 		headers: { "content-type": "application/json", authorization: AUTH, ...(init.headers ?? {}) },
 	});
@@ -37,7 +53,7 @@ function git(workspace: string, args: string[]): string {
 
 export default function punchExtension(pi: ExtensionAPI): void {
 	startScheduler(async (routine) => {
-		pi.sendUserMessage(routine.payload);
+		pi.sendUserMessage(`Scheduled routine fired:\n\n${routine.payload}`);
 	});
 	startPunchServer();
 

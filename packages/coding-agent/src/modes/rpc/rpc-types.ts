@@ -10,6 +10,7 @@ import type { ImageContent, Model } from "@punch-bot/ai";
 import type { SessionStats } from "../../core/agent-session.ts";
 import type { BashResult } from "../../core/bash-executor.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
+import type { Delivery } from "../../core/delivery.ts";
 import type { SessionEntry, SessionTreeNode } from "../../core/session-manager.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
 
@@ -241,6 +242,13 @@ export type RpcResponse =
 
 	// Error response (any command can fail)
 	| { id?: string; type: "response"; command: string; success: false; error: string };
+
+// ============================================================================
+// Delivery Event (stdout)
+// ============================================================================
+
+/** Structured platform-neutral delivery parsed from the final assistant message */
+export type RpcDeliveryEvent = { type: "delivery"; delivery: Delivery };
 
 // ============================================================================
 // Extension UI Events (stdout)

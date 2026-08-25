@@ -361,7 +361,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		unsubscribeBackpressure?.();
 		unsubscribe = session.subscribe((event) => {
 			output(toJsonEvent(event));
-			if (event.type === "message_end") {
+			if (event.type === "message_end" && event.message.role === "assistant") {
 				output({ type: "delivery", delivery: deliveryFromMessage(event.message) });
 			}
 			if (event.type === "agent_settled") {
@@ -596,10 +596,19 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 			case "read_file": {
 				const roots = [session.sessionManager.getCwd(), tmpdir()];
-				const target = path.resolve(command.path);
-				const allowed = roots.some(
-					(root) => target === path.resolve(root) || target.startsWith(path.resolve(root) + path.sep),
-				);
+				let target: string;
+				try {
+					target = fs.realpathSync(path.resolve(command.path));
+				} catch {
+					return error(id, "read_file", "File not found");
+				}
+				let realRoots: string[];
+				try {
+					realRoots = roots.map((root) => fs.realpathSync(root));
+				} catch {
+					return error(id, "read_file", "Path is outside the allowed read roots");
+				}
+				const allowed = realRoots.some((root) => target === root || target.startsWith(root + path.sep));
 				if (!allowed) {
 					return error(id, "read_file", "Path is outside the allowed read roots");
 				}
@@ -612,10 +621,22 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				if (!stat.isFile()) {
 					return error(id, "read_file", "Not a file");
 				}
-				const maxBytes = command.maxBytes ?? 1024 * 1024;
-				const buffer = fs.readFileSync(target);
-				const truncated = buffer.length > maxBytes;
-				const data = truncated ? buffer.subarray(0, maxBytes) : buffer;
+				const maxBytes = Math.min(command.maxBytes ?? 1024 * 1024, 1024 * 1024 * 1024);
+				const size = Math.min(stat.size, maxBytes);
+				const buffer = Buffer.alloc(size);
+				const fd = fs.openSync(target, "r");
+				let readBytes = 0;
+				try {
+					while (readBytes < size) {
+						const n = fs.readSync(fd, buffer, readBytes, size - readBytes, readBytes);
+						if (n <= 0) break;
+						readBytes += n;
+					}
+				} finally {
+					fs.closeSync(fd);
+				}
+				const data = buffer.subarray(0, readBytes);
+				const truncated = readBytes < stat.size;
 				const isBinary = data.subarray(0, 8192).includes(0);
 				if (isBinary) {
 					return success(id, "read_file", {

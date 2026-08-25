@@ -270,7 +270,8 @@ function addRoutine(input: {
 	timezone?: string | null;
 }): Routine {
 	if (!VALID_TYPES.has(input.type)) throw new Error("Invalid routine type");
-	const normalizedTimezone = validTimezone(input.timezone ?? null);
+	const normalizedTimezone =
+		validTimezone(input.timezone ?? null) ?? (input.schedule.kind === "cron" ? DEFAULT_TIME_ZONE : null);
 	const nextRunAt = computeNextRun(input.schedule, Date.now(), normalizedTimezone);
 	if (nextRunAt === null) throw new Error("Scheduled time is in the past");
 	const routine: Routine = {

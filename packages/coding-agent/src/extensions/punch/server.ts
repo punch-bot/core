@@ -1,14 +1,21 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 
-import { authenticate, issueToken } from "./auth.ts";
+import { authenticate, isAuthConfigured, issueToken } from "./auth.ts";
 import { create as createCollab, getFor, listFor, propose, review } from "./collabs.ts";
 import { addRoutine, listRoutines, parseRecurrence, pauseRoutine, removeRoutine, resumeRoutine } from "./routines.ts";
 
 const PORT = Number(process.env.PI_BOT_PORT) || 4098;
+const HOST = process.env.PI_SERVER_HOST || "127.0.0.1";
+const MAX_BODY_BYTES = 64 * 1024;
 
 async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
 	const chunks: Buffer[] = [];
-	for await (const chunk of req) chunks.push(chunk as Buffer);
+	let total = 0;
+	for await (const chunk of req) {
+		total += (chunk as Buffer).length;
+		if (total > MAX_BODY_BYTES) throw new Error("Request body too large");
+		chunks.push(chunk as Buffer);
+	}
 	if (chunks.length === 0) return {};
 	const raw = Buffer.concat(chunks).toString("utf8");
 	try {
@@ -89,13 +96,12 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 		}
 
 		if (method === "GET" && path === "/routines/list") {
-			const userId = url.searchParams.get("userId") ?? actor;
-			sendJson(res, 200, { routines: listRoutines(userId) });
+			sendJson(res, 200, { routines: listRoutines(actor) });
 			return;
 		}
 		if (method === "POST" && path === "/routines/create") {
 			const body = await readJson(req);
-			const userId = String(body.userId ?? actor);
+			const userId = actor;
 			const when = String(body.when ?? "");
 			const recurrence = String(body.recurrence ?? "once");
 			const timezone = body.timezone ? String(body.timezone) : null;
@@ -116,8 +122,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 		if (routineMatch) {
 			const id = routineMatch[1];
 			const sub = routineMatch[2];
-			const body = method === "GET" ? {} : await readJson(req);
-			const userId = String(body.userId ?? actor);
+			const userId = actor;
 			if (method === "DELETE" && !sub) {
 				removeRoutine(id, userId);
 				sendJson(res, 200, { ok: true });
@@ -143,9 +148,13 @@ let started = false;
 
 export function startPunchServer(): void {
 	if (started) return;
+	if (!isAuthConfigured()) return;
 	started = true;
 	const server = createServer((req, res) => {
 		void handle(req, res);
 	});
-	server.listen(PORT);
+	server.on("error", (err) => {
+		console.error(`punch server on port ${PORT} failed: ${(err as Error).message}`);
+	});
+	server.listen(PORT, HOST);
 }

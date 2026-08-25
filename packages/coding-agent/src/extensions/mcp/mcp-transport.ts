@@ -48,9 +48,14 @@ export class StdioMcpTransport implements McpTransport {
 	}
 
 	async start(): Promise<void> {
+		const childEnv: Record<string, string> = {};
+		for (const key of ["PATH", "HOME", "TMPDIR", "LANG", "LC_ALL"]) {
+			const value = process.env[key];
+			if (value !== undefined) childEnv[key] = value;
+		}
 		const child = spawn(this.command, this.args, {
 			cwd: this.cwd,
-			env: { ...process.env, ...this.env },
+			env: { ...childEnv, ...this.env },
 			stdio: ["pipe", "pipe", "inherit"],
 		});
 		this.child = child;
@@ -101,12 +106,10 @@ export class StdioMcpTransport implements McpTransport {
 		if (initResponse.error) {
 			throw new Error(`MCP initialize failed: ${initResponse.error.message}`);
 		}
-		await this.rawRequest({
-			jsonrpc: "2.0",
-			id: this.nextId++,
-			method: "notifications/initialized",
-			params: {},
-		});
+		const stdin = this.child?.stdin;
+		if (stdin?.writable) {
+			stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized", params: {} })}\n`);
+		}
 	}
 
 	request(message: JsonRpcRequest): Promise<JsonRpcResponse> {
@@ -136,9 +139,7 @@ export class StdioMcpTransport implements McpTransport {
 		if (!child) return;
 		try {
 			child.stdin?.end();
-		} catch {
-			// already closed
-		}
+		} catch {}
 		const timeout = setTimeout(() => child.kill("SIGKILL"), 5000);
 		await new Promise<void>((resolve) => {
 			child.on("exit", () => {
@@ -193,12 +194,25 @@ export class StreamableHttpMcpTransport implements McpTransport {
 		const result = initResponse.result as Record<string, unknown> | undefined;
 		const sessionHeader = result?.["mcp-session-id"] as string | undefined;
 		if (sessionHeader) this.mcpSessionId = sessionHeader;
-		await this.rawRequest({
-			jsonrpc: "2.0",
-			id: this.nextId++,
-			method: "notifications/initialized",
-			params: {},
-		});
+		await this.sendNotification({ jsonrpc: "2.0", method: "notifications/initialized", params: {} });
+	}
+
+	private async sendNotification(message: { jsonrpc: "2.0"; method: string; params?: unknown }): Promise<void> {
+		if (this.closed) return;
+		const headers: Record<string, string> = {
+			"Content-Type": "application/json",
+			Accept: "application/json, text/event-stream",
+			...this.headers,
+		};
+		if (this.mcpSessionId) headers["Mcp-Session-Id"] = this.mcpSessionId;
+		try {
+			await fetch(this.url, {
+				method: "POST",
+				headers,
+				body: JSON.stringify(message),
+				signal: AbortSignal.timeout(120_000),
+			});
+		} catch {}
 	}
 
 	request(message: JsonRpcRequest): Promise<JsonRpcResponse> {
@@ -233,7 +247,6 @@ export class StreamableHttpMcpTransport implements McpTransport {
 		if (contentType.includes("text/event-stream")) {
 			const body = await response.text();
 			const messages = this.parseSse(body);
-			let lastError: Error | undefined;
 			for (const msg of messages) {
 				const parsed = msg as JsonRpcResponse;
 				if (parsed && parsed.id !== null && typeof parsed.id !== "undefined") {
@@ -241,44 +254,47 @@ export class StreamableHttpMcpTransport implements McpTransport {
 					if (pending) {
 						this.pending.delete(parsed.id);
 						pending.resolve(parsed);
-					} else {
-						lastError = new Error(`MCP SSE response for unknown request id ${parsed.id}`);
 					}
 				}
 			}
-			if (lastError) throw lastError;
+			const pending = this.pending.get(message.id);
+			if (pending) {
+				this.pending.delete(message.id);
+				pending.resolve({ jsonrpc: "2.0", id: message.id, result: {} });
+			}
 			return { jsonrpc: "2.0", id: message.id, result: {} };
 		}
-		const data = (await response.json()) as JsonRpcResponse;
-		return data;
+		const text = await response.text();
+		if (!text) {
+			return { jsonrpc: "2.0", id: message.id, result: {} };
+		}
+		return JSON.parse(text) as JsonRpcResponse;
 	}
 
 	private parseSse(body: string): unknown[] {
 		const messages: unknown[] = [];
-		let dataBuffer = "";
+		let dataLines: string[] = [];
 		for (const rawLine of body.split("\n")) {
-			const line = rawLine.trim();
+			const line = rawLine.replace(/\r$/, "");
 			if (line === "") {
-				if (dataBuffer) {
+				if (dataLines.length > 0) {
+					const payload = dataLines.join("\n");
+					dataLines = [];
 					try {
-						messages.push(JSON.parse(dataBuffer));
-					} catch {
-						// ignore malformed SSE data
-					}
-					dataBuffer = "";
+						messages.push(JSON.parse(payload));
+					} catch {}
 				}
 				continue;
 			}
 			if (line.startsWith("data:")) {
-				dataBuffer += line.slice(5).trim();
+				dataLines.push(line.slice(5));
 			}
 		}
-		if (dataBuffer) {
+		if (dataLines.length > 0) {
+			const payload = dataLines.join("\n");
 			try {
-				messages.push(JSON.parse(dataBuffer));
-			} catch {
-				// ignore trailing malformed data
-			}
+				messages.push(JSON.parse(payload));
+			} catch {}
 		}
 		return messages;
 	}

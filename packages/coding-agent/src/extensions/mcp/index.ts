@@ -6,19 +6,36 @@ import { jsonSchemaToTypeBox, McpClient } from "./mcp-client.ts";
 import { type McpAdapterEntry, type McpRegistry, punchRegistryToMcpServers } from "./mcp-config.ts";
 import { type McpTransport, StdioMcpTransport, StreamableHttpMcpTransport } from "./mcp-transport.ts";
 
+function resolveEnvRef(value: string): string | undefined {
+	const match = /^\$\{([^}]+)\}$/.exec(value);
+	if (!match) return undefined;
+	return process.env[match[1]];
+}
+
 function buildTransport(entry: McpAdapterEntry): McpTransport {
 	if (entry.url) {
-		const headers = { ...(entry.headers ?? {}) };
+		const headers: Record<string, string> = {};
+		for (const [key, value] of Object.entries(entry.headers ?? {})) {
+			headers[key] = resolveEnvRef(value) ?? value;
+		}
 		if (entry.bearerTokenEnv) {
 			const token = process.env[entry.bearerTokenEnv];
 			if (token) headers.Authorization = `Bearer ${token}`;
 		}
 		return new StreamableHttpMcpTransport({ url: entry.url, headers });
 	}
+	const env: Record<string, string> = {};
+	for (const [key, value] of Object.entries(entry.env ?? {})) {
+		env[key] = resolveEnvRef(value) ?? value;
+	}
+	if (entry.bearerTokenEnv) {
+		const token = process.env[entry.bearerTokenEnv];
+		if (token) env.API_KEY = token;
+	}
 	return new StdioMcpTransport({
 		command: entry.command ?? "",
 		args: entry.args ?? [],
-		env: entry.env ?? {},
+		env,
 		cwd: process.cwd(),
 	});
 }
@@ -89,6 +106,9 @@ export default function mcpExtension(pi: ExtensionAPI): void {
 			}
 		})
 		.catch((err: unknown) => {
-			pi.sendUserMessage(`mcp: failed to load ${configPath}: ${(err as Error).message}`);
+			const code = (err as NodeJS.ErrnoException).code;
+			if (code !== "ENOENT") {
+				pi.sendUserMessage(`mcp: failed to load ${configPath}: ${(err as Error).message}`);
+			}
 		});
 }
