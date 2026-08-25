@@ -201,6 +201,7 @@ export function assertPunchEntry(entry: McpRegistryEntry | undefined): McpAdapte
 		const hasCredentials =
 			entry.auth === "api_key" ||
 			entry.apiKey === true ||
+			(entry.apiKeyHeader !== undefined && entry.apiKeyHeader !== "") ||
 			(entry.headers !== undefined && Object.keys(entry.headers).length > 0);
 		if (hasCredentials && parsed.protocol !== "https:")
 			throw new Error("remote MCP server with credentials requires https");
@@ -230,17 +231,18 @@ function stripCredentialHeaders(headers: Record<string, string>): Record<string,
 
 export function applyApiKeyAuthToAdapter(out: McpAdapterEntry, entry: McpRegistryEntry, serverName: string): void {
 	if (!usesApiKeyAuth(entry)) return;
-	const envVar = mcpApiKeyEnvVar(serverName);
+	const candidates = entry.apiKeyEnv
+		? [entry.apiKeyEnv]
+		: mcpApiKeyEnvVarCandidates(serverName).filter((v) => process.env[v] !== undefined && process.env[v] !== "");
+	const envVar = candidates[0] ?? mcpApiKeyEnvVar(serverName);
 	const ref = `\${${envVar}}`;
-	if (out.headers) {
-		const stripped = stripCredentialHeaders(out.headers);
-		const apiKeyHeader = entry.apiKeyHeader;
-		if (apiKeyHeader && apiKeyHeader.toLowerCase() !== "authorization") {
-			out.headers = { ...stripped, [apiKeyHeader]: ref };
-			return;
-		}
-		out.headers = stripped;
+	const apiKeyHeader = entry.apiKeyHeader;
+	if (apiKeyHeader && apiKeyHeader.toLowerCase() !== "authorization") {
+		const stripped = out.headers ? stripCredentialHeaders(out.headers) : {};
+		out.headers = { ...stripped, [apiKeyHeader]: ref };
+		return;
 	}
+	if (out.headers) out.headers = stripCredentialHeaders(out.headers);
 	out.auth = "bearer";
 	out.bearerTokenEnv = envVar;
 }

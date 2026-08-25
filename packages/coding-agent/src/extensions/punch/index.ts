@@ -53,8 +53,21 @@ function git(workspace: string, args: string[]): string {
 
 export default function punchExtension(pi: ExtensionAPI): void {
 	startScheduler(async (routine) => {
-		pi.sendUserMessage(`Scheduled routine fired:\n\n${routine.payload}`);
+		switch (routine.type) {
+			case "message":
+				pi.sendUserMessage(routine.payload);
+				break;
+			case "heartbeat":
+				pi.sendUserMessage(`heartbeat: ${routine.payload}`);
+				break;
+			case "llm":
+				pi.sendUserMessage(routine.payload);
+				break;
+		}
 	});
+	if (!process.env.PI_SERVER_PASSWORD && !process.env.OPENCODE_SERVER_PASSWORD) {
+		console.warn("punch server disabled: PI_SERVER_PASSWORD not set");
+	}
 	startPunchServer();
 
 	pi.registerTool({

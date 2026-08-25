@@ -621,7 +621,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				if (!stat.isFile()) {
 					return error(id, "read_file", "Not a file");
 				}
-				const maxBytes = Math.min(command.maxBytes ?? 1024 * 1024, 1024 * 1024 * 1024);
+				const maxBytes = Math.max(0, Math.min(command.maxBytes ?? 1024 * 1024, 64 * 1024 * 1024));
 				const size = Math.min(stat.size, maxBytes);
 				const buffer = Buffer.alloc(size);
 				const fd = fs.openSync(target, "r");

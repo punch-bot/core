@@ -15,7 +15,8 @@ interface UserRecord {
 }
 
 const DEFAULT_USER = "opencode";
-const TOKEN_TTL_MS = (Number(process.env.PI_OAUTH_TOKEN_TTL) || 3600) * 1000;
+const ttlSecs = Number(process.env.PI_OAUTH_TOKEN_TTL);
+const TOKEN_TTL_MS = (Number.isFinite(ttlSecs) && ttlSecs > 0 ? ttlSecs : 3600) * 1000;
 
 const tokens = new Map<string, TokenRecord>();
 
@@ -50,7 +51,12 @@ function loadUsers(): UserRecord[] {
 			for (const entry of parsed) {
 				if (entry && typeof entry === "object") {
 					const user = entry as Partial<UserRecord>;
-					if (typeof user.name === "string" && typeof user.password === "string")
+					if (
+						typeof user.name === "string" &&
+						user.name.length > 0 &&
+						typeof user.password === "string" &&
+						user.password.length > 0
+					)
 						users.push({ name: user.name, password: user.password });
 				}
 			}
@@ -63,6 +69,12 @@ function loadUsers(): UserRecord[] {
 
 function isAuthConfigured(): boolean {
 	return loadUsers().length > 0;
+}
+
+function getAuthHeader(): string | null {
+	const user = loadUsers()[0];
+	if (!user) return null;
+	return `Basic ${Buffer.from(`${user.name}:${user.password}`).toString("base64")}`;
 }
 
 function verifyBasic(header: string | undefined): string | null {
@@ -114,4 +126,4 @@ function authenticate(req: IncomingMessage): string {
 	return userId;
 }
 
-export { authenticate, isAuthConfigured, issueToken, verifyToken };
+export { authenticate, getAuthHeader, isAuthConfigured, issueToken, verifyToken };

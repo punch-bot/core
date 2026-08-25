@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import * as path from "node:path";
 
 export interface CollabProposal {
@@ -39,12 +39,19 @@ export function collabStateFile(): string {
 }
 
 function load(): void {
+	let raw: string;
 	try {
-		const parsed = JSON.parse(readFileSync(collabStateFile(), "utf8"));
-		records = Array.isArray(parsed) ? parsed : [];
-	} catch {
-		records = [];
+		raw = readFileSync(collabStateFile(), "utf8");
+	} catch (err) {
+		if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+			records = [];
+			return;
+		}
+		throw err;
 	}
+	const parsed = JSON.parse(raw);
+	if (!Array.isArray(parsed)) throw new Error("collabs.json must contain an array");
+	records = parsed;
 }
 
 function reload(): void {
@@ -85,6 +92,15 @@ function safeWorkspace(p: unknown): string {
 	const resolved = p.replace(/\/+$/, "");
 	const root = workspaceRoot().replace(/\/+$/, "");
 	if (!resolved.startsWith(root + path.sep) || resolved === root) {
+		throw new Error("Workspace must be an absolute path under the workspace root.");
+	}
+	try {
+		const realResolved = realpathSync(resolved);
+		const realRoot = realpathSync(root);
+		if (!realResolved.startsWith(realRoot + path.sep)) {
+			throw new Error("Workspace must be an absolute path under the workspace root.");
+		}
+	} catch {
 		throw new Error("Workspace must be an absolute path under the workspace root.");
 	}
 	return resolved;
@@ -139,6 +155,7 @@ export function create(opts: { owner: string; reviewer: string; workspace: strin
 	git(["clone", "--bare", source, repo]);
 	const base = git(["--git-dir", repo, "rev-parse", "HEAD"]).toLowerCase();
 	git(["--git-dir", repo, "update-ref", "refs/heads/main", base]);
+	git(["--git-dir", repo, "symbolic-ref", "HEAD", "refs/heads/main"]);
 	try {
 		git(["remote", "remove", "punch-collab"], source);
 	} catch {}

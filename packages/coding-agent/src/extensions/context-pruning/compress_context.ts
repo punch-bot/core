@@ -35,15 +35,7 @@ function loadState(ctx: ExtensionContext): PruningState {
 	return emptyState();
 }
 
-function saveState(pi: ExtensionAPI, ctx: ExtensionContext, state: PruningState) {
-	const entries = ctx.sessionManager.getBranch();
-	for (let index = entries.length - 1; index >= 0; index -= 1) {
-		const entry = entries[index] as { type?: string; customType?: string; data?: unknown } | undefined;
-		if (entry?.type === "custom" && entry.customType === STATE_TYPE) {
-			entry.data = state;
-			return;
-		}
-	}
+function saveState(pi: ExtensionAPI, _ctx: ExtensionContext, state: PruningState) {
 	pi.appendEntry(STATE_TYPE, state);
 }
 

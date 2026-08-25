@@ -5,7 +5,13 @@ export const MAX_SUMMARY_CHARS = 16_000;
 const MIN_SUMMARY_ABSOLUTE = 20;
 const MIN_SUMMARY_RATIO = 0.03;
 const SMALL_RANGE_CHARS = 500;
-const PLACEHOLDER_PATTERNS = [/^\.\.\.$/s, /^see above$/i, /^same as above$/i, /^n\/a\.?$/i, /^\[.*\]$/s];
+const PLACEHOLDER_PATTERNS = [
+	/^\.\.\.$/s,
+	/^see above$/i,
+	/^same as above$/i,
+	/^n\/a\.?$/i,
+	/^\[(?:placeholder|insert|omitted|truncated)[\s\S]*\]$/i,
+];
 
 export const PROTECTED_TOOL_PATTERNS = [
 	/^compress_context$/,
@@ -185,6 +191,13 @@ export function recompressBlock(
 		(a, b) => (a.createdAt || 0) - (b.createdAt || 0) || (stateOrder.get(a.id) ?? 0) - (stateOrder.get(b.id) ?? 0),
 	);
 	const allMessageIds: string[] = [];
+	const seenIds = new Set<string>();
+	for (const block of parents) {
+		for (const id of block.messageIds) {
+			if (seenIds.has(id)) throw new Error(`parent blocks overlap on message id ${id}`);
+			seenIds.add(id);
+		}
+	}
 	let sourceCharacters = 0;
 	for (const block of parents) {
 		allMessageIds.push(...block.messageIds);

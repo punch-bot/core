@@ -6,6 +6,19 @@ import { jsonSchemaToTypeBox, McpClient } from "./mcp-client.ts";
 import { type McpAdapterEntry, type McpRegistry, punchRegistryToMcpServers } from "./mcp-config.ts";
 import { type McpTransport, StdioMcpTransport, StreamableHttpMcpTransport } from "./mcp-transport.ts";
 
+const clients: McpClient[] = [];
+
+function trackClient(client: McpClient): void {
+	clients.push(client);
+}
+
+function closeClients(): void {
+	for (const client of clients) {
+		void client.close();
+	}
+	clients.length = 0;
+}
+
 function resolveEnvRef(value: string): string | undefined {
 	const match = /^\$\{([^}]+)\}$/.exec(value);
 	if (!match) return undefined;
@@ -43,6 +56,7 @@ function buildTransport(entry: McpAdapterEntry): McpTransport {
 async function registerMcpServer(pi: ExtensionAPI, name: string, entry: McpAdapterEntry): Promise<void> {
 	if (entry.disabled) return;
 	const client = new McpClient(buildTransport(entry));
+	trackClient(client);
 	let tools: Awaited<ReturnType<McpClient["listTools"]>>;
 	try {
 		await client.start();
@@ -70,7 +84,11 @@ async function registerMcpServer(pi: ExtensionAPI, name: string, entry: McpAdapt
 				_signal: AbortSignal | undefined,
 				_onUpdate: unknown,
 				_ctx: ExtensionContext,
-			): Promise<{ content: { type: "text"; text: string }[]; details: Record<string, unknown> }> {
+			): Promise<{
+				content: { type: "text"; text: string }[] | { type: "image"; data: string; mimeType: string }[];
+				details: Record<string, unknown>;
+				isError?: boolean;
+			}> {
 				try {
 					const result = await client.callTool(tool.name, args);
 					const text =
@@ -78,9 +96,18 @@ async function registerMcpServer(pi: ExtensionAPI, name: string, entry: McpAdapt
 							?.map((c) => c.text ?? "")
 							.filter(Boolean)
 							.join("\n") ?? "";
+					const images = result.content
+						?.filter(
+							(c): c is { type: "image"; data: string; mimeType: string } =>
+								c.type === "image" && typeof c.data === "string",
+						)
+						.map((c) => ({ type: "image" as const, data: c.data, mimeType: c.mimeType ?? "image/png" }));
+					const content =
+						images && images.length > 0 ? images : [{ type: "text" as const, text: text || "(no text output)" }];
 					return {
-						content: [{ type: "text", text: text || "(no text output)" }],
+						content,
 						details: { server: name, tool: tool.name },
+						...(result.isError === true ? { isError: true } : {}),
 					};
 				} catch (err) {
 					return {
@@ -88,6 +115,7 @@ async function registerMcpServer(pi: ExtensionAPI, name: string, entry: McpAdapt
 							{ type: "text", text: `Error calling MCP tool ${name}.${tool.name}: ${(err as Error).message}` },
 						],
 						details: { server: name, tool: tool.name, error: (err as Error).message },
+						isError: true,
 					};
 				}
 			},
@@ -111,4 +139,5 @@ export default function mcpExtension(pi: ExtensionAPI): void {
 				pi.sendUserMessage(`mcp: failed to load ${configPath}: ${(err as Error).message}`);
 			}
 		});
+	pi.on("session_shutdown", closeClients);
 }

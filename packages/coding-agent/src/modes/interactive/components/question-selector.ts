@@ -17,6 +17,7 @@ import { DynamicBorder } from "./dynamic-border.ts";
 const QUESTION_SELECT_LIST_LAYOUT: SelectListLayoutOptions = { minPrimaryColumnWidth: 12, maxPrimaryColumnWidth: 48 };
 
 const OTHER_VALUE = "__other__";
+const DONE_VALUE = "__done__";
 
 export class QuestionSelectorComponent extends Container implements Focusable {
 	private searchInput: Input;
@@ -25,6 +26,9 @@ export class QuestionSelectorComponent extends Container implements Focusable {
 	private allItems: SelectItem[];
 	private onAnswer: (answer: string) => void;
 	private onCancel: () => void;
+	private multi = false;
+	private selected: string[] = [];
+	private customInputMode = false;
 	private _focused = false;
 
 	get focused(): boolean {
@@ -40,7 +44,11 @@ export class QuestionSelectorComponent extends Container implements Focusable {
 		super();
 		this.onAnswer = onAnswer;
 		this.onCancel = onCancel;
+		this.multi = question.multi;
 		const items = question.options.map((option) => ({ value: option, label: option }));
+		if (this.multi && items.length > 0) {
+			items.push({ value: DONE_VALUE, label: "Done" });
+		}
 		if (question.input.length > 0) {
 			items.push({ value: OTHER_VALUE, label: "Other…" });
 		}
@@ -57,12 +65,22 @@ export class QuestionSelectorComponent extends Container implements Focusable {
 		this.searchInput = new Input();
 		this.searchInput.onSubmit = () => {
 			const query = this.searchInput.getValue();
+			if (this.customInputMode) {
+				if (this.multi) {
+					this.selected.push(query);
+					this.onAnswer(this.selected.join(", "));
+				} else {
+					this.onAnswer(query);
+				}
+				return;
+			}
 			if (items.length > 0 && this.selectList) {
 				this.selectList.handleInput("\r");
 			} else {
 				this.onAnswer(query);
 			}
 		};
+		this.searchInput.onEscape = () => this.onCancel();
 		this.addChild(this.searchInput);
 		this.addChild(new Spacer(1));
 		if (items.length > 0) {
@@ -83,6 +101,7 @@ export class QuestionSelectorComponent extends Container implements Focusable {
 		if (currentIndex !== -1) list.setSelectedIndex(currentIndex);
 		list.onSelect = (item) => {
 			if (item.value === OTHER_VALUE) {
+				this.customInputMode = true;
 				this.searchInput.focused = true;
 				this.searchInput.setValue("");
 				if (this.selectListChildIndex !== undefined) {
@@ -92,7 +111,24 @@ export class QuestionSelectorComponent extends Container implements Focusable {
 						0,
 					);
 				}
-				this._focused = false;
+				this._focused = true;
+				return;
+			}
+			if (item.value === DONE_VALUE) {
+				if (this.selected.length > 0) {
+					this.onAnswer(this.selected.join(", "));
+				}
+				return;
+			}
+			if (this.multi) {
+				const selectedIndex = this.selected.indexOf(item.value);
+				if (selectedIndex !== -1) {
+					this.selected.splice(selectedIndex, 1);
+					item.label = item.label.replace(/^✓ /, "");
+				} else {
+					this.selected.push(item.value);
+					item.label = `✓ ${item.label}`;
+				}
 				return;
 			}
 			this.onAnswer(item.value);
@@ -114,6 +150,10 @@ export class QuestionSelectorComponent extends Container implements Focusable {
 
 	handleInput(keyData: string): void {
 		const kb = getKeybindings();
+		if (this.customInputMode) {
+			this.searchInput.handleInput(keyData);
+			return;
+		}
 		const isNav =
 			kb.matches(keyData, "tui.select.up") ||
 			kb.matches(keyData, "tui.select.down") ||

@@ -173,6 +173,7 @@ function parseEveryInterval(intervalStr: string): RoutineSchedule {
 	const match = /^(\d+)\s*(m|min|mins|minute|minutes|h|hr|hrs|hour|hours)$/i.exec(intervalStr.trim());
 	if (!match) throw new Error(`Unknown interval: "${intervalStr}"`);
 	const n = Number(match[1]);
+	if (n <= 0) throw new Error("Interval must be greater than zero");
 	const unit = match[2].toLowerCase();
 	const everyMs = unit[0] === "m" ? n * 60000 : n * 3600000;
 	return { kind: "interval", everyMs };

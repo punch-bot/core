@@ -21,13 +21,10 @@ export interface McpToolResult {
 	structuredContent?: unknown;
 }
 
-let toolIdCounter = 0;
-
 export class McpClient {
 	private readonly transport: McpTransport;
 	private nextId = 1;
 	private readonly pending = new Map<number, { resolve: (r: JsonRpcResponse) => void; reject: (e: Error) => void }>();
-	private toolIds = new Map<string, string>();
 
 	constructor(transport: McpTransport) {
 		this.transport = transport;
@@ -38,16 +35,24 @@ export class McpClient {
 	}
 
 	async listTools(): Promise<McpToolInfo[]> {
-		const response = await this.request("tools/list", {});
-		if (response.error) {
-			throw new Error(`tools/list failed: ${response.error.message}`);
-		}
-		const result = response.result as { tools?: McpToolInfo[]; nextCursor?: string };
-		return (result?.tools ?? []).map((tool) => ({
-			name: tool.name,
-			description: tool.description,
-			inputSchema: (tool.inputSchema ?? {}) as Record<string, unknown>,
-		}));
+		const tools: McpToolInfo[] = [];
+		let cursor: string | undefined;
+		do {
+			const response = await this.request("tools/list", cursor ? { cursor } : {});
+			if (response.error) {
+				throw new Error(`tools/list failed: ${response.error.message}`);
+			}
+			const result = response.result as { tools?: McpToolInfo[]; nextCursor?: string };
+			for (const tool of result?.tools ?? []) {
+				tools.push({
+					name: tool.name,
+					description: tool.description,
+					inputSchema: (tool.inputSchema ?? {}) as Record<string, unknown>,
+				});
+			}
+			cursor = result?.nextCursor;
+		} while (cursor);
+		return tools;
 	}
 
 	async callTool(name: string, args: Record<string, unknown>): Promise<McpToolResult> {
@@ -61,15 +66,6 @@ export class McpClient {
 			throw new Error(text);
 		}
 		return result ?? {};
-	}
-
-	toolIdFor(name: string): string {
-		let id = this.toolIds.get(name);
-		if (!id) {
-			id = `mcp-tool-${++toolIdCounter}`;
-			this.toolIds.set(name, id);
-		}
-		return id;
 	}
 
 	async close(): Promise<void> {
@@ -106,11 +102,7 @@ export function jsonSchemaToTypeBox(schema: unknown, depth = 0): TSchema {
 				typeof v === "string" || typeof v === "number" || typeof v === "boolean",
 		);
 		if (values.length > 0) {
-			return Type.Union(
-				values.map((v) =>
-					typeof v === "number" ? Type.Number() : typeof v === "boolean" ? Type.Boolean() : Type.String(),
-				),
-			);
+			return Type.Union(values.map((v) => Type.Literal(v)));
 		}
 		return Type.Unknown();
 	}
@@ -127,13 +119,37 @@ export function jsonSchemaToTypeBox(schema: unknown, depth = 0): TSchema {
 		return subs.length > 0 ? Type.Union(subs) : Type.Unknown();
 	}
 	const type = s.type;
-	if (type === "string") return Type.String();
-	if (type === "number" || type === "integer") return Type.Number();
+	if (type === "string") {
+		return Type.String({
+			minLength: typeof s.minLength === "number" ? s.minLength : undefined,
+			maxLength: typeof s.maxLength === "number" ? s.maxLength : undefined,
+			pattern: typeof s.pattern === "string" ? s.pattern : undefined,
+		});
+	}
+	if (type === "integer") {
+		return Type.Integer({
+			minimum: typeof s.minimum === "number" ? s.minimum : undefined,
+			maximum: typeof s.maximum === "number" ? s.maximum : undefined,
+		});
+	}
+	if (type === "number") {
+		return Type.Number({
+			minimum: typeof s.minimum === "number" ? s.minimum : undefined,
+			maximum: typeof s.maximum === "number" ? s.maximum : undefined,
+		});
+	}
 	if (type === "boolean") return Type.Boolean();
 	if (type === "null") return Type.Null();
 	if (type === "array") {
 		const items = s.items as Record<string, unknown> | undefined;
-		return items ? Type.Array(jsonSchemaToTypeBox(items, depth + 1)) : Type.Array(Type.Unknown());
+		const itemSchema = items ? jsonSchemaToTypeBox(items, depth + 1) : Type.Unknown();
+		if (typeof s.minItems === "number" || typeof s.maxItems === "number") {
+			return Type.Array(itemSchema, {
+				minItems: typeof s.minItems === "number" ? s.minItems : undefined,
+				maxItems: typeof s.maxItems === "number" ? s.maxItems : undefined,
+			});
+		}
+		return Type.Array(itemSchema);
 	}
 	if (type === "object" || s.properties) {
 		const properties = (s.properties ?? {}) as Record<string, unknown>;
@@ -143,8 +159,11 @@ export function jsonSchemaToTypeBox(schema: unknown, depth = 0): TSchema {
 			const ts = jsonSchemaToTypeBox(value, depth + 1);
 			props[key] = required.includes(key) ? ts : Type.Optional(ts);
 		}
-		if (s.additionalProperties === true) {
+		if (s.additionalProperties === true || typeof s.additionalProperties === "object") {
 			return Type.Record(Type.String(), Type.Unknown(), { properties: props, required });
+		}
+		if (s.additionalProperties === false) {
+			return Type.Object(props, { additionalProperties: false });
 		}
 		return Type.Object(props);
 	}

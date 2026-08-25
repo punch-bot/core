@@ -18,6 +18,7 @@ export default function websearchExtension(pi: ExtensionAPI): void {
 			const maxResults = args.maxResults || 5;
 			const response = await fetch(`${SEARXNG_URL}/search?q=${encodeURIComponent(args.query)}&format=json`, {
 				headers: { Accept: "application/json" },
+				signal: AbortSignal.timeout(15_000),
 			});
 			if (!response.ok) {
 				throw new Error(`SearXNG returned ${response.status}: ${await response.text()}`);

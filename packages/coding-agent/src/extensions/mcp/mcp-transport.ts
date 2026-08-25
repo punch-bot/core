@@ -163,7 +163,6 @@ export interface StreamableHttpMcpTransportOptions {
 export class StreamableHttpMcpTransport implements McpTransport {
 	private readonly url: string;
 	private readonly headers: Record<string, string>;
-	private pending = new Map<number | string, { resolve: (r: JsonRpcResponse) => void; reject: (e: Error) => void }>();
 	private nextId = 1;
 	private mcpSessionId?: string;
 	private closed = false;
@@ -249,18 +248,9 @@ export class StreamableHttpMcpTransport implements McpTransport {
 			const messages = this.parseSse(body);
 			for (const msg of messages) {
 				const parsed = msg as JsonRpcResponse;
-				if (parsed && parsed.id !== null && typeof parsed.id !== "undefined") {
-					const pending = this.pending.get(parsed.id);
-					if (pending) {
-						this.pending.delete(parsed.id);
-						pending.resolve(parsed);
-					}
+				if (parsed && parsed.id === message.id) {
+					return parsed;
 				}
-			}
-			const pending = this.pending.get(message.id);
-			if (pending) {
-				this.pending.delete(message.id);
-				pending.resolve({ jsonrpc: "2.0", id: message.id, result: {} });
 			}
 			return { jsonrpc: "2.0", id: message.id, result: {} };
 		}

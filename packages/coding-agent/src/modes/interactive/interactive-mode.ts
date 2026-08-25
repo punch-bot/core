@@ -3310,18 +3310,33 @@ export class InteractiveMode {
 						this.maybeShowCacheMissNotice(this.streamingMessage);
 						const delivery = deliveryFromMessage(event.message);
 						if (delivery.questions.length > 0) {
-							const question = delivery.questions[0];
-							this.showSelector((done) => {
-								const selector = new QuestionSelectorComponent(
-									question,
-									(answer) => {
-										done();
-										void this.session.prompt(answer);
-									},
-									() => done(),
-								);
-								return { component: selector, focus: selector };
-							});
+							const showQuestion = (index: number): void => {
+								if (index >= delivery.questions.length) return;
+								const question = delivery.questions[index];
+								this.showSelector((done) => {
+									const selector = new QuestionSelectorComponent(
+										question,
+										(answer) => {
+											done();
+											showQuestion(index + 1);
+											void (async () => {
+												try {
+													await this.session.waitForIdle();
+													await this.session.prompt(answer);
+												} catch (err) {
+													console.error(err);
+												}
+											})();
+										},
+										() => {
+											done();
+											showQuestion(index + 1);
+										},
+									);
+									return { component: selector, focus: selector };
+								});
+							};
+							showQuestion(0);
 						}
 					}
 					this.streamingComponent = undefined;

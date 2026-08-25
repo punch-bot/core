@@ -253,7 +253,7 @@ export function parseDelivery(text: string): Delivery {
 	const questionsResult = extractQuestions(embedsResult.clean);
 	const attachmentsResult = extractAttachments(questionsResult.clean);
 	return {
-		text: attachmentsResult.clean,
+		text: stripDiscordMarkup(attachmentsResult.clean),
 		embeds: embedsResult.embeds,
 		questions: questionsResult.questions,
 		attachments: attachmentsResult.attachments.map((path) => ({ path })),
