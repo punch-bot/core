@@ -1,21 +1,10 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 
+import { authenticate, issueToken } from "./auth.ts";
 import { create as createCollab, getFor, listFor, propose, review } from "./collabs.ts";
 import { addRoutine, listRoutines, parseRecurrence, pauseRoutine, removeRoutine, resumeRoutine } from "./routines.ts";
 
 const PORT = Number(process.env.PI_BOT_PORT) || 4098;
-
-function authActor(req: IncomingMessage): string {
-	const header = req.headers.authorization ?? "";
-	const match = /^Basic\s+(.+)$/i.exec(header);
-	if (!match) throw new Error("Unauthorized");
-	const [username, ...rest] = Buffer.from(match[1], "base64").toString("utf8").split(":");
-	const expectedUser = process.env.PI_SERVER_USERNAME || process.env.OPENCODE_SERVER_USERNAME || "opencode";
-	const expectedPass = process.env.PI_SERVER_PASSWORD || process.env.OPENCODE_SERVER_PASSWORD || "";
-	if (username !== expectedUser && username !== "opencode") throw new Error("Unauthorized");
-	if (rest.join(":") !== expectedPass) throw new Error("Unauthorized");
-	return username;
-}
 
 async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
 	const chunks: Buffer[] = [];
@@ -36,17 +25,35 @@ function sendJson(res: ServerResponse, status: number, data: unknown): void {
 }
 
 async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
-	let actor: string;
+	const url = new URL(req.url ?? "/", "http://localhost");
+	const path = url.pathname;
+	const method = req.method ?? "GET";
+
 	try {
-		actor = authActor(req);
-	} catch (err) {
-		sendJson(res, 401, { error: (err as Error).message });
-		return;
-	}
-	try {
-		const url = new URL(req.url ?? "/", "http://localhost");
-		const path = url.pathname;
-		const method = req.method ?? "GET";
+		if (method === "POST" && path === "/oauth/token") {
+			const body = await readJson(req);
+			if (body.grant_type !== "client_credentials") {
+				sendJson(res, 400, { error: "Unsupported grant_type" });
+				return;
+			}
+			const actor = authenticate(req);
+			const issued = issueToken(actor);
+			sendJson(res, 200, {
+				access_token: issued.token,
+				token_type: "Bearer",
+				expires_in: Math.floor((issued.expiresAt - Date.now()) / 1000),
+				scope: "sandbox",
+			});
+			return;
+		}
+
+		let actor: string;
+		try {
+			actor = authenticate(req);
+		} catch (err) {
+			sendJson(res, 401, { error: (err as Error).message });
+			return;
+		}
 
 		if (method === "GET" && path === "/collabs") {
 			sendJson(res, 200, { collabs: listFor(actor) });
