@@ -16,6 +16,8 @@
 				"@punch-bot/tui": "^0.84.2",
 				"@silvia-odwyer/photon-node": "0.3.4",
 				"chalk": "5.6.2",
+				"chrono-node": "2.10.1",
+				"cron-parser": "5.10.0",
 				"cross-spawn": "7.0.6",
 				"diff": "8.0.4",
 				"grok-mermaid": "0.2.2",
@@ -1047,6 +1049,27 @@
 				"url": "https://github.com/chalk/chalk?sponsor=1"
 			}
 		},
+		"node_modules/chrono-node": {
+			"version": "2.10.1",
+			"resolved": "https://registry.npmjs.org/chrono-node/-/chrono-node-2.10.1.tgz",
+			"integrity": "sha512-tPOsBzYVAK5zth+CiHCgp5NGeqRc4mMD8FPthQ5IxkgjPWWxIFdM5odnmfw//IRAzl6C++Xy8olQW7wn5qBR1g==",
+			"license": "MIT",
+			"engines": {
+				"node": "^12.20.0 || ^14.13.1 || >=16.0.0"
+			}
+		},
+		"node_modules/cron-parser": {
+			"version": "5.10.0",
+			"resolved": "https://registry.npmjs.org/cron-parser/-/cron-parser-5.10.0.tgz",
+			"integrity": "sha512-izNAxJyRWUP8ljBoDSub5WyrVOUlT4SLGShswE7eoRBpp6QUsSycYxLBMJlbshgPBMcPT/nrfgjNY2918ayv2A==",
+			"license": "MIT",
+			"dependencies": {
+				"luxon": "^3.7.2"
+			},
+			"engines": {
+				"node": ">=18"
+			}
+		},
 		"node_modules/cross-spawn": {
 			"version": "7.0.6",
 			"resolved": "https://registry.npmjs.org/cross-spawn/-/cross-spawn-7.0.6.tgz",
@@ -1391,6 +1414,15 @@
 			"license": "BlueOak-1.0.0",
 			"engines": {
 				"node": "20 || >=22"
+			}
+		},
+		"node_modules/luxon": {
+			"version": "3.7.2",
+			"resolved": "https://registry.npmjs.org/luxon/-/luxon-3.7.2.tgz",
+			"integrity": "sha512-vtEhXh/gNjI9Yg1u4jX/0YVPMvxzHuGgCm6tC5kZyb08yjGWGnqAjGJvcXbqQR2P3MyMEFnRbpcdFS6PBcLqew==",
+			"license": "MIT",
+			"engines": {
+				"node": ">=12"
 			}
 		},
 		"node_modules/marked": {

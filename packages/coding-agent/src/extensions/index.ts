@@ -3,6 +3,7 @@ import browserExtension from "./browser/index.ts";
 import contextPruningExtension from "./context-pruning/compress_context.ts";
 import llamaExtension from "./llama/index.ts";
 import mcpExtension from "./mcp/index.ts";
+import punchExtension from "./punch/index.ts";
 import reportProgressExtension from "./report-progress/index.ts";
 import webfetchExtension from "./webfetch/index.ts";
 import websearchExtension from "./websearch/index.ts";
@@ -15,4 +16,5 @@ export const builtInExtensions: InlineExtension[] = [
 	{ name: "context_pruning", factory: contextPruningExtension },
 	{ name: "browser", factory: browserExtension },
 	{ name: "mcp", factory: mcpExtension },
+	{ name: "punch", factory: punchExtension },
 ];

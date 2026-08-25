@@ -51,6 +51,8 @@
 		"@punch-bot/tui": "^0.84.2",
 		"@silvia-odwyer/photon-node": "0.3.4",
 		"chalk": "5.6.2",
+		"chrono-node": "2.10.1",
+		"cron-parser": "5.10.0",
 		"cross-spawn": "7.0.6",
 		"diff": "8.0.4",
 		"grok-mermaid": "0.2.2",
