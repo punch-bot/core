@@ -221,10 +221,10 @@ export default function webfetchExtension(pi: ExtensionAPI): void {
 					});
 					await new Promise((resolve) => setTimeout(resolve, 2_000));
 					const text = await guarded.evaluate(
-						"(max) => { const el = document.querySelector(\"article, main, [role='main'], .content, #content\") || document.body; return el?.innerText?.slice(0, max) || document.title; }",
-						maxChars,
-					);
-					return { content: [{ type: "text" as const, text }], details: {} };
+					(async (max) => {
+						const el = document.querySelector("article, main, [role='main'], .content, #content") || document.body;
+						return (el?.innerText ?? document.title).slice(0, max);
+					}),
 				} finally {
 					await (page as { close(): Promise<void> }).close();
 				}
