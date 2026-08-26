@@ -76,11 +76,12 @@ async function registerMcpServer(
 			void client.close();
 			return;
 		}
-		} catch (err) {
-			void client.close();
-			if (generation !== extensionGeneration) return;
-			pi.sendUserMessage(`mcp: failed to connect to server "${name}": ${(err as Error).message}`);
-			return;
+	} catch (err) {
+		void client.close();
+		if (generation !== extensionGeneration) return;
+		pi.sendUserMessage(`mcp: failed to connect to server "${name}": ${(err as Error).message}`);
+		return;
+	}
 	for (const tool of tools) {
 		const toolName = `mcp__${name}__${tool.name}`;
 		let parameters: TSchema;

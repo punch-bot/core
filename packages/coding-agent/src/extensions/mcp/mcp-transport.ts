@@ -204,14 +204,20 @@ export class StreamableHttpMcpTransport implements McpTransport {
 			...this.headers,
 		};
 		if (this.mcpSessionId) headers["Mcp-Session-Id"] = this.mcpSessionId;
+		let response: Response;
 		try {
-			await fetch(this.url, {
+			response = await fetch(this.url, {
 				method: "POST",
 				headers,
 				body: JSON.stringify(message),
 				signal: AbortSignal.timeout(120_000),
 			});
-		} catch {}
+		} catch (err) {
+			throw new Error(`MCP HTTP notification failed: ${(err as Error).message}`);
+		}
+		if (!response.ok) {
+			throw new Error(`MCP HTTP notification failed: ${response.status} ${response.statusText}`);
+		}
 	}
 
 	request(message: JsonRpcRequest): Promise<JsonRpcResponse> {
@@ -252,7 +258,7 @@ export class StreamableHttpMcpTransport implements McpTransport {
 					return parsed;
 				}
 			}
-			return { jsonrpc: "2.0", id: message.id, result: {} };
+			throw new Error(`MCP SSE response closed without a reply for request id ${message.id}`);
 		}
 		const text = await response.text();
 		if (!text) {

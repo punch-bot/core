@@ -54,6 +54,10 @@ function git(workspace: string, args: string[]): string {
 	return execFileSync("git", ["-C", workspace, ...args], { encoding: "utf8" }).trim();
 }
 
+function sandboxActor(): string {
+	return process.env.PI_SERVER_USERNAME || process.env.OPENCODE_SERVER_USERNAME || "opencode";
+}
+
 export default function punchExtension(pi: ExtensionAPI): void {
 	startScheduler(async (routine) => {
 		switch (routine.type) {
@@ -125,7 +129,7 @@ export default function punchExtension(pi: ExtensionAPI): void {
 				workspaces: Record<string, string>;
 				proposal?: { reviewer?: string; status?: string };
 			};
-			const workspace = args.workspace || collab.workspaces[process.env.SANDBOX_NAME || ""];
+			const workspace = args.workspace || collab.workspaces[process.env.SANDBOX_NAME || sandboxActor()];
 			if (!workspace) throw new Error("workspace is required");
 			const branch = `changes/${args.id}`;
 			if (args.action === "propose") {

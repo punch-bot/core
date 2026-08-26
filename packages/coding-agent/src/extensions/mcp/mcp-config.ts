@@ -177,6 +177,7 @@ export function isMcpApiKeyConfigured(
 ): boolean {
 	const entry = registry[serverName];
 	if (!usesApiKeyAuth(entry)) return true;
+	if (entry.apiKeyEnv && env[entry.apiKeyEnv] !== undefined && env[entry.apiKeyEnv] !== "") return true;
 	const ambiguous = ambiguousLegacyMcpApiKeyEnvVars(registry);
 	const candidates = mcpApiKeyEnvVarCandidates(serverName).filter((v) => !ambiguous.has(v));
 	return candidates.some((v) => env[v] !== undefined && env[v] !== "");
@@ -186,6 +187,11 @@ export function sanitizeMcpEntryForDisplay(entry: McpRegistryEntry): Record<stri
 	const out: Record<string, unknown> = { ...entry };
 	if (out.headers && typeof out.headers === "object") {
 		out.headers = Object.fromEntries(Object.keys(out.headers as Record<string, unknown>).map((k) => [k, "(set)"]));
+	}
+	if (out.environment && typeof out.environment === "object") {
+		out.environment = Object.fromEntries(
+			Object.keys(out.environment as Record<string, unknown>).map((k) => [k, "(set)"]),
+		);
 	}
 	delete out.apiKey;
 	delete out.apiKeyEnv;

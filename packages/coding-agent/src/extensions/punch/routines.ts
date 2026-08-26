@@ -55,17 +55,21 @@ let seq = 0;
 let timer: NodeJS.Timeout | null = null;
 let onFireCallback: ((routine: Routine) => Promise<void>) | null = null;
 let runDuePending = false;
-const routines: Routine[] = load(ROUTINES_FILE, [])
+const hadRoutinesFile = existsSync(ROUTINES_FILE);
+const hadHistoryFile = existsSync(HISTORY_FILE);
+const routines: Routine[] = loadJsonArray<Routine>(ROUTINES_FILE)
 	.map(normalizeRoutine)
 	.filter((r): r is Routine => r !== null);
-let history: RoutineExecution[] = load(HISTORY_FILE, []);
+let history: RoutineExecution[] = loadJsonArray<RoutineExecution>(HISTORY_FILE);
 
-function load<T>(file: string, fallback: T): T {
+function loadJsonArray<T>(file: string): T[] {
 	try {
 		const parsed = JSON.parse(readFileSync(file, "utf8"));
-		return Array.isArray(parsed) ? (parsed as T) : fallback;
-	} catch {
-		return fallback;
+		if (!Array.isArray(parsed)) throw new Error("expected JSON array");
+		return parsed as T[];
+	} catch (err) {
+		if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+		throw new Error(`Failed to load ${file}: ${(err as Error).message}`);
 	}
 }
 
@@ -472,7 +476,6 @@ export {
 	stopScheduler,
 };
 
-existsSync(ROUTINES_FILE);
 for (const routine of routines) {
 	if (routine.state === "running") {
 		routine.state = "failed";
@@ -491,7 +494,5 @@ for (const routine of routines) {
 	}
 }
 history = history.slice(-2000);
-if (existsSync(ROUTINES_FILE)) {
-	saveRoutines();
-	saveHistory();
-}
+if (hadRoutinesFile) saveRoutines();
+if (hadHistoryFile) saveHistory();

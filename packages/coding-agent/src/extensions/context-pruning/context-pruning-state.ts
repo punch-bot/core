@@ -108,9 +108,9 @@ export function activeMessageIds(state: PruningState): Set<string> {
 function isValidSummary(summary: string, sourceCharacters: number): boolean {
 	if (typeof summary !== "string" || !summary.trim()) return false;
 	if (PLACEHOLDER_PATTERNS.some((pattern) => pattern.test(summary.trim()))) return false;
+	if (summary.trim().length > sourceCharacters) return false;
 	if (sourceCharacters < SMALL_RANGE_CHARS) return true;
 	if (summary.trim().length < MIN_SUMMARY_ABSOLUTE) return false;
-	if (summary.trim().length > sourceCharacters) return false;
 	if (summary.trim().length < sourceCharacters * MIN_SUMMARY_RATIO) return false;
 	return true;
 }

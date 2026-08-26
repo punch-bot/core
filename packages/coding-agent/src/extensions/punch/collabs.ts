@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import * as path from "node:path";
 
 export interface CollabProposal {
@@ -59,8 +59,11 @@ function reload(): void {
 }
 
 function save(): void {
-	mkdirSync(path.dirname(collabStateFile()), { recursive: true });
-	writeFileSync(collabStateFile(), JSON.stringify(records, null, 2), { mode: 0o600 });
+	const file = collabStateFile();
+	mkdirSync(path.dirname(file), { recursive: true });
+	const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+	writeFileSync(tmp, JSON.stringify(records, null, 2), { mode: 0o600 });
+	renameSync(tmp, file);
 }
 
 function collabOrThrow(id: string): Collab {
@@ -134,7 +137,9 @@ function bareHead(collab: Collab, branch: string): string {
 }
 
 export function collabDir(): string {
-	return process.env.PI_COLLAB_DIR || path.join(process.cwd(), ".pi", "collab");
+	const configured = process.env.PI_COLLAB_DIR;
+	if (configured) return path.resolve(configured);
+	return path.join(process.cwd(), ".pi", "collab");
 }
 
 export function listFor(actor: string): Collab[] {
@@ -237,6 +242,9 @@ export function review(opts: { id: string; actor: string; approve: boolean; note
 	requireParticipant(collab, opts.actor);
 	const proposal = collab.proposal;
 	if (!proposal || proposal.status === "merged") throw new Error("No proposal awaiting review.");
+	if (proposal.status === "changes_requested") {
+		throw new Error("Proposal has changes requested; author must propose a new SHA before review.");
+	}
 	if (proposal.reviewer !== opts.actor) throw new Error("Only other participant may review this proposal.");
 	const remoteHead = bareHead(collab, proposal.branch);
 	if (remoteHead !== proposal.head) throw new Error("Branch changed. Author must propose new SHA again.");
