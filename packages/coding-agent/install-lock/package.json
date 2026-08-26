@@ -1,10 +1,10 @@
 {
 	"name": "@punch-bot/cli-install",
-	"version": "0.84.2",
+	"version": "0.84.3",
 	"private": true,
 	"description": "Lockfile root used by the Pi installer and updater.",
 	"dependencies": {
-		"@punch-bot/cli": "0.84.2"
+		"@punch-bot/cli": "0.84.3"
 	},
 	"overrides": {
 		"protobufjs": "7.6.5",
