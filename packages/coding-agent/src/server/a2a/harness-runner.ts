@@ -37,7 +37,7 @@ export async function createCodingAgentHarnessRunnerFactory(
 ): Promise<HarnessPromptRunnerFactory> {
 	const cwd = options.cwd ?? process.cwd();
 	const agentDir = options.agentDir ?? getAgentDir();
-	const maxContexts = options.maxContexts ?? DEFAULT_MAX_CONTEXTS;
+	const maxContexts = Math.max(1, options.maxContexts ?? DEFAULT_MAX_CONTEXTS);
 	const modelRuntime = await ModelRuntime.create({ authPath: undefined });
 	const settingsManager = SettingsManager.create(cwd, agentDir);
 	const initialModel = await findInitialModel({
