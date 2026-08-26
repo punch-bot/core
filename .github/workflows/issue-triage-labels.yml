@@ -1,4 +1,5 @@
 name: Issue Triage Labels
+run-name: Triage · #${{ github.event.issue.number }} · ${{ github.event.action }}
 
 on:
   issues:

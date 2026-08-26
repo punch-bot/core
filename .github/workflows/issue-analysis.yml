@@ -46,6 +46,7 @@
 #   pi "/ir <gist-id | gist-url | pi.dev/session URL>"
 
 name: Issue Analysis
+run-name: Issue Analysis · #${{ github.event.issue.number }} · ${{ github.event_name }}
 
 on:
   issues:
