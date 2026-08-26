@@ -10,6 +10,7 @@ import type { ImageContent, Model } from "@punch-bot/ai";
 import type { SessionStats } from "../../core/agent-session.ts";
 import type { BashResult } from "../../core/bash-executor.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
+import type { Delivery } from "../../core/delivery.ts";
 import type { SessionEntry, SessionTreeNode } from "../../core/session-manager.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
 
@@ -53,6 +54,9 @@ export type RpcCommand =
 	// Bash
 	| { id?: string; type: "bash"; command: string; excludeFromContext?: boolean }
 	| { id?: string; type: "abort_bash" }
+
+	// Files
+	| { id?: string; type: "read_file"; path: string; maxBytes?: number }
 
 	// Session
 	| { id?: string; type: "get_session_stats" }
@@ -179,6 +183,15 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "bash"; success: true; data: BashResult }
 	| { id?: string; type: "response"; command: "abort_bash"; success: true }
 
+	// Files
+	| {
+			id?: string;
+			type: "response";
+			command: "read_file";
+			success: true;
+			data: { text?: string; base64?: string; mimeType?: string; size: number; truncated: boolean };
+	  }
+
 	// Session
 	| { id?: string; type: "response"; command: "get_session_stats"; success: true; data: SessionStats }
 	| { id?: string; type: "response"; command: "export_html"; success: true; data: { path: string } }
@@ -229,6 +242,13 @@ export type RpcResponse =
 
 	// Error response (any command can fail)
 	| { id?: string; type: "response"; command: string; success: false; error: string };
+
+// ============================================================================
+// Delivery Event (stdout)
+// ============================================================================
+
+/** Structured platform-neutral delivery parsed from the final assistant message */
+export type RpcDeliveryEvent = { type: "delivery"; delivery: Delivery };
 
 // ============================================================================
 // Extension UI Events (stdout)

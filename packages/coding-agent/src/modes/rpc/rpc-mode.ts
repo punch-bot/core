@@ -8,11 +8,17 @@
  * - Commands: JSON objects with `type` field, optional `id` for correlation
  * - Responses: JSON objects with `type: "response"`, `command`, `success`, and optional `data`/`error`
  * - Events: AgentSessionEvent objects streamed as they occur
+ * - Delivery: after each `message_end` event, a `delivery` event is emitted carrying the final
+ *   assistant message parsed into a platform-neutral envelope (plain text, embeds, questions,
+ *   attachments) so clients can render rich content on any platform.
  * - Extension UI: Extension UI requests are emitted, client responds with extension_ui_response
  */
 
 import * as crypto from "node:crypto";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
+import { deliveryFromMessage } from "../../core/delivery.ts";
 import type {
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
@@ -354,6 +360,12 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		unsubscribeBackpressure?.();
 		unsubscribe = session.subscribe((event) => {
 			output(toJsonEvent(event));
+			if (event.type === "message_end" && event.message.role === "assistant") {
+				const stopReason = event.message.stopReason;
+				if (stopReason !== "aborted" && stopReason !== "error") {
+					output({ type: "delivery", delivery: deliveryFromMessage(event.message) });
+				}
+			}
 			if (event.type === "agent_settled") {
 				void checkShutdownRequested();
 			}
@@ -582,6 +594,61 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			case "abort_bash": {
 				session.abortBash();
 				return success(id, "abort_bash");
+			}
+
+			case "read_file": {
+				const roots = [session.sessionManager.getCwd()];
+				let target: string;
+				try {
+					target = fs.realpathSync(path.resolve(session.sessionManager.getCwd(), command.path));
+				} catch {
+					return error(id, "read_file", "File not found");
+				}
+				let realRoots: string[];
+				try {
+					realRoots = roots.map((root) => fs.realpathSync(root));
+				} catch {
+					return error(id, "read_file", "Path is outside the allowed read roots");
+				}
+				const allowed = realRoots.some((root) => target === root || target.startsWith(root + path.sep));
+				if (!allowed) {
+					return error(id, "read_file", "Path is outside the allowed read roots");
+				}
+				let stat: fs.Stats;
+				try {
+					stat = fs.statSync(target);
+				} catch {
+					return error(id, "read_file", "File not found");
+				}
+				if (!stat.isFile()) {
+					return error(id, "read_file", "Not a file");
+				}
+				const maxBytes = Math.max(0, Math.min(command.maxBytes ?? 1024 * 1024, 64 * 1024 * 1024));
+				const size = Math.min(stat.size, maxBytes);
+				const buffer = Buffer.alloc(size);
+				const fd = fs.openSync(target, "r");
+				let readBytes = 0;
+				try {
+					while (readBytes < size) {
+						const n = fs.readSync(fd, buffer, readBytes, size - readBytes, readBytes);
+						if (n <= 0) break;
+						readBytes += n;
+					}
+				} finally {
+					fs.closeSync(fd);
+				}
+				const data = buffer.subarray(0, readBytes);
+				const truncated = readBytes < stat.size;
+				const isBinary = data.subarray(0, 8192).includes(0);
+				if (isBinary) {
+					return success(id, "read_file", {
+						base64: data.toString("base64"),
+						mimeType: "application/octet-stream",
+						size: data.length,
+						truncated,
+					});
+				}
+				return success(id, "read_file", { text: data.toString("utf8"), size: data.length, truncated });
 			}
 
 			// =================================================================

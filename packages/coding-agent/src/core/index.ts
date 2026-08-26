@@ -27,6 +27,22 @@ export {
 } from "./agent-session-services.ts";
 export { type BashExecutorOptions, type BashResult, executeBashWithOperations } from "./bash-executor.ts";
 export type { CompactionResult } from "./compaction/index.ts";
+export {
+	buildEmbedFromJson,
+	type Delivery,
+	type DeliveryAttachment,
+	type DeliveryEmbed,
+	type DeliveryQuestion,
+	deliveryFromMessage,
+	extractAttachments,
+	extractEmbeds,
+	extractQuestions,
+	parseDelivery,
+	parseQuestionAttrs,
+	parseQuestionOptions,
+	stripDiscordMarkup,
+	textFromMessage,
+} from "./delivery.ts";
 export { createEventBus, type EventBus, type EventBusController } from "./event-bus.ts";
 export { areExperimentalFeaturesEnabled } from "./experimental.ts";
 // Extensions system
