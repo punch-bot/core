@@ -73,15 +73,14 @@ function collabOrThrow(id: string): Collab {
 	return collab;
 }
 
-function normalizeActor(actor: string): string {
-	return actor.toLowerCase();
+function canonicalParticipant(collab: Collab, actor: string): string {
+	const participant = collab.participants.find((p) => p.toLowerCase() === actor.toLowerCase());
+	if (!participant) throw new Error("Sandbox is not a collaboration participant.");
+	return participant;
 }
 
 function requireParticipant(collab: Collab, actor: string): void {
-	const normalized = normalizeActor(actor);
-	if (!collab.participants.some((participant) => participant.toLowerCase() === normalized)) {
-		throw new Error("Sandbox is not a collaboration participant.");
-	}
+	canonicalParticipant(collab, actor);
 }
 
 function write(collab: Collab): void {
@@ -156,10 +155,8 @@ export function collabDir(): string {
 
 export function listFor(actor: string): Collab[] {
 	reload();
-	const normalized = normalizeActor(actor);
-	return records.filter((collab) =>
-		collab.participants.some((participant) => participant.toLowerCase() === normalized),
-	);
+	const lowered = actor.toLowerCase();
+	return records.filter((collab) => collab.participants.some((participant) => participant.toLowerCase() === lowered));
 }
 
 export function getFor(id: string, actor: string): Collab {
@@ -170,9 +167,11 @@ export function getFor(id: string, actor: string): Collab {
 }
 
 export function create(opts: { owner: string; reviewer: string; workspace: string }): Collab {
-	const owner = normalizeActor(opts.owner);
-	const reviewer = normalizeActor(opts.reviewer);
-	if (!reviewer || reviewer === owner) throw new Error("reviewer must be a different sandbox");
+	const owner = opts.owner;
+	const reviewer = opts.reviewer;
+	if (!reviewer || reviewer.toLowerCase() === owner.toLowerCase()) {
+		throw new Error("reviewer must be a different sandbox");
+	}
 	const source = safeWorkspace(opts.workspace);
 	const id = `col_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
 	const repo = path.join(collabDir(), `${id}.git`);
@@ -235,7 +234,8 @@ export function propose(opts: { id: string; actor: string; head: string }): Coll
 	} catch {
 		throw new Error("Proposal does not descend from canonical main.");
 	}
-	const reviewer = collab.participants.find((p) => p !== opts.actor);
+	const author = canonicalParticipant(collab, opts.actor);
+	const reviewer = collab.participants.find((p) => p.toLowerCase() !== author.toLowerCase());
 	if (!reviewer) throw new Error("No reviewer participant.");
 	const previous = collab.proposal;
 	if (previous?.status === "changes_requested") {
@@ -246,7 +246,7 @@ export function propose(opts: { id: string; actor: string; head: string }): Coll
 	}
 	collab.proposal = {
 		branch,
-		author: opts.actor,
+		author,
 		reviewer,
 		head: remoteHead,
 		authorApprovedAt: Date.now(),
@@ -269,7 +269,9 @@ export function review(opts: { id: string; actor: string; approve: boolean; note
 	if (proposal.status === "changes_requested") {
 		throw new Error("Proposal has changes requested; author must propose a new SHA before review.");
 	}
-	if (proposal.reviewer !== opts.actor) throw new Error("Only other participant may review this proposal.");
+	if (proposal.reviewer.toLowerCase() !== canonicalParticipant(collab, opts.actor).toLowerCase()) {
+		throw new Error("Only other participant may review this proposal.");
+	}
 	const remoteHead = bareHead(collab, proposal.branch);
 	if (remoteHead !== proposal.head) throw new Error("Branch changed. Author must propose new SHA again.");
 	proposal.reviewNotes = String(opts.notes || "").slice(0, 4000);

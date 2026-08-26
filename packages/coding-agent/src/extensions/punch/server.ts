@@ -68,7 +68,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 		}
 		if (method === "POST" && path === "/collabs/create") {
 			const body = await readJson(req);
-			const reviewer = String(body.reviewer ?? "").toLowerCase();
+			const reviewer = String(body.reviewer ?? "");
 			const workspace = String(body.workspace ?? "");
 			sendJson(res, 200, { collab: createCollab({ owner: actor, reviewer, workspace }) });
 			return;

@@ -196,6 +196,13 @@ export class StreamableHttpMcpTransport implements McpTransport {
 		await this.sendNotification({ jsonrpc: "2.0", method: "notifications/initialized", params: {} });
 	}
 
+	private async rejectRedirect(response: Response): Promise<void> {
+		if (response.status >= 300 && response.status < 400) {
+			await response.body?.cancel();
+			throw new Error("MCP HTTP redirects are not supported");
+		}
+	}
+
 	private async sendNotification(message: { jsonrpc: "2.0"; method: string; params?: unknown }): Promise<void> {
 		if (this.closed) return;
 		const headers: Record<string, string> = {
@@ -211,10 +218,12 @@ export class StreamableHttpMcpTransport implements McpTransport {
 				headers,
 				body: JSON.stringify(message),
 				signal: AbortSignal.timeout(120_000),
+				redirect: "manual",
 			});
 		} catch (err) {
 			throw new Error(`MCP HTTP notification failed: ${(err as Error).message}`);
 		}
+		await this.rejectRedirect(response);
 		if (!response.ok) {
 			throw new Error(`MCP HTTP notification failed: ${response.status} ${response.statusText}`);
 		}
@@ -244,9 +253,7 @@ export class StreamableHttpMcpTransport implements McpTransport {
 		} catch (err) {
 			throw new Error(`MCP HTTP request failed: ${(err as Error).message}`);
 		}
-		if (response.status >= 300 && response.status < 400) {
-			throw new Error("MCP HTTP redirects are not supported");
-		}
+		await this.rejectRedirect(response);
 		if (!response.ok) {
 			throw new Error(`MCP HTTP request failed: ${response.status} ${response.statusText}`);
 		}

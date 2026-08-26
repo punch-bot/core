@@ -68,6 +68,12 @@ function loadUsers(): UserRecord[] {
 			}
 		}
 	} catch {}
+	const seen = new Set<string>();
+	for (const user of users) {
+		const key = user.name.toLowerCase();
+		if (seen.has(key)) throw new Error(`Duplicate punch user name (case-insensitive): ${user.name}`);
+		seen.add(key);
+	}
 	cachedUsers = users;
 	cachedUsersMtimeMs = mtimeMs;
 	return users;
@@ -83,22 +89,23 @@ function getAuthHeader(): string | null {
 	return `Basic ${Buffer.from(`${user.name}:${user.password}`).toString("base64")}`;
 }
 
-function normalizeActor(actor: string): string {
-	return actor.toLowerCase();
-}
-
 function verifyBasic(header: string | undefined): string | null {
 	const match = /^Basic\s+(.+)$/i.exec(header ?? "");
 	if (!match) return null;
 	const [username, ...rest] = Buffer.from(match[1], "base64").toString("utf8").split(":");
 	const password = rest.join(":");
 	const users = loadUsers();
-	const user = users.find((u) => u.name === username || (username === DEFAULT_USER && u.name === defaultUser()));
+	const lowered = username.toLowerCase();
+	const user = users.find(
+		(u) =>
+			u.name.toLowerCase() === lowered ||
+			(lowered === DEFAULT_USER.toLowerCase() && u.name.toLowerCase() === defaultUser().toLowerCase()),
+	);
 	if (!user) return null;
 	const provided = digest(password);
 	const expected = digest(user.password);
 	if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) return null;
-	return normalizeActor(user.name);
+	return user.name;
 }
 
 function pruneTokens(): void {
@@ -120,7 +127,7 @@ function verifyToken(token: string): string | null {
 	pruneTokens();
 	const record = tokens.get(token);
 	if (!record || record.expiresAt <= Date.now()) return null;
-	return normalizeActor(record.userId);
+	return record.userId;
 }
 
 function authenticateBasic(req: IncomingMessage): string {
