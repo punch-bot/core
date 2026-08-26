@@ -26,6 +26,8 @@ import {
 	validateAuthCommandArgs,
 } from "./cli/auth-command.ts";
 import { resolveCredentialForPrint } from "./cli/credential-print.ts";
+import { experimentalCli } from "./cli/experimental/cli.ts";
+import { runExperimentalServer } from "./cli/experimental/run-server.ts";
 import { processFileArguments } from "./cli/file-processor.ts";
 import { buildInitialMessage } from "./cli/initial-message.ts";
 import { listModels } from "./cli/list-models.ts";
@@ -557,6 +559,31 @@ export interface MainOptions {
 	extensionFactories?: InlineExtension[];
 }
 
+async function handleExperimentalCommand(args: string[]): Promise<boolean> {
+	const subcommand = args[0];
+	if (subcommand !== "server" && subcommand !== "client") {
+		return false;
+	}
+
+	const result = await experimentalCli.execute(args, {
+		runPi: async () => {
+			throw new Error("Unexpected pi command in server/client entrypoint");
+		},
+		runServer: runExperimentalServer,
+		runClient: async () => {
+			console.error(chalk.red("Error: Experimental client mode is not implemented yet"));
+			process.exit(1);
+		},
+	});
+	if (!result.ok) {
+		for (const error of result.errors) {
+			console.error(chalk.red(`Error: ${error}`));
+		}
+		process.exit(1);
+	}
+	return true;
+}
+
 export async function main(args: string[], options?: MainOptions) {
 	resetTimings();
 	const extensionFactories = [...builtInExtensions, ...(options?.extensionFactories ?? [])];
@@ -567,6 +594,10 @@ export async function main(args: string[], options?: MainOptions) {
 	}
 
 	if (await runAuthCommand(args)) {
+		return;
+	}
+
+	if (await handleExperimentalCommand(args)) {
 		return;
 	}
 

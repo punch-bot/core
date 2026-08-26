@@ -16,6 +16,7 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { delegateToA2aAgentPreferStream } from "@punch-bot/a2a";
 import type { AgentToolResult, ThinkingLevel } from "@punch-bot/agent";
 import type { Message } from "@punch-bot/ai";
 import { StringEnum } from "@punch-bot/ai";
@@ -331,6 +332,51 @@ async function runSingleAgent(
 	};
 
 	try {
+		if (agent.a2aUrl) {
+			const prompt = agent.systemPrompt.trim() ? `${agent.systemPrompt.trim()}\n\nTask: ${task}` : `Task: ${task}`;
+			try {
+				const result = await delegateToA2aAgentPreferStream(
+					{
+						url: agent.a2aUrl,
+						task: prompt,
+						signal,
+					},
+					(text) => {
+						currentResult.messages = [
+							{
+								role: "assistant",
+								content: [{ type: "text", text }],
+							} as Message,
+						];
+						emitUpdate();
+					},
+				);
+				if (result.failed) {
+					currentResult.exitCode = 1;
+					currentResult.stderr = result.error ?? "A2A delegation failed";
+					currentResult.stopReason = "error";
+					currentResult.errorMessage = currentResult.stderr;
+				} else if (result.text) {
+					currentResult.messages = [
+						{
+							role: "assistant",
+							content: [{ type: "text", text: result.text }],
+						} as Message,
+					];
+				}
+			} catch (error) {
+				if (signal?.aborted) {
+					throw error;
+				}
+				currentResult.exitCode = 1;
+				currentResult.stderr = error instanceof Error ? error.message : String(error);
+				currentResult.stopReason = "error";
+				currentResult.errorMessage = currentResult.stderr;
+			}
+			emitUpdate();
+			return currentResult;
+		}
+
 		if (agent.systemPrompt.trim()) {
 			const tmp = await writePromptToTempFile(agent.name, agent.systemPrompt);
 			tmpPromptDir = tmp.dir;
