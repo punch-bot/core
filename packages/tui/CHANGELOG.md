@@ -6,6 +6,9 @@
 
 - Renamed package from `@earendil-works/pi-tui` to `@punch-bot/tui`.
 
+
+## [0.84.3] - 2026-08-24
+
 ### Fixed
 
 - Fixed duplicate fullscreen right-click paste in VS Code-based terminals on Windows ([#8186](https://github.com/earendil-works/pi/issues/8186)).

@@ -1,20 +1,20 @@
 {
 	"name": "@punch-bot/cli",
-	"version": "0.84.2",
+	"version": "0.84.3",
 	"lockfileVersion": 3,
 	"requires": true,
 	"packages": {
 		"": {
 			"name": "@punch-bot/cli",
-			"version": "0.84.2",
+			"version": "0.84.3",
 			"license": "MIT",
 			"dependencies": {
-				"@punch-bot/a2a": "^0.84.2",
-				"@punch-bot/agent": "^0.84.2",
-				"@punch-bot/ai": "^0.84.2",
-				"@punch-bot/client": "^0.84.2",
-				"@punch-bot/protocol": "^0.84.2",
-				"@punch-bot/tui": "^0.84.2",
+				"@punch-bot/a2a": "^0.84.3",
+				"@punch-bot/agent": "^0.84.3",
+				"@punch-bot/ai": "^0.84.3",
+				"@punch-bot/client": "^0.84.3",
+				"@punch-bot/protocol": "^0.84.3",
+				"@punch-bot/tui": "^0.84.3",
 				"@silvia-odwyer/photon-node": "0.3.4",
 				"chalk": "5.6.2",
 				"chrono-node": "2.10.1",
@@ -782,8 +782,8 @@
 			"license": "BSD-3-Clause"
 		},
 		"node_modules/@punch-bot/a2a": {
-			"version": "0.84.2",
-			"resolved": "https://registry.npmjs.org/@punch-bot/a2a/-/a2a-0.84.2.tgz",
+			"version": "0.84.3",
+			"resolved": "https://registry.npmjs.org/@punch-bot/a2a/-/a2a-0.84.3.tgz",
 			"license": "MIT",
 			"dependencies": {
 				"@a2a-js/sdk": "1.0.1",
@@ -794,12 +794,12 @@
 			}
 		},
 		"node_modules/@punch-bot/agent": {
-			"version": "0.84.2",
-			"resolved": "https://registry.npmjs.org/@punch-bot/agent/-/agent-0.84.2.tgz",
+			"version": "0.84.3",
+			"resolved": "https://registry.npmjs.org/@punch-bot/agent/-/agent-0.84.3.tgz",
 			"license": "MIT",
 			"dependencies": {
-				"@punch-bot/ai": "^0.84.2",
-				"@punch-bot/telemetry": "^0.84.2",
+				"@punch-bot/ai": "^0.84.3",
+				"@punch-bot/telemetry": "^0.84.3",
 				"diff": "8.0.4",
 				"ignore": "7.0.5",
 				"typebox": "1.3.7",
@@ -810,13 +810,13 @@
 			}
 		},
 		"node_modules/@punch-bot/ai": {
-			"version": "0.84.2",
-			"resolved": "https://registry.npmjs.org/@punch-bot/ai/-/ai-0.84.2.tgz",
+			"version": "0.84.3",
+			"resolved": "https://registry.npmjs.org/@punch-bot/ai/-/ai-0.84.3.tgz",
 			"license": "MIT",
 			"dependencies": {
 				"@anthropic-ai/sdk": "0.91.1",
 				"@aws-sdk/client-bedrock-runtime": "3.1048.0",
-				"@punch-bot/telemetry": "^0.84.2",
+				"@punch-bot/telemetry": "^0.84.3",
 				"@google/genai": "1.52.0",
 				"@smithy/node-http-handler": "4.7.3",
 				"http-proxy-agent": "7.0.2",
@@ -833,19 +833,19 @@
 			}
 		},
 		"node_modules/@punch-bot/client": {
-			"version": "0.84.2",
-			"resolved": "https://registry.npmjs.org/@punch-bot/client/-/client-0.84.2.tgz",
+			"version": "0.84.3",
+			"resolved": "https://registry.npmjs.org/@punch-bot/client/-/client-0.84.3.tgz",
 			"license": "MIT",
 			"dependencies": {
-				"@punch-bot/protocol": "^0.84.2"
+				"@punch-bot/protocol": "^0.84.3"
 			},
 			"engines": {
 				"node": ">=22.19.0"
 			}
 		},
 		"node_modules/@punch-bot/protocol": {
-			"version": "0.84.2",
-			"resolved": "https://registry.npmjs.org/@punch-bot/protocol/-/protocol-0.84.2.tgz",
+			"version": "0.84.3",
+			"resolved": "https://registry.npmjs.org/@punch-bot/protocol/-/protocol-0.84.3.tgz",
 			"license": "MIT",
 			"dependencies": {
 				"typebox": "1.3.7"
@@ -855,16 +855,16 @@
 			}
 		},
 		"node_modules/@punch-bot/telemetry": {
-			"version": "0.84.2",
-			"resolved": "https://registry.npmjs.org/@punch-bot/telemetry/-/telemetry-0.84.2.tgz",
+			"version": "0.84.3",
+			"resolved": "https://registry.npmjs.org/@punch-bot/telemetry/-/telemetry-0.84.3.tgz",
 			"license": "MIT",
 			"engines": {
 				"node": ">=22.19.0"
 			}
 		},
 		"node_modules/@punch-bot/tui": {
-			"version": "0.84.2",
-			"resolved": "https://registry.npmjs.org/@punch-bot/tui/-/tui-0.84.2.tgz",
+			"version": "0.84.3",
+			"resolved": "https://registry.npmjs.org/@punch-bot/tui/-/tui-0.84.3.tgz",
 			"license": "MIT",
 			"dependencies": {
 				"get-east-asian-width": "1.6.0",

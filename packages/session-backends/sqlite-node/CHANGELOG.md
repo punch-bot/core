@@ -6,6 +6,9 @@
 
 - Renamed package from `@earendil-works/pi-session-backend-sqlite-node` to `@punch-bot/sqlite-node`.
 
+
+## [0.84.3] - 2026-08-24
+
 ## [0.84.2] - 2026-08-14
 
 ## [0.84.1] - 2026-08-07

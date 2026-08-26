@@ -1,6 +1,6 @@
 {
 	"name": "@punch-bot/cli",
-	"version": "0.84.2",
+	"version": "0.84.3",
 	"description": "Coding agent CLI with read, bash, edit, write tools and session management",
 	"type": "module",
 	"piConfig": {
@@ -44,12 +44,12 @@
 		"prepublishOnly": "npm run clean && npm run build && npm run shrinkwrap"
 	},
 	"dependencies": {
-		"@punch-bot/a2a": "^0.84.2",
-		"@punch-bot/agent": "^0.84.2",
-		"@punch-bot/ai": "^0.84.2",
-		"@punch-bot/client": "^0.84.2",
-		"@punch-bot/protocol": "^0.84.2",
-		"@punch-bot/tui": "^0.84.2",
+		"@punch-bot/a2a": "^0.84.3",
+		"@punch-bot/agent": "^0.84.3",
+		"@punch-bot/ai": "^0.84.3",
+		"@punch-bot/client": "^0.84.3",
+		"@punch-bot/protocol": "^0.84.3",
+		"@punch-bot/tui": "^0.84.3",
 		"@silvia-odwyer/photon-node": "0.3.4",
 		"chalk": "5.6.2",
 		"chrono-node": "2.10.1",
