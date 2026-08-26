@@ -44,6 +44,9 @@ export function parseHttpListenAddress(value: string): { address?: HttpTransport
 	if (!url.hostname) {
 		return { error: `Invalid A2A listen address "${value}"` };
 	}
+	if (url.username || url.password) {
+		return { error: `A2A listen address must not include credentials: "${value}"` };
+	}
 	if (url.pathname !== "/" && url.pathname !== "") {
 		return { error: `A2A listen address must not include a path: "${value}"` };
 	}
