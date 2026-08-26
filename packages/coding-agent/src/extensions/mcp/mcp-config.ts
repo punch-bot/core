@@ -217,8 +217,14 @@ export function assertPunchEntry(entry: McpRegistryEntry | undefined): McpAdapte
 		} catch {
 			throw new Error("remote MCP server url must be parseable");
 		}
-		if (parsed.protocol !== "http:" && parsed.protocol !== "https:")
-			throw new Error("remote MCP server url must be http(s)");
+		if (
+			parsed.protocol !== "https:" &&
+			!(
+				parsed.protocol === "http:" &&
+				(parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1" || parsed.hostname === "[::1]")
+			)
+		)
+			throw new Error("remote MCP server requires https (except loopback)");
 		const hasCredentials =
 			usesApiKeyAuth(entry) ||
 			(entry.apiKeyHeader !== undefined && entry.apiKeyHeader !== "") ||
