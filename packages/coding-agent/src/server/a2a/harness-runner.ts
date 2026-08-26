@@ -124,5 +124,11 @@ export async function createCodingAgentHarnessRunnerFactory(
 			if (!context) return;
 			await context.session.abort();
 		},
+		dispose() {
+			const context = contexts.get(contextId);
+			if (!context) return;
+			contexts.delete(contextId);
+			context.session.dispose();
+		},
 	});
 }

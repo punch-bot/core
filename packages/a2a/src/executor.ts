@@ -19,12 +19,12 @@ export function isHarnessPromptError(outcome: HarnessPromptOutcome): outcome is 
 export interface HarnessPromptRunner {
 	prompt(text: string, signal?: AbortSignal): Promise<HarnessPromptOutcome>;
 	abort?(): Promise<void>;
+	dispose?(): void;
 }
 
 export type HarnessPromptRunnerFactory = (contextId: string) => HarnessPromptRunner;
 
 export class HarnessAgentExecutor implements AgentExecutor {
-	private readonly runners = new Map<string, HarnessPromptRunner>();
 	private readonly taskContexts = new Map<string, string>();
 	private readonly cancelledTasks = new Set<string>();
 	private readonly taskAbortControllers = new Map<string, AbortController>();
@@ -77,8 +77,7 @@ export class HarnessAgentExecutor implements AgentExecutor {
 
 			let runner: HarnessPromptRunner;
 			try {
-				runner = this.runners.get(contextId) ?? this.runnerFactory(contextId);
-				this.runners.set(contextId, runner);
+				runner = this.runnerFactory(contextId);
 				this.taskContexts.set(taskId, contextId);
 			} catch (error) {
 				this.taskAbortControllers.delete(taskId);
