@@ -100,6 +100,15 @@ describe("applyTodoAction", () => {
 		expect(() => applyTodoAction(emptyState(), { action: "toggle", id: 99 })).toThrow("todo #99 not found");
 	});
 
+	it("requires an id for toggle, update, and split at the execute layer", async () => {
+		const { todoTool, ctx } = setup();
+		for (const action of ["toggle", "update", "split"]) {
+			await expect(todoTool?.execute?.(`call-${action}`, { action }, undefined, undefined, ctx)).rejects.toThrow(
+				`id is required for ${action}`,
+			);
+		}
+	});
+
 	it("updates item text", () => {
 		const result = applyTodoAction(stateWith([{ id: 1, text: "old" }]), { action: "update", id: 1, text: "new" });
 		expect(result.state.todos[0]?.text).toBe("new");
@@ -181,6 +190,27 @@ describe("persistence", () => {
 		const file = join(dir, "todos.json");
 		writeFileSync(file, "{ not json");
 		expect(loadTodos(file)).toEqual(emptyState());
+	});
+
+	it("drops invalid todo and log entries and fixes nextId", () => {
+		const file = join(dir, "todos.json");
+		writeFileSync(
+			file,
+			JSON.stringify({
+				todos: [
+					{ id: 2, text: "missing done", createdAt: 1 },
+					{ id: "3", text: "string id", done: false, createdAt: 1 },
+					{ id: 4, text: "ok", done: true, createdAt: 1 },
+					null,
+				],
+				nextId: 1,
+				log: [{ at: 1, summary: "good" }, { summary: "missing at" }, null, "not an object"],
+			}),
+		);
+		const state = loadTodos(file);
+		expect(state.todos).toEqual([{ id: 4, text: "ok", done: true, createdAt: 1 }]);
+		expect(state.nextId).toBe(5);
+		expect(state.log).toEqual([{ at: 1, summary: "good" }]);
 	});
 });
 

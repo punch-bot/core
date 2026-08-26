@@ -55,10 +55,37 @@ export function loadTodos(file = todosFile()): TodoState {
 		if (!Array.isArray(parsed.todos) || typeof parsed.nextId !== "number" || !Array.isArray(parsed.log)) {
 			return emptyState();
 		}
+		const todos: TodoItem[] = [];
+		for (const todo of parsed.todos) {
+			if (
+				typeof todo !== "object" ||
+				todo === null ||
+				typeof (todo as Partial<TodoItem>).id !== "number" ||
+				typeof (todo as Partial<TodoItem>).text !== "string" ||
+				typeof (todo as Partial<TodoItem>).done !== "boolean" ||
+				typeof (todo as Partial<TodoItem>).createdAt !== "number"
+			) {
+				continue;
+			}
+			todos.push(todo as TodoItem);
+		}
+		const log: TodoLogEntry[] = [];
+		for (const entry of parsed.log) {
+			if (
+				typeof entry !== "object" ||
+				entry === null ||
+				typeof (entry as Partial<TodoLogEntry>).at !== "number" ||
+				typeof (entry as Partial<TodoLogEntry>).summary !== "string"
+			) {
+				continue;
+			}
+			log.push(entry as TodoLogEntry);
+		}
+		const maxId = todos.reduce((max, todo) => Math.max(max, todo.id), 0);
 		return {
-			todos: parsed.todos as TodoItem[],
-			nextId: parsed.nextId,
-			log: parsed.log as TodoLogEntry[],
+			todos,
+			nextId: Math.max(parsed.nextId, maxId + 1),
+			log: log.slice(0, MAX_LOG),
 		};
 	} catch {
 		return emptyState();
@@ -223,13 +250,16 @@ export function installTodos(pi: ExtensionAPI): void {
 					action = { action: "add", text: args.text ?? "" };
 					break;
 				case "toggle":
-					action = { action: "toggle", id: args.id ?? 0 };
+					if (args.id === undefined) throw new Error("id is required for toggle");
+					action = { action: "toggle", id: args.id };
 					break;
 				case "update":
-					action = { action: "update", id: args.id ?? 0, text: args.text ?? "" };
+					if (args.id === undefined) throw new Error("id is required for update");
+					action = { action: "update", id: args.id, text: args.text ?? "" };
 					break;
 				case "split":
-					action = { action: "split", id: args.id ?? 0, parts: args.parts ?? [] };
+					if (args.id === undefined) throw new Error("id is required for split");
+					action = { action: "split", id: args.id, parts: args.parts ?? [] };
 					break;
 				case "clear":
 					action = { action: "clear" };
