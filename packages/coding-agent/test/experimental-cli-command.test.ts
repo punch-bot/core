@@ -28,6 +28,21 @@ describe("experimental CLI commands", () => {
 		});
 	});
 
+	test("parses an A2A server listener", () => {
+		expect(experimentalCli.parse(["server", "--a2a-listen", "http://127.0.0.1:41241"])).toEqual({
+			ok: true,
+			command: {
+				command: "server",
+				a2aListen: {
+					transport: "http",
+					url: "http://127.0.0.1:41241/",
+					host: "127.0.0.1",
+					port: 41241,
+				},
+			},
+		});
+	});
+
 	test("parses a server listener", () => {
 		expect(experimentalCli.parse(["server", "--listen", "unix:///tmp/pi.sock"])).toEqual({
 			ok: true,

@@ -13,6 +13,8 @@
 - Added an interactive question prompt to the TUI that renders `<question>` delivery blocks as a selectable list.
 - Added built-in extensions for web search, page fetching, progress reporting, context pruning, headless browser automation, a self-implemented MCP client, and Punch-style collaboration and routine scheduling with an OAuth-gated HTTP backend.
 - Added `playwright`, `chrono-node`, and `cron-parser` dependencies for the new browser, routines, and collaboration extensions.
+- Added A2A server startup via `pi server --a2a-listen http://127.0.0.1:41241`.
+- Added A2A delegation support to the subagent extension via agent frontmatter `a2aUrl`.
 
 ### Changed
 
