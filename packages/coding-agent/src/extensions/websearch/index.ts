@@ -14,11 +14,11 @@ export default function websearchExtension(pi: ExtensionAPI): void {
 			query: Type.String({ description: "Search query" }),
 			maxResults: Type.Optional(Type.Number({ minimum: 1, maximum: 20 })),
 		}),
-		async execute(_toolCallId, args) {
+		async execute(_toolCallId, args, signal) {
 			const maxResults = args.maxResults || 5;
 			const response = await fetch(`${SEARXNG_URL}/search?q=${encodeURIComponent(args.query)}&format=json`, {
 				headers: { Accept: "application/json" },
-				signal: AbortSignal.timeout(15_000),
+				signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
 			});
 			if (!response.ok) {
 				throw new Error(`SearXNG returned ${response.status}: ${await response.text()}`);
