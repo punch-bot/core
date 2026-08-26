@@ -83,6 +83,10 @@ function getAuthHeader(): string | null {
 	return `Basic ${Buffer.from(`${user.name}:${user.password}`).toString("base64")}`;
 }
 
+function normalizeActor(actor: string): string {
+	return actor.toLowerCase();
+}
+
 function verifyBasic(header: string | undefined): string | null {
 	const match = /^Basic\s+(.+)$/i.exec(header ?? "");
 	if (!match) return null;
@@ -94,7 +98,7 @@ function verifyBasic(header: string | undefined): string | null {
 	const provided = digest(password);
 	const expected = digest(user.password);
 	if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) return null;
-	return user.name;
+	return normalizeActor(user.name);
 }
 
 function pruneTokens(): void {
@@ -116,7 +120,7 @@ function verifyToken(token: string): string | null {
 	pruneTokens();
 	const record = tokens.get(token);
 	if (!record || record.expiresAt <= Date.now()) return null;
-	return record.userId;
+	return normalizeActor(record.userId);
 }
 
 function authenticateBasic(req: IncomingMessage): string {

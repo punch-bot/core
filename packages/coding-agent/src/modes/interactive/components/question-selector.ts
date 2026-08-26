@@ -16,8 +16,6 @@ import { DynamicBorder } from "./dynamic-border.ts";
 
 const QUESTION_SELECT_LIST_LAYOUT: SelectListLayoutOptions = { minPrimaryColumnWidth: 12, maxPrimaryColumnWidth: 48 };
 
-const OTHER_VALUE = "__other__";
-
 let doneSeq = 0;
 
 export class QuestionSelectorComponent extends Container implements Focusable {
@@ -29,6 +27,7 @@ export class QuestionSelectorComponent extends Container implements Focusable {
 	private onCancel: () => void;
 	private multi = false;
 	private doneValue: string;
+	private otherValue: string;
 	private selected: string[] = [];
 	private customInputMode = false;
 	private _focused = false;
@@ -48,12 +47,13 @@ export class QuestionSelectorComponent extends Container implements Focusable {
 		this.onCancel = onCancel;
 		this.multi = question.multi;
 		this.doneValue = `__done__${++doneSeq}`;
+		this.otherValue = `__other__${doneSeq}`;
 		const items = question.options.map((option) => ({ value: option, label: option }));
 		if (this.multi && items.length > 0) {
 			items.push({ value: this.doneValue, label: "Done" });
 		}
 		if (question.input.length > 0) {
-			items.push({ value: OTHER_VALUE, label: "Other…" });
+			items.push({ value: this.otherValue, label: "Other…" });
 		}
 		this.allItems = items;
 
@@ -103,7 +103,7 @@ export class QuestionSelectorComponent extends Container implements Focusable {
 		const currentIndex = items.findIndex((item) => item.value === preselect);
 		if (currentIndex !== -1) list.setSelectedIndex(currentIndex);
 		list.onSelect = (item) => {
-			if (item.value === OTHER_VALUE) {
+			if (item.value === this.otherValue) {
 				this.customInputMode = true;
 				this.searchInput.focused = true;
 				this.searchInput.setValue("");
@@ -146,7 +146,12 @@ export class QuestionSelectorComponent extends Container implements Focusable {
 			? fuzzyFilter(this.allItems, query, (item) => `${item.label} ${item.description ?? ""}`)
 			: this.allItems;
 		const selectedValue = this.selectList.getSelectedItem()?.value;
-		const newList = this.buildSelectList(filtered, selectedValue);
+		const withChecks = filtered.map((item) =>
+			this.selected.includes(item.value) && !item.label.startsWith("✓ ")
+				? { ...item, label: `✓ ${item.label}` }
+				: item,
+		);
+		const newList = this.buildSelectList(withChecks, selectedValue);
 		this.children[this.selectListChildIndex] = newList;
 		this.selectList = newList;
 	}

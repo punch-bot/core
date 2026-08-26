@@ -3310,27 +3310,30 @@ export class InteractiveMode {
 						this.maybeShowCacheMissNotice(this.streamingMessage);
 						const delivery = deliveryFromMessage(event.message);
 						if (delivery.questions.length > 0) {
+							const answers: string[] = [];
 							const showQuestion = (index: number): void => {
-								if (index >= delivery.questions.length) return;
+								if (index >= delivery.questions.length) {
+									void (async () => {
+										try {
+											await this.session.waitForIdle();
+											await this.session.prompt(answers.join("\n"), { expandPromptTemplates: false });
+										} catch (err) {
+											console.error(err);
+										}
+									})();
+									return;
+								}
 								const question = delivery.questions[index];
 								this.showSelector((done) => {
 									const selector = new QuestionSelectorComponent(
 										question,
 										(answer) => {
+											answers.push(answer);
 											done();
-											void (async () => {
-												try {
-													await this.session.waitForIdle();
-													await this.session.prompt(answer);
-													showQuestion(index + 1);
-												} catch (err) {
-													console.error(err);
-												}
-											})();
+											showQuestion(index + 1);
 										},
 										() => {
 											done();
-											showQuestion(index + 1);
 										},
 									);
 									return { component: selector, focus: selector };

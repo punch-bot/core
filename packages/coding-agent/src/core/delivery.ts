@@ -113,7 +113,7 @@ export function buildEmbedFromJson(j: unknown): DeliveryEmbed | null {
 		const ts = new Date(input.timestamp);
 		if (!Number.isNaN(ts.getTime())) embed.timestamp = ts.toISOString();
 	}
-	return embed;
+	return Object.keys(embed).length > 0 ? embed : null;
 }
 
 export function extractEmbeds(textIn: string): { clean: string; embeds: DeliveryEmbed[]; errors: string[] } {

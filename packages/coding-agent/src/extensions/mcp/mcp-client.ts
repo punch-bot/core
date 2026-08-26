@@ -119,7 +119,6 @@ export function jsonSchemaToTypeBox(schema: unknown, depth = 0): TSchema {
 		return Type.String({
 			minLength: typeof s.minLength === "number" ? s.minLength : undefined,
 			maxLength: typeof s.maxLength === "number" ? s.maxLength : undefined,
-			pattern: typeof s.pattern === "string" ? s.pattern : undefined,
 		});
 	}
 	if (type === "integer") {

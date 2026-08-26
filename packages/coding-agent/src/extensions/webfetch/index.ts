@@ -64,6 +64,7 @@ function isBlockedIp(ip: string): boolean {
 		return false;
 	}
 	if (/^127\./.test(v) || /^169\.254\./.test(v) || /^10\./.test(v) || /^192\.168\./.test(v)) return true;
+	if (/^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(v)) return true;
 	return /^172\.(1[6-9]|2\d|3[01])\./.test(v);
 }
 
@@ -200,6 +201,7 @@ export default function webfetchExtension(pi: ExtensionAPI): void {
 				}
 				const page = await (browser as { newPage(): Promise<unknown> }).newPage();
 				try {
+					const safeTarget = await resolveSafe(url);
 					const guarded = page as {
 						route(pattern: string, handler: (route: unknown) => Promise<void>): Promise<void>;
 						goto(url: string, opts: unknown): Promise<unknown>;
@@ -215,7 +217,7 @@ export default function webfetchExtension(pi: ExtensionAPI): void {
 							await (route as { abort(): Promise<void> }).abort();
 						}
 					});
-					await guarded.goto(url, {
+					await guarded.goto(safeTarget.url.toString(), {
 						waitUntil: "domcontentloaded",
 						timeout: 30_000,
 					});

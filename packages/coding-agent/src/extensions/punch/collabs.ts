@@ -73,8 +73,15 @@ function collabOrThrow(id: string): Collab {
 	return collab;
 }
 
+function normalizeActor(actor: string): string {
+	return actor.toLowerCase();
+}
+
 function requireParticipant(collab: Collab, actor: string): void {
-	if (!collab.participants.includes(actor)) throw new Error("Sandbox is not a collaboration participant.");
+	const normalized = normalizeActor(actor);
+	if (!collab.participants.some((participant) => participant.toLowerCase() === normalized)) {
+		throw new Error("Sandbox is not a collaboration participant.");
+	}
 }
 
 function write(collab: Collab): void {
@@ -137,6 +144,10 @@ function bareHead(collab: Collab, branch: string): string {
 	return git(["--git-dir", collab.repo, "rev-parse", `refs/heads/${branch}`]).toLowerCase();
 }
 
+export function validateCollabWorkspace(workspace: string): string {
+	return safeWorkspace(workspace);
+}
+
 export function collabDir(): string {
 	const configured = process.env.PI_COLLAB_DIR;
 	if (configured) return path.resolve(configured);
@@ -145,7 +156,10 @@ export function collabDir(): string {
 
 export function listFor(actor: string): Collab[] {
 	reload();
-	return records.filter((c) => c.participants.includes(actor));
+	const normalized = normalizeActor(actor);
+	return records.filter((collab) =>
+		collab.participants.some((participant) => participant.toLowerCase() === normalized),
+	);
 }
 
 export function getFor(id: string, actor: string): Collab {
@@ -156,7 +170,9 @@ export function getFor(id: string, actor: string): Collab {
 }
 
 export function create(opts: { owner: string; reviewer: string; workspace: string }): Collab {
-	if (!opts.reviewer || opts.reviewer === opts.owner) throw new Error("reviewer must be a different sandbox");
+	const owner = normalizeActor(opts.owner);
+	const reviewer = normalizeActor(opts.reviewer);
+	if (!reviewer || reviewer === owner) throw new Error("reviewer must be a different sandbox");
 	const source = safeWorkspace(opts.workspace);
 	const id = `col_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
 	const repo = path.join(collabDir(), `${id}.git`);
@@ -171,8 +187,8 @@ export function create(opts: { owner: string; reviewer: string; workspace: strin
 		hasHead = false;
 	}
 	if (!hasHead) {
-		git(["config", "user.name", `Punch ${opts.owner}`], source);
-		git(["config", "user.email", `${opts.owner}@punch.local`], source);
+		git(["config", "user.name", `Punch ${owner}`], source);
+		git(["config", "user.email", `${owner}@punch.local`], source);
 		git(["add", "--all"], source);
 		git(["commit", "--allow-empty", "--message", "Initialize collaboration"], source);
 	}
@@ -189,12 +205,12 @@ export function create(opts: { owner: string; reviewer: string; workspace: strin
 	git(["clone", repo, clonePath]);
 	const collab: Collab = {
 		id,
-		owner: opts.owner,
-		participants: [opts.owner, opts.reviewer],
+		owner,
+		participants: [owner, reviewer],
 		repo,
 		baseRef: "main",
 		base,
-		workspaces: { [opts.owner]: source, [opts.reviewer]: clonePath },
+		workspaces: { [owner]: source, [reviewer]: clonePath },
 		proposal: null,
 		createdAt: Date.now(),
 		updatedAt: Date.now(),
@@ -258,15 +274,25 @@ export function review(opts: { id: string; actor: string; approve: boolean; note
 	if (remoteHead !== proposal.head) throw new Error("Branch changed. Author must propose new SHA again.");
 	proposal.reviewNotes = String(opts.notes || "").slice(0, 4000);
 	proposal.reviewedHead = remoteHead;
-	proposal.reviewerApprovedAt = opts.approve ? Date.now() : null;
-	proposal.status = opts.approve ? "approved" : "changes_requested";
-	collab.updatedAt = Date.now();
-	write(collab);
-	if (opts.approve) {
-		const merged = mergeIfApproved(collab);
-		if (merged) return collabOrThrow(collab.id);
+	if (!opts.approve) {
+		proposal.reviewerApprovedAt = null;
+		proposal.status = "changes_requested";
+		collab.updatedAt = Date.now();
+		write(collab);
+		return collab;
 	}
-	return collab;
+	proposal.reviewerApprovedAt = Date.now();
+	try {
+		if (mergeIfApproved(collab)) return collabOrThrow(collab.id);
+		proposal.status = "approved";
+		collab.updatedAt = Date.now();
+		write(collab);
+		return collab;
+	} catch (err) {
+		proposal.reviewerApprovedAt = null;
+		proposal.reviewedHead = null;
+		throw err;
+	}
 }
 
 function mergeIfApproved(collab: Collab): boolean {

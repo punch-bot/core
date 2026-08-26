@@ -239,9 +239,13 @@ export class StreamableHttpMcpTransport implements McpTransport {
 				headers,
 				body: JSON.stringify(message),
 				signal: AbortSignal.timeout(120_000),
+				redirect: "manual",
 			});
 		} catch (err) {
 			throw new Error(`MCP HTTP request failed: ${(err as Error).message}`);
+		}
+		if (response.status >= 300 && response.status < 400) {
+			throw new Error("MCP HTTP redirects are not supported");
 		}
 		if (!response.ok) {
 			throw new Error(`MCP HTTP request failed: ${response.status} ${response.statusText}`);

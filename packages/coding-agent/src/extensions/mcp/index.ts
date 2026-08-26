@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import * as path from "node:path";
-import { type TSchema, Type } from "typebox";
+import type { TSchema } from "typebox";
 import type { ExtensionAPI, ExtensionContext } from "../../core/extensions/types.ts";
 import { jsonSchemaToTypeBox, McpClient } from "./mcp-client.ts";
 import { type McpAdapterEntry, type McpRegistry, punchRegistryToMcpServers } from "./mcp-config.ts";
@@ -27,15 +27,19 @@ function resolveEnvRef(value: string): string | undefined {
 	return process.env[match[1]];
 }
 
+function sanitizeHeaderValue(value: string): string {
+	return value.replace(/[\r\n]/g, "");
+}
+
 function buildTransport(entry: McpAdapterEntry): McpTransport {
 	if (entry.url) {
 		const headers: Record<string, string> = {};
 		for (const [key, value] of Object.entries(entry.headers ?? {})) {
-			headers[key] = resolveEnvRef(value) ?? value;
+			headers[key] = sanitizeHeaderValue(resolveEnvRef(value) ?? value);
 		}
 		if (entry.bearerTokenEnv) {
 			const token = process.env[entry.bearerTokenEnv];
-			if (token) headers.Authorization = `Bearer ${token}`;
+			if (token) headers.Authorization = `Bearer ${sanitizeHeaderValue(token)}`;
 		}
 		return new StreamableHttpMcpTransport({ url: entry.url, headers });
 	}
@@ -87,8 +91,9 @@ async function registerMcpServer(
 		let parameters: TSchema;
 		try {
 			parameters = jsonSchemaToTypeBox(tool.inputSchema);
-		} catch {
-			parameters = Type.Object({});
+		} catch (err) {
+			pi.sendUserMessage(`mcp: skipped tool "${name}.${tool.name}": ${(err as Error).message}`);
+			continue;
 		}
 		pi.registerTool({
 			name: toolName,

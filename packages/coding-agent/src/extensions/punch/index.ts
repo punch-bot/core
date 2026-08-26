@@ -5,6 +5,7 @@ import { Type } from "typebox";
 
 import type { ExtensionAPI } from "../../core/extensions/types.ts";
 import { getAuthHeader, isAuthConfigured } from "./auth.ts";
+import { validateCollabWorkspace } from "./collabs.ts";
 import { startScheduler } from "./routines.ts";
 import { startPunchServer } from "./server.ts";
 
@@ -56,6 +57,15 @@ function git(workspace: string, args: string[]): string {
 
 function sandboxActor(): string {
 	return (process.env.PI_SERVER_USERNAME || process.env.OPENCODE_SERVER_USERNAME || "opencode").toLowerCase();
+}
+
+function workspaceFor(collab: { workspaces: Record<string, string> }, actorKey: string): string | undefined {
+	const normalized = actorKey.toLowerCase();
+	if (collab.workspaces[normalized]) return collab.workspaces[normalized];
+	for (const [key, value] of Object.entries(collab.workspaces)) {
+		if (key.toLowerCase() === normalized) return value;
+	}
+	return undefined;
 }
 
 export default function punchExtension(pi: ExtensionAPI): void {
@@ -129,8 +139,9 @@ export default function punchExtension(pi: ExtensionAPI): void {
 				workspaces: Record<string, string>;
 				proposal?: { reviewer?: string; status?: string };
 			};
-			const workspace =
-				args.workspace || collab.workspaces[(process.env.SANDBOX_NAME || sandboxActor()).toLowerCase()];
+			const workspace = args.workspace
+				? validateCollabWorkspace(args.workspace)
+				: workspaceFor(collab, process.env.SANDBOX_NAME || sandboxActor());
 			if (!workspace) throw new Error("workspace is required");
 			const branch = `changes/${args.id}`;
 			if (args.action === "propose") {
@@ -153,7 +164,12 @@ export default function punchExtension(pi: ExtensionAPI): void {
 					details: {},
 				};
 			}
-			git(workspace, ["fetch", "origin", branch]);
+			try {
+				git(workspace, ["remote", "set-url", "punch-collab", collab.repo]);
+			} catch {
+				git(workspace, ["remote", "add", "punch-collab", collab.repo]);
+			}
+			git(workspace, ["fetch", "punch-collab", branch]);
 			const data = await botFetch(`/collabs/${encodeURIComponent(args.id)}/review`, {
 				method: "POST",
 				body: JSON.stringify({ approve: args.approve === true, notes: args.notes || "" }),
