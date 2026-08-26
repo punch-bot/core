@@ -19,7 +19,6 @@ export function isHarnessPromptError(outcome: HarnessPromptOutcome): outcome is 
 export interface HarnessPromptRunner {
 	prompt(text: string, signal?: AbortSignal): Promise<HarnessPromptOutcome>;
 	abort?(): Promise<void>;
-	dispose?(): void;
 }
 
 export type HarnessPromptRunnerFactory = (contextId: string) => HarnessPromptRunner;
@@ -55,7 +54,7 @@ export class HarnessAgentExecutor implements AgentExecutor {
 
 	private runInContext<T>(contextId: string, fn: () => Promise<T>): Promise<T> {
 		const previous = this.contextChains.get(contextId) ?? Promise.resolve();
-		const current = previous.then(() => fn());
+		const current = previous.catch(() => undefined).then(() => fn());
 		this.contextChains.set(contextId, current);
 		return current.finally(() => {
 			if (this.contextChains.get(contextId) === current) {

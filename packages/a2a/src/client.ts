@@ -1,6 +1,6 @@
 import type { Message, SendMessageRequest, StreamResponse, Task } from "@a2a-js/sdk";
 import { TaskState } from "@a2a-js/sdk";
-import { ClientFactory, JsonRpcTransportFactory } from "@a2a-js/sdk/client";
+import { Client, ClientFactory, JsonRpcTransportFactory } from "@a2a-js/sdk/client";
 import { createTextMessage, extractTextFromMessage } from "./message.ts";
 
 export interface DelegateToA2aAgentOptions {
@@ -41,6 +41,13 @@ function buildStreamingSendMessageRequest(task: string): SendMessageRequest {
 			taskPushNotificationConfig: undefined,
 		},
 	};
+}
+
+async function createA2aClient(url: string): Promise<Client> {
+	const factory = new ClientFactory({
+		transports: [new JsonRpcTransportFactory()],
+	});
+	return factory.createFromUrl(url);
 }
 
 function extractArtifactTextFromTask(task: Task | undefined): string {
@@ -132,11 +139,10 @@ function buildResultFromTask(task: Task): DelegateToA2aAgentResult {
 	};
 }
 
-export async function delegateToA2aAgent(options: DelegateToA2aAgentOptions): Promise<DelegateToA2aAgentResult> {
-	const factory = new ClientFactory({
-		transports: [new JsonRpcTransportFactory()],
-	});
-	const client = await factory.createFromUrl(options.url);
+async function delegateToA2aAgentWithClient(
+	client: Client,
+	options: DelegateToA2aAgentOptions,
+): Promise<DelegateToA2aAgentResult> {
 	const response = await client.sendMessage(buildSendMessageRequest(options.task), { signal: options.signal });
 
 	if ("parts" in response) {
@@ -146,17 +152,15 @@ export async function delegateToA2aAgent(options: DelegateToA2aAgentOptions): Pr
 	return buildResultFromTask(response as Task);
 }
 
-export async function delegateToA2aAgentStream(
+async function delegateToA2aAgentStreamWithClient(
+	client: Client,
 	options: DelegateToA2aAgentOptions,
 	onUpdate?: (text: string) => void,
 ): Promise<DelegateToA2aAgentResult> {
-	const factory = new ClientFactory({
-		transports: [new JsonRpcTransportFactory()],
-	});
-	const client = await factory.createFromUrl(options.url);
 	const stream = client.sendMessageStream(buildStreamingSendMessageRequest(options.task), { signal: options.signal });
 
 	let artifactText = "";
+	let latestTask: Task | undefined;
 	let taskId: string | undefined;
 	let contextId: string | undefined;
 	let failed = false;
@@ -166,6 +170,7 @@ export async function delegateToA2aAgentStream(
 		if (artifactText) onUpdate?.(artifactText);
 		const payload = event.payload;
 		if (payload?.$case === "task") {
+			latestTask = payload.value;
 			taskId = payload.value.id;
 			contextId = payload.value.contextId;
 			if (isFailedTerminalTaskState(payload.value.status?.state)) {
@@ -173,45 +178,69 @@ export async function delegateToA2aAgentStream(
 				error = extractErrorFromTask(payload.value);
 			}
 			if (isTerminalTaskState(payload.value.status?.state)) {
-				artifactText = extractArtifactTextFromTask(payload.value) || artifactText;
+				const terminalArtifact = extractArtifactTextFromTask(payload.value);
+				if (terminalArtifact) artifactText = terminalArtifact;
 			}
 		}
 		if (payload?.$case === "statusUpdate") {
+			if (payload.value.status?.state === TaskState.TASK_STATE_COMPLETED) {
+				latestTask = {
+					id: taskId ?? payload.value.taskId,
+					contextId: contextId ?? payload.value.contextId,
+					status: payload.value.status,
+					artifacts: latestTask?.artifacts ?? [],
+					history: latestTask?.history ?? [],
+					metadata: latestTask?.metadata ?? payload.value.metadata ?? {},
+				};
+			}
 			if (isFailedTerminalTaskState(payload.value.status?.state)) {
 				failed = true;
 				error = extractErrorFromTask({
-					id: taskId ?? "",
-					contextId: contextId ?? "",
+					id: taskId ?? payload.value.taskId,
+					contextId: contextId ?? payload.value.contextId,
 					status: payload.value.status,
-					artifacts: [],
-					history: [],
-					metadata: {},
+					artifacts: latestTask?.artifacts ?? [],
+					history: latestTask?.history ?? [],
+					metadata: payload.value.metadata ?? latestTask?.metadata ?? {},
 				});
 			}
 		}
 	}
 
+	const text = artifactText || extractTextFromTask(latestTask);
+	if (text && !artifactText) onUpdate?.(text);
+
 	return {
-		text: artifactText,
+		text,
 		taskId,
 		contextId,
 		...(failed ? { failed: true, error: error ?? "Remote A2A task failed" } : {}),
 	};
 }
 
+export async function delegateToA2aAgent(options: DelegateToA2aAgentOptions): Promise<DelegateToA2aAgentResult> {
+	const client = await createA2aClient(options.url);
+	return delegateToA2aAgentWithClient(client, options);
+}
+
+export async function delegateToA2aAgentStream(
+	options: DelegateToA2aAgentOptions,
+	onUpdate?: (text: string) => void,
+): Promise<DelegateToA2aAgentResult> {
+	const client = await createA2aClient(options.url);
+	return delegateToA2aAgentStreamWithClient(client, options, onUpdate);
+}
+
 export async function delegateToA2aAgentPreferStream(
 	options: DelegateToA2aAgentOptions,
 	onUpdate?: (text: string) => void,
 ): Promise<DelegateToA2aAgentResult> {
-	const factory = new ClientFactory({
-		transports: [new JsonRpcTransportFactory()],
-	});
-	const client = await factory.createFromUrl(options.url);
+	const client = await createA2aClient(options.url);
 	const card = await client.getAgentCard({ signal: options.signal });
 	if (card.capabilities?.streaming) {
-		return delegateToA2aAgentStream(options, onUpdate);
+		return delegateToA2aAgentStreamWithClient(client, options, onUpdate);
 	}
-	const result = await delegateToA2aAgent(options);
+	const result = await delegateToA2aAgentWithClient(client, options);
 	if (result.text) onUpdate?.(result.text);
 	return result;
 }
