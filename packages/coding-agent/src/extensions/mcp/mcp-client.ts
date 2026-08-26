@@ -95,7 +95,7 @@ export function jsonSchemaToTypeBox(schema: unknown, depth = 0): TSchema {
 	if (!schema || typeof schema !== "object") return Type.Unknown();
 	const s = schema as Record<string, unknown>;
 	const ref = typeof s.$ref === "string" ? s.$ref : undefined;
-	if (ref) return Type.Unknown();
+	if (ref) throw new Error(`MCP tool schema $ref is not supported: ${ref}`);
 	if (Array.isArray(s.enum)) {
 		const values = s.enum.filter(
 			(v): v is string | number | boolean =>
@@ -107,15 +107,11 @@ export function jsonSchemaToTypeBox(schema: unknown, depth = 0): TSchema {
 		return Type.Unknown();
 	}
 	if (s.anyOf && Array.isArray(s.anyOf)) {
-		const subs = (s.anyOf as unknown[])
-			.filter((x) => x && typeof x === "object" && (x as Record<string, unknown>).type !== "null")
-			.map((x) => jsonSchemaToTypeBox(x, depth + 1));
+		const subs = (s.anyOf as unknown[]).map((x) => jsonSchemaToTypeBox(x, depth + 1));
 		return subs.length > 0 ? Type.Union(subs) : Type.Unknown();
 	}
 	if (s.oneOf && Array.isArray(s.oneOf)) {
-		const subs = (s.oneOf as unknown[])
-			.filter((x) => x && typeof x === "object" && (x as Record<string, unknown>).type !== "null")
-			.map((x) => jsonSchemaToTypeBox(x, depth + 1));
+		const subs = (s.oneOf as unknown[]).map((x) => jsonSchemaToTypeBox(x, depth + 1));
 		return subs.length > 0 ? Type.Union(subs) : Type.Unknown();
 	}
 	const type = s.type;
@@ -159,18 +155,21 @@ export function jsonSchemaToTypeBox(schema: unknown, depth = 0): TSchema {
 			const ts = jsonSchemaToTypeBox(value, depth + 1);
 			props[key] = required.includes(key) ? ts : Type.Optional(ts);
 		}
-		if (s.additionalProperties === true || typeof s.additionalProperties === "object") {
-			return Type.Record(Type.String(), Type.Unknown(), { properties: props, required });
-		}
 		if (s.additionalProperties === false) {
 			return Type.Object(props, { additionalProperties: false });
+		}
+		if (typeof s.additionalProperties === "object") {
+			return Type.Object(props, {
+				additionalProperties: jsonSchemaToTypeBox(s.additionalProperties, depth + 1),
+			});
+		}
+		if (s.additionalProperties === true) {
+			return Type.Record(Type.String(), Type.Unknown(), { properties: props, required });
 		}
 		return Type.Object(props);
 	}
 	if (Array.isArray(type)) {
-		const subs = type
-			.filter((t): t is string => typeof t === "string" && t !== "null")
-			.map((t) => jsonSchemaToTypeBox({ type: t }, depth + 1));
+		const subs = type.map((t) => jsonSchemaToTypeBox({ type: t }, depth + 1));
 		return subs.length > 0 ? Type.Union(subs) : Type.Unknown();
 	}
 	return Type.Unknown();

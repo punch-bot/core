@@ -44,7 +44,11 @@ function loadUsers(): UserRecord[] {
 	if (cachedUsers && cachedUsersMtimeMs === mtimeMs) return cachedUsers;
 	const users: UserRecord[] = [];
 	const password = process.env.PI_SERVER_PASSWORD || process.env.OPENCODE_SERVER_PASSWORD || "";
-	if (password) users.push({ name: defaultUser(), password });
+	if (password) {
+		const name = defaultUser();
+		if (name.includes(":")) throw new Error("PI_SERVER_USERNAME must not contain ':'");
+		users.push({ name, password });
+	}
 	try {
 		const parsed = JSON.parse(readFileSync(file, "utf8")) as unknown;
 		if (Array.isArray(parsed)) {
@@ -56,8 +60,10 @@ function loadUsers(): UserRecord[] {
 						user.name.length > 0 &&
 						typeof user.password === "string" &&
 						user.password.length > 0
-					)
+					) {
+						if (user.name.includes(":")) continue;
 						users.push({ name: user.name, password: user.password });
+					}
 				}
 			}
 		}
@@ -113,6 +119,12 @@ function verifyToken(token: string): string | null {
 	return record.userId;
 }
 
+function authenticateBasic(req: IncomingMessage): string {
+	const userId = verifyBasic(req.headers.authorization ?? "");
+	if (!userId) throw new Error("Unauthorized");
+	return userId;
+}
+
 function authenticate(req: IncomingMessage): string {
 	const header = req.headers.authorization ?? "";
 	const bearerMatch = /^Bearer\s+(.+)$/i.exec(header);
@@ -126,4 +138,4 @@ function authenticate(req: IncomingMessage): string {
 	return userId;
 }
 
-export { authenticate, getAuthHeader, isAuthConfigured, issueToken, verifyToken };
+export { authenticate, authenticateBasic, getAuthHeader, isAuthConfigured, issueToken, verifyToken };

@@ -208,7 +208,8 @@ export function assertPunchEntry(entry: McpRegistryEntry | undefined): McpAdapte
 	}
 	if (entry.apiKeyHeader !== undefined && entry.apiKeyHeader === "") throw new Error("apiKeyHeader must be non-empty");
 
-	if (entry.type === "remote") {
+	const entryType = entry.type ?? (entry.url ? "remote" : "local");
+	if (entryType === "remote") {
 		if (!entry.url) throw new Error("remote MCP server requires url");
 		let parsed: URL;
 		try {
@@ -219,8 +220,7 @@ export function assertPunchEntry(entry: McpRegistryEntry | undefined): McpAdapte
 		if (parsed.protocol !== "http:" && parsed.protocol !== "https:")
 			throw new Error("remote MCP server url must be http(s)");
 		const hasCredentials =
-			entry.auth === "api_key" ||
-			entry.apiKey === true ||
+			usesApiKeyAuth(entry) ||
 			(entry.apiKeyHeader !== undefined && entry.apiKeyHeader !== "") ||
 			(entry.headers !== undefined && Object.keys(entry.headers).length > 0);
 		if (hasCredentials && parsed.protocol !== "https:")

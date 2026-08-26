@@ -92,8 +92,9 @@ function workspaceRoot(): string {
 function safeWorkspace(p: unknown): string {
 	if (typeof p !== "string") throw new Error("Workspace must be an absolute path under the workspace root.");
 	if (p.includes("\0")) throw new Error("Workspace must be an absolute path under the workspace root.");
-	const resolved = p.replace(/\/+$/, "");
-	const root = workspaceRoot().replace(/\/+$/, "");
+	if (!path.isAbsolute(p)) throw new Error("Workspace must be an absolute path under the workspace root.");
+	const resolved = path.resolve(p).replace(/\/+$/, "");
+	const root = path.resolve(workspaceRoot()).replace(/\/+$/, "");
 	if (!resolved.startsWith(root + path.sep) || resolved === root) {
 		throw new Error("Workspace must be an absolute path under the workspace root.");
 	}
@@ -220,6 +221,13 @@ export function propose(opts: { id: string; actor: string; head: string }): Coll
 	}
 	const reviewer = collab.participants.find((p) => p !== opts.actor);
 	if (!reviewer) throw new Error("No reviewer participant.");
+	const previous = collab.proposal;
+	if (previous?.status === "changes_requested") {
+		const rejectedHead = previous.reviewedHead ?? previous.head;
+		if (rejectedHead === remoteHead) {
+			throw new Error("Proposal unchanged since changes were requested; push new commits before reproposing.");
+		}
+	}
 	collab.proposal = {
 		branch,
 		author: opts.actor,

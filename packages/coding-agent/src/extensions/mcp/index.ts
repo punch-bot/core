@@ -127,13 +127,9 @@ async function registerMcpServer(
 						...(result.isError === true ? { isError: true } : {}),
 					};
 				} catch (err) {
-					return {
-						content: [
-							{ type: "text", text: `Error calling MCP tool ${name}.${tool.name}: ${(err as Error).message}` },
-						],
-						details: { server: name, tool: tool.name, error: (err as Error).message },
-						isError: true,
-					};
+					throw new Error(`Error calling MCP tool ${name}.${tool.name}: ${(err as Error).message}`, {
+						cause: err,
+					});
 				}
 			},
 		});

@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 
-import { authenticate, isAuthConfigured, issueToken } from "./auth.ts";
+import { authenticate, authenticateBasic, isAuthConfigured, issueToken } from "./auth.ts";
 import { create as createCollab, getFor, listFor, propose, review } from "./collabs.ts";
 import { addRoutine, listRoutines, parseRecurrence, pauseRoutine, removeRoutine, resumeRoutine } from "./routines.ts";
 
@@ -43,7 +43,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 				sendJson(res, 400, { error: "Unsupported grant_type" });
 				return;
 			}
-			const actor = authenticate(req);
+			const actor = authenticateBasic(req);
 			const issued = issueToken(actor);
 			sendJson(res, 200, {
 				access_token: issued.token,

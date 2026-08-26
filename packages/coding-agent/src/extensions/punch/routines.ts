@@ -180,6 +180,7 @@ function parseEveryInterval(intervalStr: string): RoutineSchedule {
 	if (n <= 0) throw new Error("Interval must be greater than zero");
 	const unit = match[2].toLowerCase();
 	const everyMs = unit[0] === "m" ? n * 60000 : n * 3600000;
+	if (!Number.isFinite(everyMs)) throw new Error("Interval is too large");
 	return { kind: "interval", everyMs };
 }
 
@@ -434,6 +435,7 @@ async function runDue(): Promise<void> {
 	timer = setTimeout(() => {
 		void scheduleNext();
 	}, delay);
+	timer.unref();
 }
 
 function scheduleNext(): void {
@@ -495,4 +497,4 @@ for (const routine of routines) {
 }
 history = history.slice(-2000);
 if (hadRoutinesFile) saveRoutines();
-if (hadHistoryFile) saveHistory();
+if (hadHistoryFile || history.length > 0) saveHistory();

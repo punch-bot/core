@@ -132,7 +132,11 @@ export function createBlock(
 	}
 	const firstUser = records.find((record) => record.message?.role === "user");
 	if (startId === firstUser?.id) throw new Error("first user message is protected");
-	const rangeRecords = records.slice(start, end + 1);
+	let rangeEndExclusive = end + 1;
+	while (rangeEndExclusive < records.length && records[rangeEndExclusive]?.message?.role !== "user") {
+		rangeEndExclusive += 1;
+	}
+	const rangeRecords = records.slice(start, rangeEndExclusive);
 	const messageIds = rangeRecords.map((record) => record.id);
 	if (
 		rangeRecords.some((record) => {
