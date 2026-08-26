@@ -7,14 +7,14 @@ import { type McpAdapterEntry, type McpRegistry, punchRegistryToMcpServers } fro
 import { type McpTransport, StdioMcpTransport, StreamableHttpMcpTransport } from "./mcp-transport.ts";
 
 const clients: McpClient[] = [];
-let shuttingDown = false;
+let extensionGeneration = 0;
 
 function trackClient(client: McpClient): void {
 	clients.push(client);
 }
 
 function closeClients(): void {
-	shuttingDown = true;
+	extensionGeneration++;
 	for (const client of clients) {
 		void client.close();
 	}
@@ -55,19 +55,29 @@ function buildTransport(entry: McpAdapterEntry): McpTransport {
 	});
 }
 
-async function registerMcpServer(pi: ExtensionAPI, name: string, entry: McpAdapterEntry): Promise<void> {
+async function registerMcpServer(
+	pi: ExtensionAPI,
+	name: string,
+	entry: McpAdapterEntry,
+	generation: number,
+): Promise<void> {
 	if (entry.disabled) return;
 	const client = new McpClient(buildTransport(entry));
 	trackClient(client);
 	let tools: Awaited<ReturnType<McpClient["listTools"]>>;
 	try {
 		await client.start();
-		if (shuttingDown) {
+		if (generation !== extensionGeneration) {
 			void client.close();
 			return;
 		}
 		tools = await client.listTools();
+		if (generation !== extensionGeneration) {
+			void client.close();
+			return;
+		}
 	} catch (err) {
+		if (generation !== extensionGeneration) return;
 		pi.sendUserMessage(`mcp: failed to connect to server "${name}": ${(err as Error).message}`);
 		return;
 	}
@@ -130,25 +140,25 @@ async function registerMcpServer(pi: ExtensionAPI, name: string, entry: McpAdapt
 }
 
 export default function mcpExtension(pi: ExtensionAPI): void {
-	shuttingDown = false;
+	const generation = ++extensionGeneration;
 	const configPath = process.env.PI_MCP_FILE || path.join(process.cwd(), ".pi", "mcp.json");
 	void readFile(configPath, "utf8")
 		.then((raw) => {
-			if (shuttingDown) return;
+			if (generation !== extensionGeneration) return;
 			const registry = JSON.parse(raw) as McpRegistry;
 			const servers = punchRegistryToMcpServers(registry);
 			for (const [name, entry] of Object.entries(servers)) {
-				void registerMcpServer(pi, name, entry);
+				void registerMcpServer(pi, name, entry, generation);
 			}
 		})
 		.catch((err: unknown) => {
+			if (generation !== extensionGeneration) return;
 			const code = (err as NodeJS.ErrnoException).code;
 			if (code !== "ENOENT") {
 				pi.sendUserMessage(`mcp: failed to load ${configPath}: ${(err as Error).message}`);
 			}
 		});
 	pi.on("session_shutdown", () => {
-		shuttingDown = true;
 		closeClients();
 	});
 }

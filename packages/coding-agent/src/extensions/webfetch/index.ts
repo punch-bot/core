@@ -149,9 +149,7 @@ async function fetchText(url: string, rawLimit: number): Promise<{ text: string;
 			});
 			const location = res.headers.location;
 			if (res.statusCode >= 300 && res.statusCode < 400) {
-				for await (const _chunk of res.body) {
-					void _chunk;
-				}
+				res.body.destroy();
 				if (!location) throw new Error(`HTTP ${res.statusCode} with no redirect location`);
 				if (redirects === MAX_REDIRECTS) throw new Error("Too many redirects");
 				current = new URL(location, target.url).toString();

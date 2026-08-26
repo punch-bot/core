@@ -120,6 +120,9 @@ export function usesApiKeyAuth(entry: McpRegistryEntry): boolean {
 function legacyMcpApiKeyOwners(registry: McpRegistry): Map<string, string[]> {
 	const owners = new Map<string, string[]>();
 	for (const [name, entry] of Object.entries(registry)) {
+		if (!entry || typeof entry !== "object") continue;
+		if (entry.enabled === false) continue;
+		if (!/^[a-zA-Z0-9_-]+$/.test(name)) continue;
 		if (!usesApiKeyAuth(entry)) continue;
 		const legacy = legacyMcpApiKeyEnvVar(name);
 		const modern = mcpApiKeyEnvVar(name);
