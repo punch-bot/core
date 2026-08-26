@@ -183,6 +183,8 @@ async function delegateToA2aAgentStreamWithClient(
 			}
 		}
 		if (payload?.$case === "statusUpdate") {
+			taskId = taskId ?? payload.value.taskId;
+			contextId = contextId ?? payload.value.contextId;
 			if (payload.value.status?.state === TaskState.TASK_STATE_COMPLETED) {
 				latestTask = {
 					id: taskId ?? payload.value.taskId,
