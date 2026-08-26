@@ -130,6 +130,7 @@ async function registerMcpServer(pi: ExtensionAPI, name: string, entry: McpAdapt
 }
 
 export default function mcpExtension(pi: ExtensionAPI): void {
+	shuttingDown = false;
 	const configPath = process.env.PI_MCP_FILE || path.join(process.cwd(), ".pi", "mcp.json");
 	void readFile(configPath, "utf8")
 		.then((raw) => {

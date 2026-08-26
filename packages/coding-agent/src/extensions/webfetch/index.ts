@@ -30,10 +30,32 @@ function expandIpv6(address: string): string {
 	return [...headParts, ...Array(missing).fill("0"), ...tailParts].join(":");
 }
 
+function isIpv4MappedToV6(address: string): string | null {
+	const withoutZone = address.toLowerCase().split("%")[0];
+	if (!withoutZone.includes(":")) return null;
+	const parts = expandIpv6(withoutZone).split(":");
+	if (parts.length !== 8) return null;
+	if (parts[7].includes(".")) {
+		const head = parts.slice(0, 7).map((part) => Number.parseInt(part, 16));
+		if (head.some((value) => Number.isNaN(value))) return null;
+		const mapped = head[6] === 0xffff && head.slice(0, 6).every((value) => value === 0);
+		const compatible = head.every((value) => value === 0);
+		if (!mapped && !compatible) return null;
+		return parts[7];
+	}
+	const values = parts.map((part) => Number.parseInt(part, 16));
+	if (values.some((value) => Number.isNaN(value))) return null;
+	const mapped = values[5] === 0xffff && values.slice(0, 5).every((value) => value === 0);
+	const compatible = values.slice(0, 7).every((value) => value === 0);
+	if (!mapped && !compatible) return null;
+	return `${values[6] >> 8}.${values[6] & 0xff}.${values[7] >> 8}.${values[7] & 0xff}`;
+}
+
 function isBlockedIp(ip: string): boolean {
 	const v = ip.toLowerCase();
 	if (v === "::1" || v === "::" || v === "0.0.0.0") return true;
-	if (v.startsWith("::ffff:")) return isBlockedIp(v.slice(7));
+	const mapped = isIpv4MappedToV6(v);
+	if (mapped !== null) return isBlockedIp(mapped);
 	if (v.includes(":")) {
 		const first = Number.parseInt(expandIpv6(v).split(":")[0], 16);
 		if (Number.isNaN(first)) return false;
@@ -119,37 +141,37 @@ async function fetchText(url: string, rawLimit: number): Promise<{ text: string;
 	for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
 		const target = await resolveSafe(current);
 		const agent = pinnedAgent(target);
-		let statusCode: number;
-		let headers: Record<string, string | string[] | undefined>;
-		let stream: NodeJS.ReadableStream;
 		try {
 			const res = await request(target.url.toString(), {
 				dispatcher: agent,
 				method: "GET",
 				signal: AbortSignal.timeout(15_000),
 			});
-			statusCode = res.statusCode;
-			headers = res.headers;
-			stream = res.body;
+			const location = res.headers.location;
+			if (res.statusCode >= 300 && res.statusCode < 400) {
+				for await (const _chunk of res.body) {
+					void _chunk;
+				}
+				if (!location) throw new Error(`HTTP ${res.statusCode} with no redirect location`);
+				if (redirects === MAX_REDIRECTS) throw new Error("Too many redirects");
+				current = new URL(location, target.url).toString();
+				continue;
+			}
+			if (res.statusCode < 200 || res.statusCode >= 300) {
+				res.body.destroy();
+				throw new Error(`HTTP ${res.statusCode}`);
+			}
+			const contentType = String(res.headers["content-type"] ?? "");
+			const decoder = new TextDecoder();
+			let text = "";
+			for await (const chunk of res.body) {
+				text += decoder.decode(chunk as Uint8Array, { stream: true });
+				if (text.length >= rawLimit) break;
+			}
+			return { text, contentType };
 		} finally {
 			void agent.close();
 		}
-		const location = headers.location;
-		if (statusCode >= 300 && statusCode < 400) {
-			if (!location) throw new Error(`HTTP ${statusCode} with no redirect location`);
-			if (redirects === MAX_REDIRECTS) throw new Error("Too many redirects");
-			current = new URL(location, target.url).toString();
-			continue;
-		}
-		if (statusCode < 200 || statusCode >= 300) throw new Error(`HTTP ${statusCode}`);
-		const contentType = String(headers["content-type"] ?? "");
-		const decoder = new TextDecoder();
-		let text = "";
-		for await (const chunk of stream) {
-			text += decoder.decode(chunk as Uint8Array, { stream: true });
-			if (text.length >= rawLimit) break;
-		}
-		return { text, contentType };
 	}
 	throw new Error("Too many redirects");
 }

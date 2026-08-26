@@ -54,13 +54,6 @@ export function mcpApiKeyEnvVarCandidates(serverName: string): string[] {
 	return candidates;
 }
 
-function uniqueLegacyMcpApiKeyEnvVar(serverName: string): string | undefined {
-	const upper = (serverName || "").toUpperCase();
-	const safe = upper.replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-	if (upper !== safe) return undefined;
-	return legacyMcpApiKeyEnvVar(serverName);
-}
-
 function splitCommandString(input: string): string[] {
 	const parts: string[] = [];
 	let current = "";
@@ -135,6 +128,15 @@ function legacyMcpApiKeyOwners(registry: McpRegistry): Map<string, string[]> {
 	return owners;
 }
 
+function ambiguousLegacyMcpApiKeyEnvVars(registry: McpRegistry): Set<string> {
+	const owners = legacyMcpApiKeyOwners(registry);
+	const ambiguous = new Set<string>();
+	for (const [legacy, names] of owners) {
+		if (names.length > 1) ambiguous.add(legacy);
+	}
+	return ambiguous;
+}
+
 export function migrateMcpApiKeyEnvVars(
 	registry: McpRegistry,
 	env: Record<string, string | undefined>,
@@ -172,7 +174,9 @@ export function isMcpApiKeyConfigured(
 ): boolean {
 	const entry = registry[serverName];
 	if (!usesApiKeyAuth(entry)) return true;
-	return mcpApiKeyEnvVarCandidates(serverName).some((v) => env[v] !== undefined && env[v] !== "");
+	const ambiguous = ambiguousLegacyMcpApiKeyEnvVars(registry);
+	const candidates = mcpApiKeyEnvVarCandidates(serverName).filter((v) => !ambiguous.has(v));
+	return candidates.some((v) => env[v] !== undefined && env[v] !== "");
 }
 
 export function sanitizeMcpEntryForDisplay(entry: McpRegistryEntry): Record<string, unknown> {
@@ -236,9 +240,16 @@ function stripCredentialHeaders(headers: Record<string, string>): Record<string,
 	return out;
 }
 
-export function applyApiKeyAuthToAdapter(out: McpAdapterEntry, entry: McpRegistryEntry, serverName: string): void {
+export function applyApiKeyAuthToAdapter(
+	out: McpAdapterEntry,
+	entry: McpRegistryEntry,
+	serverName: string,
+	ambiguousLegacyVars?: Set<string>,
+): void {
 	if (!usesApiKeyAuth(entry)) return;
-	const legacy = uniqueLegacyMcpApiKeyEnvVar(serverName);
+	const legacy = ambiguousLegacyVars?.has(legacyMcpApiKeyEnvVar(serverName))
+		? undefined
+		: legacyMcpApiKeyEnvVar(serverName);
 	const candidates = entry.apiKeyEnv
 		? [entry.apiKeyEnv]
 		: [mcpApiKeyEnvVar(serverName), legacy].filter(
@@ -257,7 +268,11 @@ export function applyApiKeyAuthToAdapter(out: McpAdapterEntry, entry: McpRegistr
 	out.bearerTokenEnv = envVar;
 }
 
-export function punchEntryToAdapter(entry: McpRegistryEntry | undefined, serverName: string): McpAdapterEntry | null {
+export function punchEntryToAdapter(
+	entry: McpRegistryEntry | undefined,
+	serverName: string,
+	ambiguousLegacyVars?: Set<string>,
+): McpAdapterEntry | null {
 	let out: McpAdapterEntry | null;
 	try {
 		out = assertPunchEntry(entry);
@@ -265,16 +280,17 @@ export function punchEntryToAdapter(entry: McpRegistryEntry | undefined, serverN
 		return null;
 	}
 	if (!out) return null;
-	applyApiKeyAuthToAdapter(out, entry!, serverName);
+	applyApiKeyAuthToAdapter(out, entry!, serverName, ambiguousLegacyVars);
 	return out;
 }
 
 export function punchRegistryToMcpServers(registry: McpRegistry | undefined): Record<string, McpAdapterEntry> {
 	if (!registry || typeof registry !== "object") return {};
+	const ambiguousLegacyVars = ambiguousLegacyMcpApiKeyEnvVars(registry);
 	const out: Record<string, McpAdapterEntry> = {};
 	for (const [name, entry] of Object.entries(registry)) {
 		if (!/^[a-zA-Z0-9_-]+$/.test(name)) continue;
-		const adapter = punchEntryToAdapter(entry, name);
+		const adapter = punchEntryToAdapter(entry, name, ambiguousLegacyVars);
 		if (adapter) out[name] = adapter;
 	}
 	return out;

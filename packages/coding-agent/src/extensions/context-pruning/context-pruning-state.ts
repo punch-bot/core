@@ -179,6 +179,8 @@ export function recompressBlock(
 	if (summary.length > MAX_SUMMARY_CHARS) throw new Error(`summary exceeds ${MAX_SUMMARY_CHARS} characters`);
 	if (!Array.isArray(blockIds) || blockIds.length < 2)
 		throw new Error("need at least 2 deactivated blocks to recompress");
+	if (new Set(blockIds).size !== blockIds.length)
+		throw new Error("blockIds must be unique; duplicates are not allowed");
 	const parents: PruningBlock[] = [];
 	for (const id of blockIds) {
 		const block = next.blocks.find((candidate) => candidate.id === id);
@@ -194,14 +196,14 @@ export function recompressBlock(
 	const seenIds = new Set<string>();
 	let sourceCharacters = 0;
 	for (const block of parents) {
-		let added = false;
 		for (const id of block.messageIds) {
-			if (seenIds.has(id)) continue;
+			if (seenIds.has(id)) {
+				throw new Error(`parent blocks overlap on message ${id}; deactivated blocks must not share message ids`);
+			}
 			seenIds.add(id);
 			allMessageIds.push(id);
-			added = true;
 		}
-		if (added) sourceCharacters += block.sourceCharacters || 0;
+		sourceCharacters += block.sourceCharacters || 0;
 	}
 	if (!isValidSummary(summary, sourceCharacters)) {
 		throw new Error(

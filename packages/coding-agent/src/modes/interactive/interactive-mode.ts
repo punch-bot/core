@@ -3322,9 +3322,10 @@ export class InteractiveMode {
 												try {
 													await this.session.waitForIdle();
 													await this.session.prompt(answer);
-													showQuestion(index + 1);
 												} catch (err) {
 													console.error(err);
+												} finally {
+													showQuestion(index + 1);
 												}
 											})();
 										},
