@@ -11,6 +11,7 @@
 - Added a platform-neutral delivery event to RPC mode that parses `<embed>`, `<question>`, and `<attachment>` tags from assistant messages into structured JSON, plus a `read_file` command for fetching attachment bytes.
 - Added an interactive question prompt to the TUI that renders `<question>` delivery blocks as a selectable list.
 - Added built-in extensions for web search, page fetching, progress reporting, context pruning, headless browser automation, a self-implemented MCP client, and Punch-style collaboration and routine scheduling with an OAuth-gated HTTP backend.
+- Added an in-loop `todo` tool to the Punch extension: the model maintains a live plan (list, add, toggle, revise, split, clear) that is checked before every action via context injection and rendered as a persistent TUI widget.
 - Added `playwright`, `chrono-node`, and `cron-parser` dependencies for the new browser, routines, and collaboration extensions.
 - Added A2A server startup via `pi server --a2a-listen http://127.0.0.1:41241`.
 - Added A2A delegation support to the subagent extension via agent frontmatter `a2aUrl`.
