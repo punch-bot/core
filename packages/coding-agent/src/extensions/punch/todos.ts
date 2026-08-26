@@ -61,9 +61,11 @@ export function loadTodos(file = todosFile()): TodoState {
 				typeof todo !== "object" ||
 				todo === null ||
 				typeof (todo as Partial<TodoItem>).id !== "number" ||
+				!Number.isSafeInteger((todo as Partial<TodoItem>).id) ||
 				typeof (todo as Partial<TodoItem>).text !== "string" ||
 				typeof (todo as Partial<TodoItem>).done !== "boolean" ||
-				typeof (todo as Partial<TodoItem>).createdAt !== "number"
+				typeof (todo as Partial<TodoItem>).createdAt !== "number" ||
+				!Number.isSafeInteger((todo as Partial<TodoItem>).createdAt)
 			) {
 				continue;
 			}
@@ -75,11 +77,15 @@ export function loadTodos(file = todosFile()): TodoState {
 				typeof entry !== "object" ||
 				entry === null ||
 				typeof (entry as Partial<TodoLogEntry>).at !== "number" ||
+				!Number.isSafeInteger((entry as Partial<TodoLogEntry>).at) ||
 				typeof (entry as Partial<TodoLogEntry>).summary !== "string"
 			) {
 				continue;
 			}
 			log.push(entry as TodoLogEntry);
+		}
+		if (!Number.isSafeInteger(parsed.nextId)) {
+			return emptyState();
 		}
 		const maxId = todos.reduce((max, todo) => Math.max(max, todo.id), 0);
 		return {

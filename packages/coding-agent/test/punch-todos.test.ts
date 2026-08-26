@@ -212,6 +212,24 @@ describe("persistence", () => {
 		expect(state.nextId).toBe(5);
 		expect(state.log).toEqual([{ at: 1, summary: "good" }]);
 	});
+
+	it("drops out-of-range numeric fields and non-safe nextId", () => {
+		const file = join(dir, "todos.json");
+		writeFileSync(
+			file,
+			'{"todos":[{"id":1e400,"text":"infinite id","done":false,"createdAt":1},{"id":1,"text":"infinite createdAt","done":false,"createdAt":1e400},{"id":2,"text":"ok","done":false,"createdAt":3}],"nextId":1,"log":[{"at":1e400,"summary":"infinite at"},{"at":2,"summary":"ok"}]}',
+		);
+		const state = loadTodos(file);
+		expect(state.todos).toEqual([{ id: 2, text: "ok", done: false, createdAt: 3 }]);
+		expect(state.nextId).toBe(3);
+		expect(state.log).toEqual([{ at: 2, summary: "ok" }]);
+	});
+
+	it("returns an empty state for a non-safe nextId", () => {
+		const file = join(dir, "todos.json");
+		writeFileSync(file, '{"todos":[],"nextId":1e400,"log":[]}');
+		expect(loadTodos(file)).toEqual(emptyState());
+	});
 });
 
 describe("installTodos", () => {
