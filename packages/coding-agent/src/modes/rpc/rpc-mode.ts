@@ -598,7 +598,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				const roots = [session.sessionManager.getCwd(), tmpdir()];
 				let target: string;
 				try {
-					target = fs.realpathSync(path.resolve(command.path));
+					target = fs.realpathSync(path.resolve(session.sessionManager.getCwd(), command.path));
 				} catch {
 					return error(id, "read_file", "File not found");
 				}
