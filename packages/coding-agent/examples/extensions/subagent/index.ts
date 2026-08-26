@@ -16,7 +16,7 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { delegateToA2aAgentStream } from "@punch-bot/a2a";
+import { delegateToA2aAgentPreferStream } from "@punch-bot/a2a";
 import type { AgentToolResult, ThinkingLevel } from "@punch-bot/agent";
 import type { Message } from "@punch-bot/ai";
 import { StringEnum } from "@punch-bot/ai";
@@ -335,7 +335,7 @@ async function runSingleAgent(
 		if (agent.a2aUrl) {
 			const prompt = agent.systemPrompt.trim() ? `${agent.systemPrompt.trim()}\n\nTask: ${task}` : `Task: ${task}`;
 			try {
-				const result = await delegateToA2aAgentStream(
+				const result = await delegateToA2aAgentPreferStream(
 					{
 						url: agent.a2aUrl,
 						task: prompt,
@@ -365,6 +365,9 @@ async function runSingleAgent(
 					];
 				}
 			} catch (error) {
+				if (signal?.aborted) {
+					throw error;
+				}
 				currentResult.exitCode = 1;
 				currentResult.stderr = error instanceof Error ? error.message : String(error);
 				currentResult.stopReason = "error";

@@ -24,8 +24,8 @@ function extractAssistantText(message: AssistantMessage): string {
 		.join("\n");
 }
 
-function findLastAssistantMessage(session: AgentSession): AssistantMessage | undefined {
-	for (let index = session.state.messages.length - 1; index >= 0; index--) {
+function findAssistantMessageAfterIndex(session: AgentSession, startIndex: number): AssistantMessage | undefined {
+	for (let index = session.state.messages.length - 1; index >= startIndex; index--) {
 		const message = session.state.messages[index];
 		if (message.role === "assistant") return message as AssistantMessage;
 	}
@@ -100,8 +100,9 @@ export async function createCodingAgentHarnessRunnerFactory(
 			};
 			signal?.addEventListener("abort", onAbort, { once: true });
 			try {
+				const messageCountBefore = context.session.state.messages.length;
 				await context.session.prompt(text, { expandPromptTemplates: false });
-				const assistant = findLastAssistantMessage(context.session);
+				const assistant = findAssistantMessageAfterIndex(context.session, messageCountBefore);
 				if (!assistant) {
 					return { message: "Agent completed without a response" };
 				}

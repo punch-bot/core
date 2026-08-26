@@ -43,50 +43,63 @@ function buildStreamingSendMessageRequest(task: string): SendMessageRequest {
 	};
 }
 
-function extractErrorFromTask(task: Task | undefined): string | undefined {
-	if (!task) return undefined;
-	if (task.status?.state === TaskState.TASK_STATE_FAILED) {
-		const metadataError = task.metadata?.error;
-		if (typeof metadataError === "string" && metadataError.length > 0) return metadataError;
-		const statusText = extractTextFromMessage(task.status?.message);
-		if (statusText) return statusText;
-		return "Remote A2A task failed";
-	}
-	return undefined;
-}
-
-function extractTextFromTask(task: Task | undefined): string {
+function extractArtifactTextFromTask(task: Task | undefined): string {
 	if (!task) return "";
 	const artifactText = task.artifacts
 		.flatMap((artifact) => artifact.parts.map((part) => (part.content?.$case === "text" ? part.content.value : "")))
 		.filter(Boolean)
 		.join("\n")
 		.trim();
+	return artifactText;
+}
+
+function extractErrorFromTask(task: Task | undefined): string | undefined {
+	if (!task) return undefined;
+	const state = task.status?.state;
+	if (state === TaskState.TASK_STATE_FAILED) {
+		const metadataError = task.metadata?.error;
+		if (typeof metadataError === "string" && metadataError.length > 0) return metadataError;
+		const statusText = extractTextFromMessage(task.status?.message);
+		if (statusText) return statusText;
+		return "Remote A2A task failed";
+	}
+	if (state === TaskState.TASK_STATE_REJECTED) {
+		const statusText = extractTextFromMessage(task.status?.message);
+		return statusText || "Remote A2A task rejected";
+	}
+	if (state === TaskState.TASK_STATE_CANCELED) {
+		const statusText = extractTextFromMessage(task.status?.message);
+		return statusText || "Remote A2A task canceled";
+	}
+	return undefined;
+}
+
+function extractTextFromTask(task: Task | undefined): string {
+	if (!task) return "";
+	const artifactText = extractArtifactTextFromTask(task);
 	if (artifactText) return artifactText;
 	return extractTextFromMessage(task.status?.message);
 }
 
-function extractTextFromStreamEvent(event: StreamResponse, currentText: string): string {
+function extractArtifactTextFromStreamEvent(event: StreamResponse, artifactText: string): string {
 	const payload = event.payload;
-	if (!payload) return currentText;
+	if (!payload) return artifactText;
 	switch (payload.$case) {
-		case "message":
-			return extractTextFromMessage(payload.value) || currentText;
-		case "task":
-			return extractTextFromTask(payload.value) || currentText;
-		case "statusUpdate":
-			return extractTextFromMessage(payload.value.status?.message) || currentText;
+		case "task": {
+			const taskArtifact = extractArtifactTextFromTask(payload.value);
+			return taskArtifact || artifactText;
+		}
 		case "artifactUpdate": {
 			const chunk =
 				payload.value.artifact?.parts
 					.map((part) => (part.content?.$case === "text" ? part.content.value : ""))
 					.filter(Boolean)
 					.join("\n") ?? "";
-			if (!chunk) return currentText;
-			return payload.value.append ? `${currentText}${chunk}` : chunk;
+			if (!chunk) return artifactText;
+			return payload.value.append ? `${artifactText}${chunk}` : chunk;
 		}
 		default:
-			return currentText;
+			return artifactText;
 	}
 }
 
@@ -99,13 +112,23 @@ function isTerminalTaskState(state: TaskState | undefined): boolean {
 	);
 }
 
+function isFailedTerminalTaskState(state: TaskState | undefined): boolean {
+	return (
+		state === TaskState.TASK_STATE_FAILED ||
+		state === TaskState.TASK_STATE_CANCELED ||
+		state === TaskState.TASK_STATE_REJECTED
+	);
+}
+
 function buildResultFromTask(task: Task): DelegateToA2aAgentResult {
+	const state = task.status?.state;
 	const error = extractErrorFromTask(task);
+	const failed = error !== undefined || isFailedTerminalTaskState(state);
 	return {
 		text: extractTextFromTask(task),
 		taskId: task.id,
 		contextId: task.contextId,
-		...(error ? { failed: true, error } : {}),
+		...(failed ? { failed: true, error: error ?? "Remote A2A task failed" } : {}),
 	};
 }
 
@@ -133,41 +156,62 @@ export async function delegateToA2aAgentStream(
 	const client = await factory.createFromUrl(options.url);
 	const stream = client.sendMessageStream(buildStreamingSendMessageRequest(options.task), { signal: options.signal });
 
-	let latestText = "";
+	let artifactText = "";
 	let taskId: string | undefined;
 	let contextId: string | undefined;
 	let failed = false;
 	let error: string | undefined;
 	for await (const event of stream) {
-		latestText = extractTextFromStreamEvent(event, latestText);
-		if (latestText) onUpdate?.(latestText);
+		artifactText = extractArtifactTextFromStreamEvent(event, artifactText);
+		if (artifactText) onUpdate?.(artifactText);
 		const payload = event.payload;
 		if (payload?.$case === "task") {
 			taskId = payload.value.id;
 			contextId = payload.value.contextId;
-			if (payload.value.status?.state === TaskState.TASK_STATE_FAILED) {
+			if (isFailedTerminalTaskState(payload.value.status?.state)) {
 				failed = true;
 				error = extractErrorFromTask(payload.value);
 			}
 			if (isTerminalTaskState(payload.value.status?.state)) {
-				latestText = extractTextFromTask(payload.value) || latestText;
+				artifactText = extractArtifactTextFromTask(payload.value) || artifactText;
 			}
 		}
 		if (payload?.$case === "statusUpdate") {
-			if (payload.value.status?.state === TaskState.TASK_STATE_FAILED) {
+			if (isFailedTerminalTaskState(payload.value.status?.state)) {
 				failed = true;
-				error = extractTextFromMessage(payload.value.status?.message) || error;
-			}
-			if (isTerminalTaskState(payload.value.status?.state)) {
-				latestText = extractTextFromMessage(payload.value.status?.message) || latestText;
+				error = extractErrorFromTask({
+					id: taskId ?? "",
+					contextId: contextId ?? "",
+					status: payload.value.status,
+					artifacts: [],
+					history: [],
+					metadata: {},
+				});
 			}
 		}
 	}
 
 	return {
-		text: latestText,
+		text: artifactText,
 		taskId,
 		contextId,
 		...(failed ? { failed: true, error: error ?? "Remote A2A task failed" } : {}),
 	};
+}
+
+export async function delegateToA2aAgentPreferStream(
+	options: DelegateToA2aAgentOptions,
+	onUpdate?: (text: string) => void,
+): Promise<DelegateToA2aAgentResult> {
+	const factory = new ClientFactory({
+		transports: [new JsonRpcTransportFactory()],
+	});
+	const client = await factory.createFromUrl(options.url);
+	const card = await client.getAgentCard({ signal: options.signal });
+	if (card.capabilities?.streaming) {
+		return delegateToA2aAgentStream(options, onUpdate);
+	}
+	const result = await delegateToA2aAgent(options);
+	if (result.text) onUpdate?.(result.text);
+	return result;
 }

@@ -3,6 +3,7 @@ export {
 	type DelegateToA2aAgentOptions,
 	type DelegateToA2aAgentResult,
 	delegateToA2aAgent,
+	delegateToA2aAgentPreferStream,
 	delegateToA2aAgentStream,
 } from "./client.ts";
 export {

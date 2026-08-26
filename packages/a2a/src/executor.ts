@@ -27,6 +27,8 @@ export class HarnessAgentExecutor implements AgentExecutor {
 	private readonly runners = new Map<string, HarnessPromptRunner>();
 	private readonly taskContexts = new Map<string, string>();
 	private readonly cancelledTasks = new Set<string>();
+	private readonly taskAbortControllers = new Map<string, AbortController>();
+	private readonly contextChains = new Map<string, Promise<unknown>>();
 	private readonly runnerFactory: HarnessPromptRunnerFactory;
 
 	constructor(runnerFactory: HarnessPromptRunnerFactory) {
@@ -35,10 +37,8 @@ export class HarnessAgentExecutor implements AgentExecutor {
 
 	cancelTask = async (taskId: string, eventBus: ExecutionEventBus): Promise<void> => {
 		this.cancelledTasks.add(taskId);
+		this.taskAbortControllers.get(taskId)?.abort();
 		const contextId = this.taskContexts.get(taskId);
-		if (contextId) {
-			await this.runners.get(contextId)?.abort?.();
-		}
 		eventBus.publish(
 			AgentEvent.statusUpdate({
 				taskId,
@@ -53,6 +53,17 @@ export class HarnessAgentExecutor implements AgentExecutor {
 		);
 	};
 
+	private runInContext<T>(contextId: string, fn: () => Promise<T>): Promise<T> {
+		const previous = this.contextChains.get(contextId) ?? Promise.resolve();
+		const current = previous.then(() => fn());
+		this.contextChains.set(contextId, current);
+		return current.finally(() => {
+			if (this.contextChains.get(contextId) === current) {
+				this.contextChains.delete(contextId);
+			}
+		});
+	}
+
 	async execute(requestContext: RequestContext, eventBus: ExecutionEventBus): Promise<void> {
 		const taskId = requestContext.taskId;
 		const contextId = requestContext.contextId;
@@ -60,103 +71,115 @@ export class HarnessAgentExecutor implements AgentExecutor {
 		const existingTask = requestContext.task;
 		const promptText = extractTextFromMessage(userMessage);
 
-		this.taskContexts.set(taskId, contextId);
-		const runner = this.runners.get(contextId) ?? this.runnerFactory(contextId);
-		this.runners.set(contextId, runner);
+		await this.runInContext(contextId, async () => {
+			const abortController = new AbortController();
+			this.taskAbortControllers.set(taskId, abortController);
 
-		try {
-			const taskSnapshot = existingTask ?? {
-				id: taskId,
-				contextId,
-				status: {
-					state: TaskState.TASK_STATE_SUBMITTED,
-					timestamp: new Date().toISOString(),
-					message: undefined,
-				},
-				artifacts: [],
-				history: [userMessage],
-				metadata: userMessage.metadata,
-			};
-			eventBus.publish(AgentEvent.task(taskSnapshot));
+			let runner: HarnessPromptRunner;
+			try {
+				runner = this.runners.get(contextId) ?? this.runnerFactory(contextId);
+				this.runners.set(contextId, runner);
+				this.taskContexts.set(taskId, contextId);
+			} catch (error) {
+				this.taskAbortControllers.delete(taskId);
+				throw error;
+			}
 
-			eventBus.publish(
-				AgentEvent.statusUpdate({
-					taskId,
+			try {
+				const taskSnapshot = existingTask ?? {
+					id: taskId,
 					contextId,
 					status: {
-						state: TaskState.TASK_STATE_WORKING,
+						state: TaskState.TASK_STATE_SUBMITTED,
 						timestamp: new Date().toISOString(),
 						message: undefined,
 					},
-					metadata: {},
-				}),
-			);
+					artifacts: [],
+					history: [userMessage],
+					metadata: userMessage.metadata,
+				};
+				eventBus.publish(AgentEvent.task(taskSnapshot));
 
-			if (this.cancelledTasks.has(taskId)) {
-				return;
-			}
-
-			const outcome = await runner.prompt(promptText);
-			if (this.cancelledTasks.has(taskId)) {
-				return;
-			}
-
-			if (isHarnessPromptError(outcome)) {
 				eventBus.publish(
 					AgentEvent.statusUpdate({
 						taskId,
 						contextId,
 						status: {
-							state: TaskState.TASK_STATE_FAILED,
+							state: TaskState.TASK_STATE_WORKING,
 							timestamp: new Date().toISOString(),
-							message: createTextMessage(outcome.message, { role: "agent", taskId, contextId }),
+							message: undefined,
 						},
-						metadata: { error: outcome.message },
+						metadata: {},
 					}),
 				);
-				return;
-			}
 
-			eventBus.publish(
-				AgentEvent.artifactUpdate({
-					taskId,
-					contextId,
-					artifact: {
-						artifactId: crypto.randomUUID(),
-						name: "Result",
-						description: "Agent response",
-						parts: [
-							{
-								content: { $case: "text", value: outcome.text },
-								metadata: undefined,
-								filename: "",
-								mediaType: "text/plain",
+				if (this.cancelledTasks.has(taskId) || abortController.signal.aborted) {
+					return;
+				}
+
+				const outcome = await runner.prompt(promptText, abortController.signal);
+				if (this.cancelledTasks.has(taskId) || abortController.signal.aborted) {
+					return;
+				}
+
+				if (isHarnessPromptError(outcome)) {
+					eventBus.publish(
+						AgentEvent.statusUpdate({
+							taskId,
+							contextId,
+							status: {
+								state: TaskState.TASK_STATE_FAILED,
+								timestamp: new Date().toISOString(),
+								message: createTextMessage(outcome.message, { role: "agent", taskId, contextId }),
 							},
-						],
-						metadata: undefined,
-						extensions: [],
-					},
-					lastChunk: true,
-					append: false,
-					metadata: undefined,
-				}),
-			);
+							metadata: { error: outcome.message },
+						}),
+					);
+					return;
+				}
 
-			eventBus.publish(
-				AgentEvent.statusUpdate({
-					taskId,
-					contextId,
-					status: {
-						state: TaskState.TASK_STATE_COMPLETED,
-						timestamp: new Date().toISOString(),
-						message: undefined,
-					},
-					metadata: undefined,
-				}),
-			);
-		} finally {
-			this.cancelledTasks.delete(taskId);
-			this.taskContexts.delete(taskId);
-		}
+				eventBus.publish(
+					AgentEvent.artifactUpdate({
+						taskId,
+						contextId,
+						artifact: {
+							artifactId: crypto.randomUUID(),
+							name: "Result",
+							description: "Agent response",
+							parts: [
+								{
+									content: { $case: "text", value: outcome.text },
+									metadata: undefined,
+									filename: "",
+									mediaType: "text/plain",
+								},
+							],
+							metadata: undefined,
+							extensions: [],
+						},
+						lastChunk: true,
+						append: false,
+						metadata: undefined,
+					}),
+				);
+
+				eventBus.publish(
+					AgentEvent.statusUpdate({
+						taskId,
+						contextId,
+						status: {
+							state: TaskState.TASK_STATE_COMPLETED,
+							timestamp: new Date().toISOString(),
+							message: undefined,
+						},
+						metadata: undefined,
+					}),
+				);
+			} finally {
+				this.cancelledTasks.delete(taskId);
+				this.taskAbortControllers.delete(taskId);
+				this.taskContexts.delete(taskId);
+			}
+		});
 	}
 }
