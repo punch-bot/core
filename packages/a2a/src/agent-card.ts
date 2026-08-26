@@ -20,7 +20,7 @@ export function createPunchAgentCard(options: CreatePunchAgentCardOptions): Agen
 					tags: ["coding", "agent"],
 					examples: ["Fix the failing test in src/foo.test.ts", "Summarize this repository"],
 					inputModes: ["text"],
-					outputModes: ["text", "task-status"],
+					outputModes: ["text"],
 					securityRequirements: [],
 				},
 			];
@@ -50,7 +50,7 @@ export function createPunchAgentCard(options: CreatePunchAgentCardOptions): Agen
 		securitySchemes: {},
 		securityRequirements: [],
 		defaultInputModes: ["text"],
-		defaultOutputModes: ["text", "task-status"],
+		defaultOutputModes: ["text"],
 		skills,
 		documentationUrl: "https://github.com/punch-bot/core",
 		signatures: [],

@@ -1,6 +1,6 @@
 import { TaskState } from "@a2a-js/sdk";
 import { AgentEvent, type AgentExecutor, type ExecutionEventBus, type RequestContext } from "@a2a-js/sdk/server";
-import { extractTextFromMessage } from "./message.ts";
+import { createTextMessage, extractTextFromMessage } from "./message.ts";
 
 export interface HarnessPromptResult {
 	text: string;
@@ -25,6 +25,7 @@ export type HarnessPromptRunnerFactory = (contextId: string) => HarnessPromptRun
 
 export class HarnessAgentExecutor implements AgentExecutor {
 	private readonly runners = new Map<string, HarnessPromptRunner>();
+	private readonly taskContexts = new Map<string, string>();
 	private readonly cancelledTasks = new Set<string>();
 	private readonly runnerFactory: HarnessPromptRunnerFactory;
 
@@ -34,13 +35,14 @@ export class HarnessAgentExecutor implements AgentExecutor {
 
 	cancelTask = async (taskId: string, eventBus: ExecutionEventBus): Promise<void> => {
 		this.cancelledTasks.add(taskId);
-		for (const runner of this.runners.values()) {
-			await runner.abort?.();
+		const contextId = this.taskContexts.get(taskId);
+		if (contextId) {
+			await this.runners.get(contextId)?.abort?.();
 		}
 		eventBus.publish(
 			AgentEvent.statusUpdate({
 				taskId,
-				contextId: taskId,
+				contextId: contextId ?? taskId,
 				status: {
 					state: TaskState.TASK_STATE_CANCELED,
 					timestamp: new Date().toISOString(),
@@ -58,6 +60,7 @@ export class HarnessAgentExecutor implements AgentExecutor {
 		const existingTask = requestContext.task;
 		const promptText = extractTextFromMessage(userMessage);
 
+		this.taskContexts.set(taskId, contextId);
 		const runner = this.runners.get(contextId) ?? this.runnerFactory(contextId);
 		this.runners.set(contextId, runner);
 
@@ -106,7 +109,7 @@ export class HarnessAgentExecutor implements AgentExecutor {
 						status: {
 							state: TaskState.TASK_STATE_FAILED,
 							timestamp: new Date().toISOString(),
-							message: undefined,
+							message: createTextMessage(outcome.message, { role: "agent", taskId, contextId }),
 						},
 						metadata: { error: outcome.message },
 					}),
@@ -153,6 +156,7 @@ export class HarnessAgentExecutor implements AgentExecutor {
 			);
 		} finally {
 			this.cancelledTasks.delete(taskId);
+			this.taskContexts.delete(taskId);
 		}
 	}
 }

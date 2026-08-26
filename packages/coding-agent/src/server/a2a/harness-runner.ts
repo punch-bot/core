@@ -1,23 +1,35 @@
 import type { HarnessPromptRunner, HarnessPromptRunnerFactory } from "@punch-bot/a2a";
-import { getOrThrow, InMemorySessionStorage, Session } from "@punch-bot/agent";
-import { NodeExecutionEnv } from "@punch-bot/agent/node";
+import type { AssistantMessage } from "@punch-bot/ai";
 import { getAgentDir } from "../../config.ts";
+import type { AgentSession } from "../../core/agent-session.ts";
 import { findInitialModel } from "../../core/model-resolver.ts";
 import { ModelRuntime } from "../../core/model-runtime.ts";
+import { createAgentSession } from "../../core/sdk.ts";
+import { SessionManager } from "../../core/session-manager.ts";
 import { SettingsManager } from "../../core/settings-manager.ts";
-import { createCodingAgentHarness } from "../create-harness.ts";
 
 export interface CreateCodingAgentHarnessRunnerFactoryOptions {
 	cwd?: string;
 	agentDir?: string;
+	maxContexts?: number;
 }
 
-function extractAssistantText(message: { content?: string | Array<{ type: string; text?: string }> }): string {
+const DEFAULT_MAX_CONTEXTS = 32;
+
+function extractAssistantText(message: AssistantMessage): string {
 	if (typeof message.content === "string") return message.content;
-	return (message.content ?? [])
+	return message.content
 		.filter((part): part is { type: "text"; text: string } => part.type === "text")
 		.map((part) => part.text)
 		.join("\n");
+}
+
+function findLastAssistantMessage(session: AgentSession): AssistantMessage | undefined {
+	for (let index = session.state.messages.length - 1; index >= 0; index--) {
+		const message = session.state.messages[index];
+		if (message.role === "assistant") return message as AssistantMessage;
+	}
+	return undefined;
 }
 
 export async function createCodingAgentHarnessRunnerFactory(
@@ -25,6 +37,7 @@ export async function createCodingAgentHarnessRunnerFactory(
 ): Promise<HarnessPromptRunnerFactory> {
 	const cwd = options.cwd ?? process.cwd();
 	const agentDir = options.agentDir ?? getAgentDir();
+	const maxContexts = options.maxContexts ?? DEFAULT_MAX_CONTEXTS;
 	const modelRuntime = await ModelRuntime.create({ authPath: undefined });
 	const settingsManager = SettingsManager.create(cwd, agentDir);
 	const initialModel = await findInitialModel({
@@ -40,57 +53,75 @@ export async function createCodingAgentHarnessRunnerFactory(
 		throw new Error("No model available for A2A server. Configure credentials and models first.");
 	}
 	const model = initialModel.model;
-	const thinkingLevel = settingsManager.getDefaultThinkingLevel() ?? "medium";
-	const contexts = new Map<
-		string,
-		{ harness: Awaited<ReturnType<typeof createCodingAgentHarness>>["harness"]; env: NodeExecutionEnv }
-	>();
+	const thinkingLevel = initialModel.thinkingLevel;
+	const contexts = new Map<string, { session: AgentSession; lastUsed: number }>();
+
+	const evictContexts = (): void => {
+		while (contexts.size > maxContexts) {
+			let oldestContextId: string | undefined;
+			let oldestUsed = Number.POSITIVE_INFINITY;
+			for (const [contextId, context] of contexts) {
+				if (context.lastUsed < oldestUsed) {
+					oldestUsed = context.lastUsed;
+					oldestContextId = contextId;
+				}
+			}
+			if (!oldestContextId) return;
+			const removed = contexts.get(oldestContextId);
+			contexts.delete(oldestContextId);
+			removed?.session.dispose();
+		}
+	};
 
 	return (contextId: string): HarnessPromptRunner => ({
 		async prompt(text, signal) {
-			let context = contexts.get(contextId);
-			if (!context) {
-				const env = new NodeExecutionEnv({ cwd });
-				const session = new Session(new InMemorySessionStorage({ id: `a2a-${contextId}`, createdAt: Date.now() }));
-				const created = await createCodingAgentHarness({
-					session,
-					models: modelRuntime,
-					model,
-					thinkingLevel,
-					env,
-				});
-				context = { harness: created.harness, env };
-				contexts.set(contextId, context);
+			if (signal?.aborted) {
+				return { message: "Task aborted" };
 			}
 
-			const abortController = new AbortController();
+			let context = contexts.get(contextId);
+			if (!context) {
+				const { session } = await createAgentSession({
+					cwd,
+					agentDir,
+					modelRuntime,
+					model,
+					thinkingLevel,
+					sessionManager: SessionManager.inMemory(cwd),
+				});
+				context = { session, lastUsed: Date.now() };
+				contexts.set(contextId, context);
+				evictContexts();
+			}
+			context.lastUsed = Date.now();
+
 			const onAbort = () => {
-				void context.harness.abort();
+				void context.session.abort();
 			};
 			signal?.addEventListener("abort", onAbort, { once: true });
 			try {
-				const result = getOrThrow(await context.harness.prompt(text));
-				if (result.kind === "failed") {
-					return { message: result.error.message };
+				await context.session.prompt(text, { expandPromptTemplates: false });
+				const assistant = findLastAssistantMessage(context.session);
+				if (!assistant) {
+					return { message: "Agent completed without a response" };
 				}
-				if (result.kind === "aborted") {
+				if (assistant.stopReason === "error") {
+					return { message: assistant.errorMessage ?? "Agent failed" };
+				}
+				if (assistant.stopReason === "aborted") {
 					return { message: "Task aborted" };
 				}
-				if (result.kind === "suspended") {
-					return { message: "Task suspended awaiting external input" };
-				}
-				return { text: extractAssistantText(result.finalMessage) };
+				return { text: extractAssistantText(assistant) };
 			} catch (error) {
 				return { message: error instanceof Error ? error.message : String(error) };
 			} finally {
 				signal?.removeEventListener("abort", onAbort);
-				if (signal?.aborted) abortController.abort();
 			}
 		},
 		async abort() {
 			const context = contexts.get(contextId);
 			if (!context) return;
-			await context.harness.abort();
+			await context.session.abort();
 		},
 	});
 }
