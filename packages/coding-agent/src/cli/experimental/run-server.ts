@@ -9,9 +9,9 @@ export async function runExperimentalServer(command: ServerCommand): Promise<voi
 		);
 	}
 	const { host, port, url } = command.a2aListen;
-	if (!isLoopbackHost(host) && command.auth === undefined) {
+	if (!isLoopbackHost(host)) {
 		throw new Error(
-			"A2A server currently supports only loopback binds without authentication. Use 127.0.0.1, localhost, or ::1, or pass --auth-token.",
+			"A2A server currently supports only loopback binds until authentication support is implemented.",
 		);
 	}
 	const server = await runA2aServer({
