@@ -1,5 +1,4 @@
 name: npm audit
-run-name: npm audit · ${{ github.event_name }}
 
 on:
   schedule:

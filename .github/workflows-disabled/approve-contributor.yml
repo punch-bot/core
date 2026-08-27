@@ -1,5 +1,4 @@
 name: Approve Contributor
-run-name: Approve Contributor · #${{ github.event.issue.number }} · @${{ github.event.comment.user.login }}
 
 on:
   issue_comment:

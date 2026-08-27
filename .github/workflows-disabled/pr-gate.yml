@@ -1,5 +1,4 @@
 name: PR Gate
-run-name: PR Gate · #${{ github.event.pull_request.number }} · @${{ github.event.pull_request.user.login }}
 
 on:
   pull_request_target:

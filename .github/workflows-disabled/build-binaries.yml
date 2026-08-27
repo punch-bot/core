@@ -1,5 +1,4 @@
 name: Build Binaries
-run-name: Release · ${{ github.event.inputs.tag || github.ref_name }}
 
 on:
   push:

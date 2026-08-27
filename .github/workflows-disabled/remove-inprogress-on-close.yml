@@ -1,5 +1,4 @@
 name: Remove In Progress Label On Close
-run-name: Remove inprogress · #${{ github.event.issue.number }}
 
 on:
   issues:

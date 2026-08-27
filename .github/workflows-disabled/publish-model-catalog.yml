@@ -1,5 +1,4 @@
 name: Publish Model Catalog
-run-name: Model Catalog · ${{ github.event_name }} · ${{ github.event.workflow_run.head_branch || github.ref_name }}
 
 on:
   workflow_run:
