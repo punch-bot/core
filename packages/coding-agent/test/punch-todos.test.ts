@@ -115,6 +115,14 @@ describe("applyTodoAction", () => {
 		expect(result.state.log[0]?.summary).toBe("Revised #1: new");
 	});
 
+	it("update with unchanged text is a no-op", () => {
+		const before = stateWith([{ id: 1, text: "step" }]);
+		const result = applyTodoAction(before, { action: "update", id: 1, text: "  step  " });
+		expect(result.changed).toBe(false);
+		expect(result.state).toBe(before);
+		expect(result.state.log).toEqual([]);
+	});
+
 	it("splits an item into multiple items with fresh ids", () => {
 		const result = applyTodoAction(stateWith([{ id: 1, text: "big task" }]), {
 			action: "split",
@@ -230,6 +238,14 @@ describe("persistence", () => {
 		writeFileSync(file, '{"todos":[],"nextId":1e400,"log":[]}');
 		expect(loadTodos(file)).toEqual(emptyState());
 	});
+
+	it("repairs a non-safe nextId without dropping valid todos", () => {
+		const file = join(dir, "todos.json");
+		writeFileSync(file, '{"todos":[{"id":7,"text":"keep me","done":false,"createdAt":1}],"nextId":1e400,"log":[]}');
+		const state = loadTodos(file);
+		expect(state.todos).toEqual([{ id: 7, text: "keep me", done: false, createdAt: 1 }]);
+		expect(state.nextId).toBe(8);
+	});
 });
 
 describe("installTodos", () => {
@@ -285,13 +301,20 @@ describe("installTodos", () => {
 		expect(setWidget).toHaveBeenCalledWith("punch-todos", expect.arrayContaining(["[ ] #1 step one"]));
 		const callCount = setWidget.mock.calls.length;
 		await todoTool?.execute?.("call-2", { action: "list" }, undefined, undefined, ctx);
+		await todoTool?.execute?.("call-3", { action: "update", id: 1, text: "step one" }, undefined, undefined, ctx);
 		expect(setWidget.mock.calls.length).toBe(callCount);
 	});
 
 	it("reloads state on session start", async () => {
 		const { sessionStartHandler, todoTool, ctx, setWidget } = setup();
 		await todoTool?.execute?.("call-1", { action: "add", text: "step one" }, undefined, undefined, ctx);
+		const file = join(dir, "todos.json");
+		saveTodos(applyTodoAction(loadTodos(file), { action: "add", text: "step two" }).state, file);
+		setWidget.mockClear();
 		sessionStartHandler?.({ type: "session_start", reason: "startup" }, ctx);
-		expect(setWidget).toHaveBeenCalledWith("punch-todos", expect.arrayContaining(["[ ] #1 step one"]));
+		expect(setWidget).toHaveBeenCalledWith(
+			"punch-todos",
+			expect.arrayContaining(["[ ] #1 step one", "[ ] #2 step two"]),
+		);
 	});
 });

@@ -52,7 +52,7 @@ export function todosFile(): string {
 export function loadTodos(file = todosFile()): TodoState {
 	try {
 		const parsed = JSON.parse(readFileSync(file, "utf8")) as Partial<TodoState>;
-		if (!Array.isArray(parsed.todos) || typeof parsed.nextId !== "number" || !Array.isArray(parsed.log)) {
+		if (!Array.isArray(parsed.todos) || !Array.isArray(parsed.log)) {
 			return emptyState();
 		}
 		const todos: TodoItem[] = [];
@@ -84,15 +84,12 @@ export function loadTodos(file = todosFile()): TodoState {
 			}
 			log.push(entry as TodoLogEntry);
 		}
-		if (!Number.isSafeInteger(parsed.nextId)) {
-			return emptyState();
-		}
 		const maxId = todos.reduce((max, todo) => Math.max(max, todo.id), 0);
-		return {
-			todos,
-			nextId: Math.max(parsed.nextId, maxId + 1),
-			log: log.slice(0, MAX_LOG),
-		};
+		const nextId =
+			typeof parsed.nextId === "number" && Number.isSafeInteger(parsed.nextId)
+				? Math.max(parsed.nextId, maxId + 1)
+				: maxId + 1;
+		return { todos, nextId, log: log.slice(0, MAX_LOG) };
 	} catch {
 		return emptyState();
 	}
@@ -163,6 +160,7 @@ export function applyTodoAction(state: TodoState, action: TodoAction): TodoActio
 			if (index === -1) throw new Error(`todo #${action.id} not found`);
 			const text = action.text.trim();
 			if (!text) throw new Error("text is required for update");
+			if (state.todos[index]!.text === text) return { state, text: formatPlan(state), changed: false };
 			const todos = [...state.todos];
 			todos[index] = { ...todos[index]!, text };
 			const next = appendLog({ ...state, todos }, `Revised #${action.id}: ${text}`);
