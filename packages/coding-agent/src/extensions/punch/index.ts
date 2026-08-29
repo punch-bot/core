@@ -8,6 +8,7 @@ import { getAuthHeader, isAuthConfigured } from "./auth.ts";
 import { validateCollabWorkspace } from "./collabs.ts";
 import { startScheduler } from "./routines.ts";
 import { startPunchServer } from "./server.ts";
+import { installTodos } from "./todos.ts";
 
 const PORT = Number(process.env.PI_BOT_PORT) || 4098;
 const BOT_URL = process.env.PUNCH_BOT_URL || `http://localhost:${PORT}`;
@@ -86,6 +87,7 @@ export default function punchExtension(pi: ExtensionAPI): void {
 		console.warn("punch server disabled: no auth credentials configured");
 	}
 	startPunchServer();
+	installTodos(pi);
 
 	pi.registerTool({
 		name: "collab",
