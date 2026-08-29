@@ -112,7 +112,7 @@ describe("applyTodoAction", () => {
 	it("updates item text", () => {
 		const result = applyTodoAction(stateWith([{ id: 1, text: "old" }]), { action: "update", id: 1, text: "new" });
 		expect(result.state.todos[0]?.text).toBe("new");
-		expect(result.state.log[0]?.summary).toBe("Revised #1: new");
+		expect(result.state.log[0]?.summary).toBe("Updated #1: new");
 	});
 
 	it("update with unchanged text is a no-op", () => {
@@ -233,10 +233,34 @@ describe("persistence", () => {
 		expect(state.log).toEqual([{ at: 2, summary: "ok" }]);
 	});
 
-	it("returns an empty state for a non-safe nextId", () => {
+	it("repairs a non-safe nextId to maxId + 1 on an empty plan", () => {
 		const file = join(dir, "todos.json");
 		writeFileSync(file, '{"todos":[],"nextId":1e400,"log":[]}');
-		expect(loadTodos(file)).toEqual(emptyState());
+		const state = loadTodos(file);
+		expect(state).toEqual(emptyState());
+		expect(state.nextId).toBe(1);
+	});
+
+	it("drops duplicate ids keeping the first occurrence", () => {
+		const file = join(dir, "todos.json");
+		writeFileSync(
+			file,
+			JSON.stringify({
+				todos: [
+					{ id: 1, text: "first", done: false, createdAt: 1 },
+					{ id: 1, text: "conflicting", done: true, createdAt: 2 },
+					{ id: 2, text: "second", done: false, createdAt: 3 },
+				],
+				nextId: 3,
+				log: [],
+			}),
+		);
+		const state = loadTodos(file);
+		expect(state.todos).toEqual([
+			{ id: 1, text: "first", done: false, createdAt: 1 },
+			{ id: 2, text: "second", done: false, createdAt: 3 },
+		]);
+		expect(state.nextId).toBe(3);
 	});
 
 	it("repairs a non-safe nextId without dropping valid todos", () => {

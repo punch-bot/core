@@ -56,6 +56,7 @@ export function loadTodos(file = todosFile()): TodoState {
 			return emptyState();
 		}
 		const todos: TodoItem[] = [];
+		const seenIds = new Set<number>();
 		for (const todo of parsed.todos) {
 			if (
 				typeof todo !== "object" ||
@@ -69,6 +70,8 @@ export function loadTodos(file = todosFile()): TodoState {
 			) {
 				continue;
 			}
+			if (seenIds.has(todo.id)) continue;
+			seenIds.add(todo.id);
 			todos.push(todo as TodoItem);
 		}
 		const log: TodoLogEntry[] = [];
@@ -126,7 +129,7 @@ function contextInjection(state: TodoState): string {
 	const plan = formatPlan(state);
 	const changes = formatRecentChanges(state);
 	const directive =
-		"Check this plan before your next action; update it with the todo tool when work is done or scope changes (add, split, or revise).";
+		"Check this plan before your next action; update it with the todo tool when work is done or scope changes (add, split, or update).";
 	return changes ? `[Punch plan]\n${plan}\n\n${changes}\n\n${directive}` : `[Punch plan]\n${plan}\n\n${directive}`;
 }
 
@@ -163,7 +166,7 @@ export function applyTodoAction(state: TodoState, action: TodoAction): TodoActio
 			if (state.todos[index]!.text === text) return { state, text: formatPlan(state), changed: false };
 			const todos = [...state.todos];
 			todos[index] = { ...todos[index]!, text };
-			const next = appendLog({ ...state, todos }, `Revised #${action.id}: ${text}`);
+			const next = appendLog({ ...state, todos }, `Updated #${action.id}: ${text}`);
 			return { state: next, text: formatPlan(next), changed: true };
 		}
 		case "split": {
@@ -229,13 +232,13 @@ export function installTodos(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "todo",
 		label: "Punch to-do list",
-		description: "Maintain a live to-do plan: list, add, mark done, revise, split, or clear items.",
+		description: "Maintain a live to-do plan: list, add, toggle, update, split, or clear items.",
 		promptSnippet: "Track your plan with the todo tool",
 		promptGuidelines: [
 			"Before starting a multi-step task, create a plan with todo (action=add) for each step.",
 			"Check the plan before every next action; keep it current.",
 			"Mark items done (action=toggle) as soon as they finish.",
-			"When scope changes, add, split, or revise items.",
+			"When scope changes, add, split, or update items.",
 			"Do not call todo when nothing changed.",
 		],
 		parameters: Type.Object({
