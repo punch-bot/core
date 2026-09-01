@@ -8,7 +8,7 @@ import { XAI_MODELS } from "../src/providers/xai.models.ts";
 import { xaiProvider } from "../src/providers/xai.ts";
 import type { Context, Model } from "../src/types.ts";
 
-const PI_USER_AGENT = `pi (${platform()} ${release()}; ${arch()})`;
+const PI_USER_AGENT = `punch-bot (${platform()} ${release()}; ${arch()})`;
 
 type CapturedRequest = {
 	url: string;
@@ -231,7 +231,7 @@ describe("xAI Responses provider", () => {
 		});
 	});
 
-	it("uses pi's User-Agent by default for Responses requests", async () => {
+	it("uses Punch Bot's User-Agent by default for Responses requests", async () => {
 		let userAgent: string | null = null;
 		vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
 			userAgent = new Request(input, init).headers.get("user-agent");
@@ -263,7 +263,7 @@ describe("xAI Responses provider", () => {
 		expect(captured.headers.get("user-agent")).toBe("custom-agent");
 	});
 
-	it("uses pi's User-Agent by default for Completions requests", async () => {
+	it("uses Punch Bot's User-Agent by default for Completions requests", async () => {
 		expect(await captureCompletionsUserAgent()).toBe(PI_USER_AGENT);
 	});
 
