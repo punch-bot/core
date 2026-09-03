@@ -56,6 +56,7 @@ import {
 } from "./constrained-sampling.ts";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.ts";
 import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.ts";
+import { opencodeSessionHeaders } from "./opencode-session.ts";
 import { buildBaseOptions, clampThinkingBudgetToAnswerRoom, thinkingBudgetForLevel } from "./simple-options.ts";
 import { transformMessages } from "./transform-messages.ts";
 
@@ -757,6 +758,10 @@ function createClient(
 			headers["x-session-affinity"] = sessionId;
 		}
 	}
+
+	// OpenCode backend affinity: pins the conversation to one upstream backend
+	// so its prompt cache stays warm (required; some Go backends reject without it).
+	Object.assign(headers, opencodeSessionHeaders(model.provider, model.baseUrl, sessionId));
 
 	// Merge options headers last so they can override defaults
 	if (optionsHeaders) {

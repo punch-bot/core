@@ -40,6 +40,7 @@ import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
 
 import { getJsonSchemaToolParameters, resolveJsonSchemaStrictSampling } from "./constrained-sampling.ts";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.ts";
+import { opencodeSessionHeaders } from "./opencode-session.ts";
 import { adjustMaxTokensForThinking, buildBaseOptions, clampMaxTokensToContext } from "./simple-options.ts";
 import { transformMessages } from "./transform-messages.ts";
 
@@ -946,8 +947,10 @@ function createClient(
 	}
 
 	// API key or header-owned auth.
-	const sessionAffinityHeaders: ProviderHeaders =
-		sessionId && getAnthropicCompat(model).sendSessionAffinityHeaders ? { "x-session-affinity": sessionId } : {};
+	const sessionAffinityHeaders: ProviderHeaders = {
+		...(sessionId && getAnthropicCompat(model).sendSessionAffinityHeaders ? { "x-session-affinity": sessionId } : {}),
+		...opencodeSessionHeaders(model.provider, model.baseUrl, sessionId),
+	};
 	const defaultHeaders = mergeClientHeaders(
 		{
 			accept: "application/json",

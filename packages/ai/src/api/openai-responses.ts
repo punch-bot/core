@@ -26,6 +26,7 @@ import { createGrammarToolInputProperties } from "./constrained-sampling.ts";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.ts";
 import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.ts";
 import { convertResponsesMessages, convertResponsesTools, processResponsesStream } from "./openai-responses-shared.ts";
+import { opencodeSessionHeaders } from "./opencode-session.ts";
 import { buildBaseOptions } from "./simple-options.ts";
 
 const OPENAI_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode"]);
@@ -244,6 +245,10 @@ function createClient(
 			headers["x-client-request-id"] = sessionId;
 		}
 	}
+
+	// OpenCode backend affinity (opencode.ai Zen/Go/free relay): pin the
+	// conversation to one backend so its prompt cache stays warm.
+	Object.assign(headers, opencodeSessionHeaders(model.provider, model.baseUrl, sessionId));
 
 	// Merge options headers last so they can override defaults
 	if (optionsHeaders) {

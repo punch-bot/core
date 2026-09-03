@@ -36,6 +36,7 @@ import {
 	retryGoogleRequest,
 	supportsGoogleStrictToolSampling,
 } from "./google-shared.ts";
+import { opencodeSessionHeaders } from "./opencode-session.ts";
 import { buildBaseOptions } from "./simple-options.ts";
 
 export interface GoogleOptions extends StreamOptions {
@@ -84,7 +85,7 @@ export const stream: StreamFunction<"google-generative-ai", GoogleOptions> = (
 			if (!apiKey) {
 				throw new Error(`No API key for provider: ${model.provider}`);
 			}
-			const client = createClient(model, apiKey, options?.headers);
+			const client = createClient(model, apiKey, options?.headers, options?.sessionId);
 			let params = buildParams(model, context, options);
 			const nextParams = await options?.onPayload?.(params, model);
 			if (nextParams !== undefined) {
@@ -339,13 +340,19 @@ function createClient(
 	model: Model<"google-generative-ai">,
 	apiKey?: string,
 	optionsHeaders?: ProviderHeaders,
+	sessionId?: string,
 ): GoogleGenAI {
 	const httpOptions: { baseUrl?: string; apiVersion?: string; headers?: Record<string, string> } = {};
 	if (model.baseUrl) {
 		httpOptions.baseUrl = model.baseUrl;
 		httpOptions.apiVersion = ""; // baseUrl already includes version path, don't append
 	}
-	const headers = providerHeadersToRecord({ "User-Agent": getPiUserAgent(), ...model.headers, ...optionsHeaders });
+	const headers = providerHeadersToRecord({
+		"User-Agent": getPiUserAgent(),
+		...model.headers,
+		...opencodeSessionHeaders(model.provider, model.baseUrl, sessionId),
+		...optionsHeaders,
+	});
 	if (headers) {
 		httpOptions.headers = headers;
 	}

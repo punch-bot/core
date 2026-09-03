@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added the `x-opencode-session` header on every OpenCode (Zen / Go / free) request across all transports (chat-completions, responses, anthropic-messages, google-generative-ai) so the opencode.ai relay pins each conversation to one backend and keeps its prompt cache warm.
+
 ### Breaking Changes
 
 - Renamed package from `@earendil-works/pi-ai` to `@punch-bot/ai`.
