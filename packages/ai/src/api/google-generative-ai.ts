@@ -21,7 +21,7 @@ import type {
 } from "../types.ts";
 import { formatProviderError, normalizeProviderError } from "../utils/error-body.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
-import { providerHeadersToRecord } from "../utils/headers.ts";
+import { mergeHeaderSets, providerHeadersToRecord } from "../utils/headers.ts";
 import { getPiUserAgent } from "../utils/pi-user-agent.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
 import type { GoogleApiThinkingLevel, ResolvedGoogleThinkingLevel } from "./google-shared.ts";
@@ -336,23 +336,6 @@ export const streamSimple: StreamFunction<"google-generative-ai", SimpleStreamOp
 	} satisfies GoogleOptions);
 };
 
-/** Case-insensitive header merge; later sources override earlier ones by lowercased name. */
-function mergeGoogleHeaders(...sources: (ProviderHeaders | undefined)[]): ProviderHeaders {
-	const out: ProviderHeaders = {};
-	const seen = new Map<string, string>();
-	for (const src of sources) {
-		if (!src) continue;
-		for (const [key, value] of Object.entries(src)) {
-			const lower = key.toLowerCase();
-			const prior = seen.get(lower);
-			if (prior !== undefined) delete out[prior];
-			out[key] = value;
-			seen.set(lower, key);
-		}
-	}
-	return out;
-}
-
 function createClient(
 	model: Model<"google-generative-ai">,
 	apiKey?: string,
@@ -365,7 +348,7 @@ function createClient(
 		httpOptions.apiVersion = ""; // baseUrl already includes version path, don't append
 	}
 	const headers = providerHeadersToRecord(
-		mergeGoogleHeaders(
+		mergeHeaderSets(
 			{ "User-Agent": getPiUserAgent(), ...model.headers },
 			opencodeSessionHeaders(model.provider, model.baseUrl, sessionId),
 			optionsHeaders,

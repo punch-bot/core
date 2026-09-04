@@ -16,3 +16,21 @@ export function providerHeadersToRecord(headers: ProviderHeaders | undefined): R
 	}
 	return Object.keys(result).length > 0 ? result : undefined;
 }
+
+/** Case-insensitive merge of header sources; later sources override earlier ones by lowercased name. */
+export function mergeHeaderSets(...sources: (ProviderHeaders | undefined)[]): ProviderHeaders | undefined {
+	const defined = sources.filter((source) => source !== undefined);
+	if (defined.length === 0) return undefined;
+	const merged: ProviderHeaders = {};
+	const byLowerName = new Map<string, string>();
+	for (const source of defined) {
+		for (const [name, value] of Object.entries(source ?? {})) {
+			const lowerName = name.toLowerCase();
+			const priorName = byLowerName.get(lowerName);
+			if (priorName !== undefined) delete merged[priorName];
+			merged[name] = value;
+			byLowerName.set(lowerName, name);
+		}
+	}
+	return merged;
+}

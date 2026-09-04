@@ -7,6 +7,8 @@ describe("isOpencodeTarget", () => {
 		["go provider", "opencode-go", undefined, true],
 		["zen base_url", undefined, "https://opencode.ai", true],
 		["subdomain base_url", undefined, "https://api.opencode.ai/v1", true],
+		["custom port", undefined, "https://opencode.ai:8443/v1", true],
+		["custom provider with port", undefined, "http://api.opencode.ai:8080", true],
 		["custom provider on opencode.ai", "my-custom", "https://opencode.ai", true],
 		["path includes opencode.ai", undefined, "https://example.com/opencode.ai/relay", false],
 		["lookalike host suffix", undefined, "https://opencode.ai.attacker.example", false],

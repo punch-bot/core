@@ -25,12 +25,15 @@ const OPENCODE_PROVIDERS = new Set(["opencode", "opencode-go"]);
 
 /** True when *base_url* hosts the OpenCode relay: exactly `opencode.ai` or a subdomain of it. */
 function isOpenCodeHost(baseUrl: string): boolean {
-	const host = baseUrl
+	let host = baseUrl
 		.toLowerCase()
 		.replace(/^[a-z][a-z0-9+.-]*:\/\//, "") // strip optional scheme
-		.split("/")[0]
-		.split("?")[0]
-		.split("#")[0];
+		.split(/[/?#]/)[0];
+	if (host.startsWith("[")) {
+		host = host.slice(1, host.indexOf("]")); // IPv6 literal
+	} else {
+		host = host.replace(/:\d+$/, ""); // strip port
+	}
 	return host === "opencode.ai" || host.endsWith(".opencode.ai");
 }
 
