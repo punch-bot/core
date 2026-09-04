@@ -8,6 +8,8 @@ describe("isOpencodeTarget", () => {
 		["zen base_url", undefined, "https://opencode.ai", true],
 		["subdomain base_url", undefined, "https://api.opencode.ai/v1", true],
 		["custom provider on opencode.ai", "my-custom", "https://opencode.ai", true],
+		["path includes opencode.ai", undefined, "https://example.com/opencode.ai/relay", false],
+		["lookalike host suffix", undefined, "https://opencode.ai.attacker.example", false],
 		["opencode.go json host (negative)", undefined, "https://opencode.go/api", false],
 	] as const)("%s -> %j", (_label, provider, baseUrl, expected) => {
 		expect(isOpencodeTarget(provider, baseUrl)).toBe(expected);

@@ -559,6 +559,7 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 					options?.fetch,
 					copilotDynamicHeaders,
 					cacheSessionId,
+					options?.sessionId,
 				);
 				client = created.client;
 				isOAuth = created.isOAuthToken;
@@ -885,6 +886,7 @@ function createClient(
 	fetch?: typeof globalThis.fetch,
 	dynamicHeaders?: Record<string, string>,
 	sessionId?: string,
+	conversationSessionId?: string,
 ): { client: Anthropic; isOAuthToken: boolean } {
 	// Adaptive thinking models have interleaved thinking built in, so skip the beta header.
 	const needsInterleavedBeta = interleavedThinking && model.compat?.forceAdaptiveThinking !== true;
@@ -949,7 +951,7 @@ function createClient(
 	// API key or header-owned auth.
 	const sessionAffinityHeaders: ProviderHeaders = {
 		...(sessionId && getAnthropicCompat(model).sendSessionAffinityHeaders ? { "x-session-affinity": sessionId } : {}),
-		...opencodeSessionHeaders(model.provider, model.baseUrl, sessionId),
+		...opencodeSessionHeaders(model.provider, model.baseUrl, conversationSessionId),
 	};
 	const defaultHeaders = mergeClientHeaders(
 		{

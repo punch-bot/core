@@ -138,7 +138,15 @@ export const stream: StreamFunction<"openai-responses", OpenAIResponsesOptions> 
 				context.tools,
 				compat.supportsOpenAIGrammarTools,
 			);
-			const client = createClient(model, context, apiKey, options?.headers, options?.fetch, cacheSessionId);
+			const client = createClient(
+				model,
+				context,
+				apiKey,
+				options?.headers,
+				options?.fetch,
+				cacheSessionId,
+				options?.sessionId,
+			);
 			let params = buildParams(model, context, options, compat, grammarToolInputProperties);
 			const nextParams = await options?.onPayload?.(params, model);
 			if (nextParams !== undefined) {
@@ -223,6 +231,7 @@ function createClient(
 	optionsHeaders?: ProviderHeaders,
 	fetch?: typeof globalThis.fetch,
 	sessionId?: string,
+	conversationSessionId?: string,
 ) {
 	const compat = getCompat(model);
 	const headers: ProviderHeaders = { "User-Agent": getPiUserAgent(), ...model.headers };
@@ -248,7 +257,7 @@ function createClient(
 
 	// OpenCode backend affinity (opencode.ai Zen/Go/free relay): pin the
 	// conversation to one backend so its prompt cache stays warm.
-	Object.assign(headers, opencodeSessionHeaders(model.provider, model.baseUrl, sessionId));
+	Object.assign(headers, opencodeSessionHeaders(model.provider, model.baseUrl, conversationSessionId));
 
 	// Merge options headers last so they can override defaults
 	if (optionsHeaders) {

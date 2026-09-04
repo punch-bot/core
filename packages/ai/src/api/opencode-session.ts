@@ -23,11 +23,21 @@ export const OPENCODE_SESSION_HEADER = "x-opencode-session";
 /** Built-in OpenCode relay provider families (Zen / Go; free rides on Zen keyless). */
 const OPENCODE_PROVIDERS = new Set(["opencode", "opencode-go"]);
 
+/** True when *base_url* hosts the OpenCode relay: exactly `opencode.ai` or a subdomain of it. */
+function isOpenCodeHost(baseUrl: string): boolean {
+	const host = baseUrl
+		.toLowerCase()
+		.replace(/^[a-z][a-z0-9+.-]*:\/\//, "") // strip optional scheme
+		.split("/")[0]
+		.split("?")[0]
+		.split("#")[0];
+	return host === "opencode.ai" || host.endsWith(".opencode.ai");
+}
+
 /** True when *provider* or *base_url* addresses the OpenCode relay (Zen/Go/free/custom). */
 export function isOpencodeTarget(provider: string | undefined, baseUrl: string | undefined): boolean {
 	return (
-		(provider !== undefined && OPENCODE_PROVIDERS.has(provider)) ||
-		Boolean(baseUrl?.toLowerCase().includes("opencode.ai"))
+		(provider !== undefined && OPENCODE_PROVIDERS.has(provider)) || (baseUrl !== undefined && isOpenCodeHost(baseUrl))
 	);
 }
 

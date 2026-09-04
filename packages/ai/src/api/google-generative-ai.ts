@@ -336,6 +336,23 @@ export const streamSimple: StreamFunction<"google-generative-ai", SimpleStreamOp
 	} satisfies GoogleOptions);
 };
 
+/** Case-insensitive header merge; later sources override earlier ones by lowercased name. */
+function mergeGoogleHeaders(...sources: (ProviderHeaders | undefined)[]): ProviderHeaders {
+	const out: ProviderHeaders = {};
+	const seen = new Map<string, string>();
+	for (const src of sources) {
+		if (!src) continue;
+		for (const [key, value] of Object.entries(src)) {
+			const lower = key.toLowerCase();
+			const prior = seen.get(lower);
+			if (prior !== undefined) delete out[prior];
+			out[key] = value;
+			seen.set(lower, key);
+		}
+	}
+	return out;
+}
+
 function createClient(
 	model: Model<"google-generative-ai">,
 	apiKey?: string,
@@ -347,12 +364,13 @@ function createClient(
 		httpOptions.baseUrl = model.baseUrl;
 		httpOptions.apiVersion = ""; // baseUrl already includes version path, don't append
 	}
-	const headers = providerHeadersToRecord({
-		"User-Agent": getPiUserAgent(),
-		...model.headers,
-		...opencodeSessionHeaders(model.provider, model.baseUrl, sessionId),
-		...optionsHeaders,
-	});
+	const headers = providerHeadersToRecord(
+		mergeGoogleHeaders(
+			{ "User-Agent": getPiUserAgent(), ...model.headers },
+			opencodeSessionHeaders(model.provider, model.baseUrl, sessionId),
+			optionsHeaders,
+		),
+	);
 	if (headers) {
 		httpOptions.headers = headers;
 	}

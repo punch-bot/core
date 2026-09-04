@@ -339,7 +339,16 @@ export const stream: StreamFunction<"openai-completions", OpenAICompletionsOptio
 			);
 			const cacheRetention = resolveCacheRetention(options?.cacheRetention, options?.env);
 			const cacheSessionId = cacheRetention === "none" ? undefined : options?.sessionId;
-			const client = createClient(model, context, apiKey, options?.headers, options?.fetch, cacheSessionId, compat);
+			const client = createClient(
+				model,
+				context,
+				apiKey,
+				options?.headers,
+				options?.fetch,
+				cacheSessionId,
+				options?.sessionId,
+				compat,
+			);
 			let params = buildParams(model, context, options, compat, cacheRetention, grammarToolInputProperties);
 			const nextParams = await options?.onPayload?.(params, model);
 			if (nextParams !== undefined) {
@@ -735,6 +744,7 @@ function createClient(
 	optionsHeaders?: ProviderHeaders,
 	fetch?: typeof globalThis.fetch,
 	sessionId?: string,
+	conversationSessionId?: string,
 	compat: ResolvedOpenAICompletionsCompat = getCompat(model),
 ) {
 	const headers: ProviderHeaders = { "User-Agent": getPiUserAgent(), ...model.headers };
@@ -761,7 +771,7 @@ function createClient(
 
 	// OpenCode backend affinity: pins the conversation to one upstream backend
 	// so its prompt cache stays warm (required; some Go backends reject without it).
-	Object.assign(headers, opencodeSessionHeaders(model.provider, model.baseUrl, sessionId));
+	Object.assign(headers, opencodeSessionHeaders(model.provider, model.baseUrl, conversationSessionId));
 
 	// Merge options headers last so they can override defaults
 	if (optionsHeaders) {
