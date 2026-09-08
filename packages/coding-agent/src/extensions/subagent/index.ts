@@ -20,15 +20,12 @@ import { delegateToA2aAgentPreferStream } from "@punch-bot/a2a";
 import type { AgentToolResult, ThinkingLevel } from "@punch-bot/agent";
 import type { Message } from "@punch-bot/ai";
 import { StringEnum } from "@punch-bot/ai";
-import {
-	CONFIG_DIR_NAME,
-	type ExtensionAPI,
-	getAgentDir,
-	getMarkdownTheme,
-	withFileMutationQueue,
-} from "@punch-bot/cli";
 import { Container, Markdown, Spacer, Text } from "@punch-bot/tui";
 import { Type } from "typebox";
+import { CONFIG_DIR_NAME, getAgentDir } from "../../config.ts";
+import type { ExtensionAPI } from "../../core/extensions/types.ts";
+import { withFileMutationQueue } from "../../core/tools/file-mutation-queue.ts";
+import { getMarkdownTheme, type Theme } from "../../modes/interactive/theme/theme.ts";
 import { type AgentConfig, type AgentScope, discoverAgents } from "./agents.ts";
 
 const MAX_PARALLEL_TASKS = 8;
@@ -72,7 +69,7 @@ function formatUsageStats(
 function formatToolCall(
 	toolName: string,
 	args: Record<string, unknown>,
-	themeFg: (color: any, text: string) => string,
+	themeFg: (color: Parameters<Theme["fg"]>[0], text: string) => string,
 ): string {
 	const shortenPath = (p: string) => {
 		const home = os.homedir();
@@ -149,7 +146,7 @@ interface UsageStats {
 
 interface SingleResult {
 	agent: string;
-	agentSource: "user" | "project" | "unknown";
+	agentSource: AgentConfig["source"] | "unknown";
 	task: string;
 	exitCode: number;
 	messages: Message[];
@@ -202,7 +199,7 @@ function truncateParallelOutput(output: string): string {
 	return `${truncated}\n\n[Output truncated: ${byteLength - Buffer.byteLength(truncated, "utf8")} bytes omitted. Full output preserved in tool details.]`;
 }
 
-type DisplayItem = { type: "text"; text: string } | { type: "toolCall"; name: string; args: Record<string, any> };
+type DisplayItem = { type: "text"; text: string } | { type: "toolCall"; name: string; args: Record<string, unknown> };
 
 function getDisplayItems(messages: Message[]): DisplayItem[] {
 	const items: DisplayItem[] = [];
@@ -398,9 +395,9 @@ async function runSingleAgent(
 
 			const processLine = (line: string) => {
 				if (!line.trim()) return;
-				let event: any;
+				let event: { type?: unknown; message?: unknown };
 				try {
-					event = JSON.parse(line);
+					event = JSON.parse(line) as { type?: unknown; message?: unknown };
 				} catch {
 					return;
 				}

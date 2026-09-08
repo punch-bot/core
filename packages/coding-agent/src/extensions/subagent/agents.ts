@@ -4,7 +4,8 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { CONFIG_DIR_NAME, getAgentDir, parseFrontmatter } from "@punch-bot/cli";
+import { CONFIG_DIR_NAME, getAgentDir, getExamplesPath } from "../../config.ts";
+import { parseFrontmatter } from "../../utils/frontmatter.ts";
 
 export type AgentScope = "user" | "project" | "both";
 
@@ -15,7 +16,7 @@ export interface AgentConfig {
 	model?: string;
 	a2aUrl?: string;
 	systemPrompt: string;
-	source: "user" | "project";
+	source: "builtin" | "user" | "project";
 	filePath: string;
 }
 
@@ -61,7 +62,7 @@ function parseToolList(value: unknown): string[] | undefined {
 	return tools.length > 0 ? tools : undefined;
 }
 
-function loadAgentsFromDir(dir: string, source: "user" | "project"): AgentConfig[] {
+function loadAgentsFromDir(dir: string, source: AgentConfig["source"]): AgentConfig[] {
 	const agents: AgentConfig[] = [];
 
 	if (!fs.existsSync(dir)) {
@@ -129,13 +130,16 @@ function findNearestProjectAgentsDir(cwd: string): string | null {
 }
 
 export function discoverAgents(cwd: string, scope: AgentScope): AgentDiscoveryResult {
+	const builtinDir = path.join(getExamplesPath(), "extensions", "subagent", "agents");
 	const userDir = path.join(getAgentDir(), "agents");
 	const projectAgentsDir = findNearestProjectAgentsDir(cwd);
 
+	const builtinAgents = loadAgentsFromDir(builtinDir, "builtin");
 	const userAgents = scope === "project" ? [] : loadAgentsFromDir(userDir, "user");
 	const projectAgents = scope === "user" || !projectAgentsDir ? [] : loadAgentsFromDir(projectAgentsDir, "project");
 
 	const agentMap = new Map<string, AgentConfig>();
+	for (const agent of builtinAgents) agentMap.set(agent.name, agent);
 
 	if (scope === "both") {
 		for (const agent of userAgents) agentMap.set(agent.name, agent);
