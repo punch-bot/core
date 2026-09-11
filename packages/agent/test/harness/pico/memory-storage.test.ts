@@ -1,4 +1,4 @@
-import { TODO_CONTEXT, withCancel } from "@earendil-works/chord/context";
+import { TODO_CONTEXT, withCancel } from "@punch-bot/chord/context";
 import { describe, expect, it, vi } from "vitest";
 import { defineInternalList, defineInternalValue } from "../../../src/harness/pico/addresses.ts";
 import {

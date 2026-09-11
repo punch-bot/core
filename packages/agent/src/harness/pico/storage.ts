@@ -1,4 +1,4 @@
-import type { Context } from "@earendil-works/chord";
+import type { Context } from "@punch-bot/chord";
 import type { Element, List, Value } from "./addresses.ts";
 import type { Id, JsonValue, Seq } from "./core.ts";
 import type { Conversation, Entry, SectionRecord } from "./entries.ts";

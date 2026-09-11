@@ -1,5 +1,5 @@
-import type { Context } from "@earendil-works/chord";
-import { withAbortSignal } from "@earendil-works/chord/context";
+import type { Context } from "@punch-bot/chord";
+import { withAbortSignal } from "@punch-bot/chord/context";
 import type { Session, TxImpl } from "./session.ts";
 import {
 	type AnyKind,

@@ -1,4 +1,4 @@
-import type { JsonRepresentation } from "@earendil-works/chord";
+import type { JsonRepresentation } from "@punch-bot/chord";
 
 export type JsonPrimitive = null | boolean | number | string;
 export type JsonValue = JsonPrimitive | JsonObject | readonly JsonValue[];

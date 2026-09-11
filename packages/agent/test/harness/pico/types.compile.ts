@@ -1,4 +1,4 @@
-import type { Context } from "@earendil-works/chord";
+import type { Context } from "@punch-bot/chord";
 import type {
 	AssistantMessage,
 	DeferredHandle,
@@ -8,7 +8,7 @@ import type {
 	ToolResultMessage,
 	Usage,
 	UserMessage,
-} from "@earendil-works/pi-ai";
+} from "@punch-bot/ai";
 import { defineInternalList, internalConversationValue } from "../../../src/harness/pico/addresses.ts";
 import type {
 	Acceptance,

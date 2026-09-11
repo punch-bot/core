@@ -8,8 +8,8 @@
  * Single process. A storage path has one owning process and one owning Session at a time.
  * Two processes opening the same JSONL directory is unsupported.
  */
-import type { JsonValue as ChordJsonValue, Context, JsonRepresentation } from "@earendil-works/chord";
-import type { Op } from "@earendil-works/chord/delta";
+import type { JsonValue as ChordJsonValue, Context, JsonRepresentation } from "@punch-bot/chord";
+import type { Op } from "@punch-bot/chord/delta";
 import type {
 	Api,
 	AssistantMessage,
@@ -22,7 +22,7 @@ import type {
 	ToolCall,
 	ToolResultMessage,
 	UserMessage,
-} from "@earendil-works/pi-ai";
+} from "@punch-bot/ai";
 import type { Static, TSchema } from "typebox";
 import type { ThinkingLevel } from "../../types.ts";
 import type { SectionRegistry, SectionSeed, ToolRegistry } from "./system.ts";

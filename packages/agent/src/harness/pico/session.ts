@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { Context } from "@earendil-works/chord";
-import { withoutAbortSignal } from "@earendil-works/chord/context";
+import type { Context } from "@punch-bot/chord";
+import { withoutAbortSignal } from "@punch-bot/chord/context";
 import type { Element, List, PayloadOf, ResolvedValue, Value } from "./addresses.ts";
 import type { Id, JsonValue } from "./core.ts";
 import type { Conversation, Entry } from "./entries.ts";

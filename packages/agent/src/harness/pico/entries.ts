@@ -1,4 +1,4 @@
-import type { AssistantMessage, Message, ToolResultMessage, Usage, UserMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Message, ToolResultMessage, Usage, UserMessage } from "@punch-bot/ai";
 import type { Id, JsonValue, Stored } from "./core.ts";
 
 export type ContextEdit =

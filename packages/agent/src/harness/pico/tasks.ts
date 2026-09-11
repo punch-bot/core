@@ -1,4 +1,4 @@
-import type { Context } from "@earendil-works/chord";
+import type { Context } from "@punch-bot/chord";
 import type { ConversationValueDefinition } from "./addresses.ts";
 import type { Id, JsonObject, JsonValue } from "./core.ts";
 import type { EmptyHookPoints, HookPoints } from "./hooks.ts";

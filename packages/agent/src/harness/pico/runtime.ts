@@ -1,5 +1,5 @@
-import type { Context } from "@earendil-works/chord";
-import type { AssistantMessage, ImageContent, Message, TextContent, ToolCall } from "@earendil-works/pi-ai";
+import type { Context } from "@punch-bot/chord";
+import type { AssistantMessage, ImageContent, Message, TextContent, ToolCall } from "@punch-bot/ai";
 import type { Element, List, PayloadOf, ResolvedValue, UnboundList, UnboundValue, Value } from "./addresses.ts";
 import type { Id, JsonValue, Stored } from "./core.ts";
 import type { AssistantEntry, ContextEdit, Conversation, Entry, EntryInput, EntryKind, UserEntry } from "./entries.ts";

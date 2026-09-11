@@ -4,7 +4,7 @@ import type {
 	TextContent,
 	ThinkingContent,
 	ToolCall,
-} from "@earendil-works/pi-ai";
+} from "@punch-bot/ai";
 
 /**
  * Apply one encoded frame to the tracked output. Same switch as pi-ai's

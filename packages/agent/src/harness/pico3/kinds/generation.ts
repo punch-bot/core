@@ -1,13 +1,13 @@
-import type { Context } from "@earendil-works/chord";
+import type { Context } from "@punch-bot/chord";
 import type {
 	AssistantMessage,
 	AssistantMessageEvent,
 	AssistantMessageFrame,
 	DeferredHandle,
 	ToolCall,
-} from "@earendil-works/pi-ai";
-import { AssistantMessageFrameEncoder, isRetryableAssistantError } from "@earendil-works/pi-ai";
-import { estimateContextTokens } from "@earendil-works/pi-ai/utils/estimate";
+} from "@punch-bot/ai";
+import { AssistantMessageFrameEncoder, isRetryableAssistantError } from "@punch-bot/ai";
+import { estimateContextTokens } from "@punch-bot/ai/utils/estimate";
 import { planManagedEntry, prepareDraft, type SystemInstructionsHooks, sameSnapshot, takeSnapshot } from "../system.ts";
 import {
 	type Closure,

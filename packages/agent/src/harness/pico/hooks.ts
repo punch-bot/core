@@ -1,4 +1,4 @@
-import type { Context } from "@earendil-works/chord";
+import type { Context } from "@punch-bot/chord";
 import type { Id } from "./core.ts";
 
 declare const hookIn: unique symbol;
