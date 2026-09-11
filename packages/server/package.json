@@ -1,6 +1,6 @@
 {
 	"name": "@punch-bot/server",
-	"version": "0.84.3",
+	"version": "0.85.1",
 	"description": "experimental server package for pi",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -40,18 +40,19 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/punch-bot/core.git",
+		"url": "git+https://github.com/earendil-works/pi.git",
 		"directory": "packages/server"
 	},
 	"engines": {
 		"node": ">=22.19.0"
 	},
 	"dependencies": {
-		"@punch-bot/ai": "^0.84.3",
-		"@punch-bot/protocol": "^0.84.3"
+		"@punch-bot/chord": "^0.85.1",
+		"@punch-bot/agent": "^0.85.1",
+		"@punch-bot/protocol": "^0.85.1"
 	},
 	"devDependencies": {
 		"shx": "0.4.0",
-		"vitest": "4.1.9"
+		"vitest": "5.0.0"
 	}
 }

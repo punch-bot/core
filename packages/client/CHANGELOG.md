@@ -2,10 +2,11 @@
 
 ## [Unreleased]
 
-### Breaking Changes
+## [0.85.1] - 2026-09-05
 
-- Renamed package from `@earendil-works/pi-client` to `@punch-bot/client`.
+## [0.85.0] - 2026-09-04
 
+## [0.84.4] - 2026-08-28
 
 ## [0.84.3] - 2026-08-24
 

@@ -8,9 +8,11 @@ export default defineConfig({
 		reporters: process.env.GITHUB_ACTIONS ? ["dot", "github-actions"] : ["dot"],
 	},
 	resolve: {
+		conditions: ["source"],
 		alias: {
 			"@punch-bot/protocol": fileURLToPath(new URL("../protocol/src/index.ts", import.meta.url)),
-			"@earendil-works/pi-protocol": fileURLToPath(new URL("../protocol/src/index.ts", import.meta.url)),
+			"@punch-bot/protocol": fileURLToPath(new URL("../protocol/src/index.ts", import.meta.url)),
 		},
 	},
+	ssr: { resolve: { conditions: ["source"] } },
 });

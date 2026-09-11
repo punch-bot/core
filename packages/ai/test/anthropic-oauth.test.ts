@@ -33,7 +33,7 @@ function getJsonBody(init?: RequestInit): Record<string, string> {
 	return JSON.parse(init.body) as Record<string, string>;
 }
 
-describe.sequential("Anthropic OAuth", () => {
+describe("Anthropic OAuth", { concurrent: false }, () => {
 	afterEach(() => {
 		vi.unstubAllGlobals();
 	});

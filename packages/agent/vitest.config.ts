@@ -15,6 +15,7 @@ export default defineConfig({
 		silent: "passed-only",
 	},
 	resolve: {
+		conditions: ["source"],
 		alias: [
 			{ find: /^@punch-bot\/telemetry$/, replacement: telemetrySrcIndex },
 			{ find: /^@punch-bot\/agent$/, replacement: agentSrcIndex },
@@ -26,4 +27,5 @@ export default defineConfig({
 			{ find: /^@earendil-works\/pi-ai\/compat$/, replacement: aiSrcCompat },
 		],
 	},
+	ssr: { resolve: { conditions: ["source"] } },
 });

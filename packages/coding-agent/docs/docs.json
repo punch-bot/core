@@ -53,6 +53,10 @@
           "path": "extensions.md"
         },
         {
+          "title": "Subagents",
+          "path": "subagents.md"
+        },
+        {
           "title": "Skills",
           "path": "skills.md"
         },

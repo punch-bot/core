@@ -1,41 +1,65 @@
-import { Command, valueOption } from "../command.ts";
-import { parseLegacyOptions, transportOption, unsupportedLegacyOptions } from "../command-options.ts";
-import type { TransportAddress } from "../transport-address.ts";
-import { type HttpTransportAddress, parseHttpListenAddress } from "../transport-address.ts";
+import { isServerId, type ServerId } from "@punch-bot/protocol";
+import { Command, stringOption, valueOption } from "../command.ts";
+import {
+	type AuthInput,
+	authTokenFileOption,
+	authTokenOption,
+	parseAuth,
+	unsupportedOptions,
+} from "../command-options.ts";
 
 export interface ServerCommand {
 	readonly command: "server";
-	readonly listen?: readonly TransportAddress[];
-	readonly a2aListen?: HttpTransportAddress;
+	readonly auth?: AuthInput;
+	readonly provider?: string;
+	readonly model?: string;
+	readonly pluginPackages?: readonly string[];
+	readonly serverId?: ServerId;
+	readonly sessionDir?: string;
 }
 
 export interface ServerCommandContext {
 	runServer(command: ServerCommand): void | Promise<void>;
 }
 
-const listenOption = transportOption("--listen");
-const a2aListenOption = valueOption("--a2a-listen", (value) => {
-	const result = parseHttpListenAddress(value);
-	return result.address
-		? { ok: true, value: result.address }
-		: { ok: false, error: result.error ?? `Invalid --a2a-listen address "${value}"` };
-});
+const serverIdOption = valueOption("--server-id", (value) =>
+	isServerId(value)
+		? { ok: true, value }
+		: { ok: false, error: `Invalid --server-id "${value}"; expected a lowercase UUIDv4` },
+);
+const sessionDirOption = stringOption("--session-dir");
+const providerOption = stringOption("--provider");
+const modelOption = stringOption("--model");
+const pluginPackageOption = stringOption("-e", { repeatable: true });
 
 export const serverCommand = new Command<ServerCommand, ServerCommandContext>("server")
-	.option(listenOption)
-	.option(a2aListenOption)
+	.option(serverIdOption)
+	.option(sessionDirOption)
+	.option(providerOption)
+	.option(modelOption)
+	.option(pluginPackageOption)
+	.option(authTokenOption)
+	.option(authTokenFileOption)
 	.build((input) => {
-		const listen = input.values(listenOption);
-		const a2aListen = input.value(a2aListenOption);
-		const { errors: optionErrors } = parseLegacyOptions(input);
-		const errors = [...optionErrors, ...unsupportedLegacyOptions("server", input)];
+		const { auth, errors: authErrors } = parseAuth(input);
+		const serverId = input.value(serverIdOption);
+		const sessionDir = input.value(sessionDirOption);
+		const provider = input.value(providerOption);
+		const model = input.value(modelOption);
+		const pluginPackages = input.values(pluginPackageOption);
+		const modelErrors = provider !== undefined && model === undefined ? ["--provider requires --model"] : [];
+		const errors = [...authErrors, ...modelErrors, ...unsupportedOptions("server", input)];
 		if (errors.length > 0) return { ok: false, errors };
 		return {
 			ok: true,
 			command: {
 				command: "server",
-				...(listen.length === 0 ? {} : { listen }),
-				...(a2aListen === undefined ? {} : { a2aListen }),
+				...(auth === undefined ? {} : { auth }),
+				...(provider === undefined ? {} : { provider }),
+				...(model === undefined ? {} : { model }),
+				...(pluginPackages.length === 0 ? {} : { pluginPackages }),
+				...(serverId === undefined ? {} : { serverId }),
+				...(sessionDir === undefined ? {} : { sessionDir }),
 			},
 		};
 	})

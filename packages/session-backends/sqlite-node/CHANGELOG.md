@@ -2,10 +2,11 @@
 
 ## [Unreleased]
 
-### Breaking Changes
+## [0.85.1] - 2026-09-05
 
-- Renamed package from `@earendil-works/pi-session-backend-sqlite-node` to `@punch-bot/sqlite-node`.
+## [0.85.0] - 2026-09-04
 
+## [0.84.4] - 2026-08-28
 
 ## [0.84.3] - 2026-08-24
 
@@ -25,7 +26,7 @@
 
 ### Breaking Changes
 
-- Renamed the package from `@earendil-works/pi-storage-sqlite-node` to `@earendil-works/pi-session-backend-sqlite-node`.
+- Renamed the package from `@earendil-works/pi-storage-sqlite-node` to `@punch-bot/sqlite-node`.
 - Replaced the legacy SQLite session schema and repository with the v4 lane-based `SessionRepo` contract. Existing work-in-progress databases are not migrated.
 
 ### Added

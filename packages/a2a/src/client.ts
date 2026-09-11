@@ -1,6 +1,6 @@
 import type { Message, SendMessageRequest, StreamResponse, Task } from "@a2a-js/sdk";
 import { TaskState } from "@a2a-js/sdk";
-import { Client, ClientFactory, JsonRpcTransportFactory } from "@a2a-js/sdk/client";
+import { type Client, ClientFactory, JsonRpcTransportFactory } from "@a2a-js/sdk/client";
 import { createTextMessage, extractTextFromMessage } from "./message.ts";
 
 export interface DelegateToA2aAgentOptions {

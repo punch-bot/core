@@ -2,13 +2,75 @@
 
 ## [Unreleased]
 
+### Added
+
+- Enabled native deferred tool loading for Fireworks Messages models. Use `ToolSearch` or `tool_search` as the loader name for prompt-prefix deferral ([#9323](https://github.com/earendil-works/pi/issues/9323)).
+
+### Fixed
+
+- Added `RetryPolicy.maxAgentDelayMs` support to cap shared assistant retry backoff for summarization calls ([#8826](https://github.com/earendil-works/pi/issues/8826)).
+- Fixed quadratic CPU usage when draining buffered `EventStream` events ([#9055](https://github.com/earendil-works/pi/issues/9055)).
+- Fixed Mistral Medium reasoning requests to use `reasoning_effort` for all reasoning-capable `mistral-medium-*` model IDs instead of the unsupported `prompt_mode` ([#8700](https://github.com/earendil-works/pi/issues/8700)).
+- Fixed OpenCode and OpenCode Go requests to send `x-opencode-session` from `sessionId` across all supported API adapters ([#9326](https://github.com/earendil-works/pi/issues/9326)).
+- Fixed OpenAI Codex requests to send the model's Off reasoning effort instead of omitting it, while respecting unsupported Off mappings ([#9191](https://github.com/earendil-works/pi/issues/9191)).
+- Fixed Fireworks unsigned thinking replay and reasoning effort selection using catalog metadata, with verified DeepSeek V4 and Qwen3.8 fallbacks and removal of redundant GLM 5.2 and Kimi K3 effort aliases ([#9323](https://github.com/earendil-works/pi/issues/9323)).
+- Fixed OpenRouter requests to send `x-session-id` from `sessionId` for Chat Completions and Anthropic Messages models when prompt caching is enabled ([#9102](https://github.com/earendil-works/pi/issues/9102)).
+- Fixed the DeepSeek catalog to advertise `deepseek-flash` for DeepSeek V4.1 Flash instead of retired Flash aliases, and refreshed DeepSeek pricing metadata ([#9423](https://github.com/earendil-works/pi/issues/9423)).
+- Removed GPT-5.4 and GPT-5.4 mini from the OpenAI Codex catalog after they became unavailable to ChatGPT accounts ([#9394](https://github.com/earendil-works/pi/issues/9394)).
+- Fixed Mistral-hosted GLM-5.2 reasoning requests to use `reasoning_effort` instead of the ignored `prompt_mode` ([#9375](https://github.com/earendil-works/pi/issues/9375)).
+
+## [0.85.1] - 2026-09-05
+
+### Added
+
+- Added GPT-6 Astra for OpenAI API keys and OpenAI Codex subscriptions.
+
+### Fixed
+
+- Fixed long prompt-cache requests for GPT-5.6+ Responses models to use `prompt_cache_options.ttl: "30m"` instead of `prompt_cache_retention: "24h"`.
+
+## [0.85.0] - 2026-09-04
+
 ### Breaking Changes
 
-- Renamed package from `@earendil-works/pi-ai` to `@punch-bot/ai`.
+- Replaced `createGatewayBindingFetch()` with `createAiBindingFetch()` for Cloudflare Workers AI bindings. Configure the model's Workers AI Gateway passthrough `baseUrl` directly; requests now pass through the binding unchanged ([#8287](https://github.com/earendil-works/pi/pull/8287) by [@Maximo-Guk](https://github.com/Maximo-Guk)).
+
+### Added
+
+- Added compact, persistable assistant-message frames with `AssistantMessageFrameEncoder` and `reduceAssistantMessageFrames()`.
+- Added the `vllmPriority` OpenAI-compatible model setting for forwarding scheduler priority to vLLM ([#9004](https://github.com/earendil-works/pi/pull/9004) by [@AppleDannyClegg](https://github.com/AppleDannyClegg)).
+- Added the `supportsMaxOutputTokens` OpenAI Responses compatibility setting ([#8941](https://github.com/earendil-works/pi/pull/8941) by [@scturtle](https://github.com/scturtle)).
+- Added an optional timestamp argument to `uuidv7()` for follower IDs.
+- Added narrow `api`, `providers`, and `utils` subpath exports for direct imports without loading the package barrel.
+- Added Anthropic per-turn effort persistence, deterministic historical effort markers, and signed-thinking mismatch recovery for supported Claude models across Anthropic Messages transports, including OpenRouter.
+
+### Fixed
+
+- Removed the unavailable Grok Build 0.1 model from the built-in xAI catalog ([#9093](https://github.com/earendil-works/pi/pull/9093) by [@Jaaneek](https://github.com/Jaaneek)).
+- Fixed assistant-message frames preserving the provider thinking level.
+- Fixed simple provider streams to consistently emit standard stream events and custom tool-call deltas.
+- Fixed the Qwen Token Plan Individual catalog to include Qwen3.8 Flash ([#9021](https://github.com/earendil-works/pi/issues/9021)).
+- Fixed Baseten GLM-5.2 models incorrectly advertising image input support ([#8293](https://github.com/earendil-works/pi/pull/8293) by [@Panoplos](https://github.com/Panoplos)).
+- Fixed Fireworks GLM models using the wrong API adapter.
+- Removed the unnecessary Chord dependency from pi-ai by defining its exported `JsonValue` type directly.
+- Fixed GitHub Copilot Claude Fable 5 requests to use the Anthropic Messages adapter so selected reasoning levels are sent ([#8961](https://github.com/earendil-works/pi/issues/8961)).
+- Fixed OpenAI Codex SSE parsing to process terminal events that are not followed by a blank line ([#9047](https://github.com/earendil-works/pi/issues/9047)).
+- Fixed `NO_PROXY` matching for both root domains and subdomains ([#8737](https://github.com/earendil-works/pi/pull/8737) by [@MeiSiristhebest](https://github.com/MeiSiristhebest)).
+
+## [0.84.4] - 2026-08-28
+
+### Added
+
+- Added the experimental vision-capable `deepseek-v4-flash-vision-exp` model to the DeepSeek catalog.
 
 ### Fixed
 
 - Fixed OpenAI-compatible Chat Completions ignoring an explicitly requested `toolChoice` when no tools are defined.
+- Fixed thinking signature serialization to run once after the signature is complete ([#8671](https://github.com/earendil-works/pi/pull/8671)).
+- Fixed fragmented Mistral tool calls splitting when continuation chunks omit the tool-call ID ([#8387](https://github.com/earendil-works/pi/issues/8387)).
+- Fixed OpenAI-compatible reasoning replay to merge consecutive streamed text and summary `reasoning_details` deltas.
+- Fixed the Cloudflare AI Gateway catalog to include supported `workers-ai/*` passthrough models omitted by models.dev.
+- Fixed OpenRouter reasoning controls by deriving `off` support and available effort levels from OpenRouter's model metadata, preventing reasoning-mandatory models from receiving `effort: "none"` ([#8614](https://github.com/earendil-works/pi/pull/8614) by [@davidbrai](https://github.com/davidbrai)).
 
 ## [0.84.3] - 2026-08-24
 
@@ -144,7 +206,7 @@
 ### Added
 
 - Added optional `OAuthAuth.isSubscription` metadata for distinguishing subscription-backed authentication from generic OAuth sign-in.
-- Added explicit `TelemetryContext` propagation across stream, deferred, and image request options using the vendor-neutral `@earendil-works/pi-telemetry` contract.
+- Added explicit `TelemetryContext` propagation across stream, deferred, and image request options using the vendor-neutral `@punch-bot/telemetry` contract.
 - Added deferred provider request contracts, durable response handles, authenticated fetch/cancel dispatch, and faux-provider support for pending, ready, failed, and cancelled responses ([#7339](https://github.com/earendil-works/pi/pull/7339) by [@davidbrai](https://github.com/davidbrai)).
 - Added Baseten as a built-in OpenAI-compatible provider with models.dev catalog generation and native `chat_template_args` reasoning controls.
 - Added arbitrary OpenAI-compatible sampling parameters through `Model.samplingParams` and `StreamOptions.samplingParams`, including per-request overrides ([#7568](https://github.com/earendil-works/pi/pull/7568) by [@mrexodia](https://github.com/mrexodia)).
@@ -457,19 +519,19 @@
 
 ### Breaking Changes
 
-- The root entrypoint (`@earendil-works/pi-ai`) is now core-only and side-effect free. The old global API moved to the temporary `@earendil-works/pi-ai/compat` entrypoint, a strict superset of the root: switching a file's import path is the only migration step. Moved symbols include `stream`/`complete`/`streamSimple`/`completeSimple`, `getModel`/`getModels`/`getProviders` (now deprecated aliases of `getBuiltinModel`/`getBuiltinModels`/`getBuiltinProviders` from `@earendil-works/pi-ai/providers/all`), `registerApiProvider`/`unregisterApiProviders`/`resetApiProviders`/`getApiProvider`, `getEnvApiKey`/`findEnvKeys`, `setBedrockProviderModule`, the per-API lazy stream wrappers (`anthropicMessagesApi`, ...), and the image-generation API.
+- The root entrypoint (`@punch-bot/ai`) is now core-only and side-effect free. The old global API moved to the temporary `@punch-bot/ai/compat` entrypoint, a strict superset of the root: switching a file's import path is the only migration step. Moved symbols include `stream`/`complete`/`streamSimple`/`completeSimple`, `getModel`/`getModels`/`getProviders` (now deprecated aliases of `getBuiltinModel`/`getBuiltinModels`/`getBuiltinProviders` from `@punch-bot/ai/providers/all`), `registerApiProvider`/`unregisterApiProviders`/`resetApiProviders`/`getApiProvider`, `getEnvApiKey`/`findEnvKeys`, `setBedrockProviderModule`, the per-API lazy stream wrappers (`anthropicMessagesApi`, ...), and the image-generation API.
 - Renamed the `Provider` type to `ProviderId`. `Provider` now names the runtime provider interface (id, name, auth, model listing, stream behavior).
-- API implementation modules moved from `src/providers/` to `@earendil-works/pi-ai/api/*`, renamed by API id (`anthropic` -> `api/anthropic-messages`, `google` -> `api/google-generative-ai`, `mistral` -> `api/mistral-conversations`, `amazon-bedrock` -> `api/bedrock-converse-stream`), each exporting exactly `stream` and `streamSimple`. The old per-impl export names (`streamAnthropic`, `streamSimpleAnthropic`, ...) and legacy raw API subpaths (`./anthropic`, `./google`, `./openai-completions`, ...) are gone; import raw API implementations through `@earendil-works/pi-ai/api/*`.
-- Removed the `@earendil-works/pi-ai/base` selective-provider entrypoint; use the root/core APIs with explicit `createModels()` collections and provider factories for isolated bundles.
+- API implementation modules moved from `src/providers/` to `@punch-bot/ai/api/*`, renamed by API id (`anthropic` -> `api/anthropic-messages`, `google` -> `api/google-generative-ai`, `mistral` -> `api/mistral-conversations`, `amazon-bedrock` -> `api/bedrock-converse-stream`), each exporting exactly `stream` and `streamSimple`. The old per-impl export names (`streamAnthropic`, `streamSimpleAnthropic`, ...) and legacy raw API subpaths (`./anthropic`, `./google`, `./openai-completions`, ...) are gone; import raw API implementations through `@punch-bot/ai/api/*`.
+- Removed the `@punch-bot/ai/base` selective-provider entrypoint; use the root/core APIs with explicit `createModels()` collections and provider factories for isolated bundles.
 
 Migration guide:
 
 - Read `packages/ai/README.md` in full for the new `Models` API, provider factories, auth configuration, image generation, and custom provider examples.
-- To keep the old global API temporarily, change imports from `@earendil-works/pi-ai` to `@earendil-works/pi-ai/compat`. The compat entrypoint preserves `stream`/`complete`, generated catalog reads, API registry helpers, env API-key helpers, lazy API wrappers, and image globals, but it will be removed in a future release.
+- To keep the old global API temporarily, change imports from `@punch-bot/ai` to `@punch-bot/ai/compat`. The compat entrypoint preserves `stream`/`complete`, generated catalog reads, API registry helpers, env API-key helpers, lazy API wrappers, and image globals, but it will be removed in a future release.
 - To migrate to the new runtime, create a `Models` collection and call methods on it:
 
   ```ts
-  import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+  import { builtinModels } from "@punch-bot/ai/providers/all";
 
   const models = builtinModels();
   const model = models.getModel("anthropic", "claude-haiku-4-5");
@@ -483,18 +545,18 @@ Migration guide:
 - For an isolated provider set, register provider factories explicitly:
 
   ```ts
-  import { createModels } from "@earendil-works/pi-ai";
-  import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
+  import { createModels } from "@punch-bot/ai";
+  import { anthropicProvider } from "@punch-bot/ai/providers/anthropic";
 
   const models = createModels();
   models.setProvider(anthropicProvider());
   ```
 
-- To call a raw API implementation directly, import from `@earendil-works/pi-ai/api/*` and pass a compatible model plus auth/options yourself. Raw API modules export `stream` and `streamSimple`; use `.result()` on the returned stream for `complete`/`completeSimple` behavior:
+- To call a raw API implementation directly, import from `@punch-bot/ai/api/*` and pass a compatible model plus auth/options yourself. Raw API modules export `stream` and `streamSimple`; use `.result()` on the returned stream for `complete`/`completeSimple` behavior:
 
   ```ts
-  import { streamSimple } from "@earendil-works/pi-ai/api/anthropic-messages";
-  import { getBuiltinModel } from "@earendil-works/pi-ai/providers/all";
+  import { streamSimple } from "@punch-bot/ai/api/anthropic-messages";
+  import { getBuiltinModel } from "@punch-bot/ai/providers/all";
 
   const model = getBuiltinModel("anthropic", "claude-haiku-4-5");
   const stream = streamSimple(
@@ -512,7 +574,7 @@ Migration guide:
 
 - New `Models` runtime: `createModels()` builds an isolated provider collection with sync model reads (`getModels`/`getModel` return the last-known lists), an explicit async `refresh(provider?)` for dynamic providers, auth resolution (`getAuth`), and `stream`/`complete`/`streamSimple`/`completeSimple` that resolve auth through the owning provider. `createProvider()` builds providers from parts (single API implementation or a map dispatched on `model.api`; static `models` array plus an optional `refreshModels` fetcher with in-flight dedupe); `hasApi()` narrows dynamically listed models.
 - Provider auth substrate: `ProviderAuth` (`{ apiKey?, oauth? }`), one type-tagged credential per provider, `CredentialStore` (`read`/`modify`/`delete` with serialized writes; in-memory default), `envApiKeyAuth()`, `lazyOAuth()`, and injectable `AuthContext`. OAuth refresh runs under the store lock with double-checked expiry; a stored credential owns its provider (no silent env fallback).
-- One provider factory per built-in provider under `@earendil-works/pi-ai/providers/*` (e.g. `anthropicProvider()`, `openrouterProvider()`), plus `@earendil-works/pi-ai/providers/all` with `builtinProviders()`/`builtinModels()` and typed `getBuiltin*` catalog reads. Generated catalogs are split per provider, so importing one provider pulls one catalog; `sideEffects` metadata makes the package tree-shakeable.
+- One provider factory per built-in provider under `@punch-bot/ai/providers/*` (e.g. `anthropicProvider()`, `openrouterProvider()`), plus `@punch-bot/ai/providers/all` with `builtinProviders()`/`builtinModels()` and typed `getBuiltin*` catalog reads. Generated catalogs are split per provider, so importing one provider pulls one catalog; `sideEffects` metadata makes the package tree-shakeable.
 - OAuth flows (Anthropic, OpenAI Codex, GitHub Copilot) gained `OAuthAuth` adapters (`login`/`refresh`/`toAuth`) on unified `prompt()`/`notify()` login callbacks; Copilot's per-credential base URL is derived in `toAuth()`.
 - `fauxProvider()` returns a faux `Provider` for tests built on explicit `Models` collections.
 - Image generation mirrors the chat-side design: `createImagesModels()`/`ImagesProvider`/`createImagesProvider()` with sync model reads, explicit `refresh()`, provider-resolved auth, and never-rejecting `generateImages()`; `openrouterImagesProvider()` factory plus `builtinImagesProviders()`/`builtinImagesModels()` in `providers/all`. The `ImagesProvider` id type alias is renamed to `ImagesProviderId`; the old global image API stays on `/compat`.
@@ -549,7 +611,7 @@ Migration guide:
 
 ### Added
 
-- Added `@earendil-works/pi-ai/base` and direct provider registration exports for bundlers that want selective provider transports without root built-in registration ([#5348](https://github.com/earendil-works/pi/pull/5348) by [@FredKSchott](https://github.com/FredKSchott)).
+- Added `@punch-bot/ai/base` and direct provider registration exports for bundlers that want selective provider transports without root built-in registration ([#5348](https://github.com/earendil-works/pi/pull/5348) by [@FredKSchott](https://github.com/FredKSchott)).
 - Added prompt caching for Mistral requests using the pi session ID as `prompt_cache_key`, including cached-token usage and cost accounting ([#5854](https://github.com/earendil-works/pi/issues/5854)).
 - Added the OpenRouter Fusion alias as `openrouter/fusion` ([#5866](https://github.com/earendil-works/pi/pull/5866) by [@dannote](https://github.com/dannote)).
 
