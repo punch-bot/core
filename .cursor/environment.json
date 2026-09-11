@@ -1,0 +1,4 @@
+{
+	"name": "Punch (pi) monorepo",
+	"install": "bash .cursor/install.sh"
+}
