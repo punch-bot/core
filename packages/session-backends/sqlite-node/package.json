@@ -39,7 +39,7 @@
 		"@punch-bot/agent": "^0.85.1"
 	},
 	"devDependencies": {
-		"@vitest/coverage-v8": "4.1.9",
-		"vitest": "4.1.9"
+		"@vitest/coverage-v8": "5.0.0",
+		"vitest": "5.0.0"
 	}
 }
