@@ -1096,10 +1096,10 @@ describe("openai-completions tool_choice", () => {
 		expect(params.messages?.[0]?.role).toBe("system");
 	});
 
-	it("keeps developer messages for OpenAI and Anthropic OpenRouter reasoning model instructions", async () => {
+	it("keeps developer messages for OpenAI and Anthropic OpenRouter batch instructions", async () => {
 		for (const model of [
 			getModel("openrouter", "openai/gpt-5.2-codex"),
-			getModel("openrouter", "anthropic/claude-sonnet-4.5"),
+			getModel("openrouter", "anthropic/claude-fable-5.1:batch"),
 		]) {
 			expect(model).toBeDefined();
 			let payload: unknown;
@@ -1483,10 +1483,7 @@ describe("openai-completions tool_choice", () => {
 			name: "Custom Uppercase DeepSeek Model",
 			baseUrl: "https://API.DeepSeek.COM",
 		} satisfies Model<"openai-completions">;
-		const nativeModels = [
-			getModel("deepseek", "deepseek-v4-flash")!,
-			getModel("deepseek", "deepseek-v4-pro")!,
-		] as const;
+		const nativeModels = [getModel("deepseek", "deepseek-flash")!, getModel("deepseek", "deepseek-v4-pro")!] as const;
 		const cases = [...nativeModels, customModel, customUppercaseModel] as const;
 
 		for (const model of nativeModels) {

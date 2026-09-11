@@ -3,6 +3,7 @@
 	"compilerOptions": {
 		"outDir": "./dist",
 		"paths": {
+			"@punch-bot/chord": ["../chord/dist/index.d.ts"],
 			"@punch-bot/telemetry": ["../telemetry/dist/index.d.ts"],
 			"@punch-bot/ai": ["../ai/dist/index.d.ts"],
 			"@punch-bot/ai/*": ["../ai/dist/*.d.ts", "../ai/dist/providers/*.d.ts"]

@@ -6,6 +6,11 @@
 		"moduleResolution": "NodeNext",
 		"paths": {
 			"*": ["./*"],
+			"@punch-bot/chord": ["./packages/chord/src/index.ts"],
+			"@punch-bot/chord/bundler": ["./packages/chord/src/bundler.ts"],
+			"@punch-bot/chord/context": ["./packages/chord/src/context/index.ts"],
+			"@punch-bot/chord/delta": ["./packages/chord/src/delta/index.ts"],
+			"@punch-bot/chord/node": ["./packages/chord/src/node.ts"],
 			"@punch-bot/telemetry": ["./packages/telemetry/src/index.ts"],
 			"@punch-bot/telemetry/testing": ["./packages/telemetry/src/testing/index.ts"],
 			"@punch-bot/ai": ["./packages/ai/src/index.ts"],
@@ -13,28 +18,35 @@
 			"@punch-bot/ai/*": ["./packages/ai/src/*.ts", "./packages/ai/src/providers/*.ts"],
 			"@punch-bot/ai/dist/*": ["./packages/ai/src/*"],
 			"@punch-bot/agent": ["./packages/agent/src/index.ts"],
-			"@punch-bot/agent/node": ["./packages/agent/src/node.ts"],
-			"@punch-bot/agent/session/testing": [
+			"@punch-bot/agent/harness/session/testing": [
 				"./packages/agent/src/harness/session/testing/index.ts"
 			],
-			"@punch-bot/agent/*": ["./packages/agent/src/*"],
+			"@punch-bot/agent/node": ["./packages/agent/src/node.ts"],
+			"@punch-bot/agent/*": [
+				"./packages/agent/src/*.ts",
+				"./packages/agent/src/*/index.ts",
+				"./packages/agent/src/*"
+			],
+			"@punch-bot/a2a": ["./packages/a2a/src/index.ts"],
+			"@punch-bot/a2a/*": ["./packages/a2a/src/*"],
 			"@punch-bot/sqlite-node": ["./packages/session-backends/sqlite-node/src/index.ts"],
 			"@punch-bot/cli": ["./packages/coding-agent/src/index.ts"],
+			"@punch-bot/cli/experimental/plugin": [
+				"./packages/coding-agent/src/experimental/plugin.ts"
+			],
 			"@punch-bot/cli/hooks": ["./packages/coding-agent/src/core/hooks/index.ts"],
 			"@punch-bot/cli/*": ["./packages/coding-agent/src/*"],
 			"@punch-bot/protocol": ["./packages/protocol/src/index.ts"],
 			"@punch-bot/protocol/*": ["./packages/protocol/src/*"],
 			"@punch-bot/client": ["./packages/client/src/index.ts"],
+			"@punch-bot/client/unix": ["./packages/client/src/unix.ts"],
 			"@punch-bot/client/*": ["./packages/client/src/*"],
 			"@punch-bot/server": ["./packages/server/src/index.ts"],
+			"@punch-bot/server/unix": ["./packages/server/src/transports/unix/index.ts"],
 			"@punch-bot/server/*": ["./packages/server/src/*"],
-			"@punch-bot/a2a": ["./packages/a2a/src/index.ts"],
-			"@punch-bot/a2a/*": ["./packages/a2a/src/*"],
 			"typebox": ["./node_modules/typebox"],
 			"@punch-bot/tui": ["./packages/tui/src/index.ts"],
-			"@punch-bot/tui/*": ["./packages/tui/src/*"],
-			"@earendil-works/pi-agent-old": ["./packages/agent-old/src/index.ts"],
-			"@earendil-works/pi-agent-old/*": ["./packages/agent-old/src/*"]
+			"@punch-bot/tui/*": ["./packages/tui/src/*"]
 		}
 	},
 	"include": ["packages/*/src/**/*", "packages/*/test/**/*", "packages/session-backends/*/src/**/*", "packages/session-backends/*/test/**/*", "packages/coding-agent/examples/**/*"],

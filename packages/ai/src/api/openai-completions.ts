@@ -178,12 +178,17 @@ interface OpenAICompatCacheControl {
 
 type ResolvedOpenAICompletionsCompat = Omit<
 	Required<OpenAICompletionsCompat>,
-	"cacheControlFormat" | "deferredToolsMode" | "supportsThinkingTokenBudget" | "thinkingTokenBudgetField"
+	| "cacheControlFormat"
+	| "deferredToolsMode"
+	| "supportsThinkingTokenBudget"
+	| "thinkingTokenBudgetField"
+	| "vllmPriority"
 > & {
 	cacheControlFormat?: OpenAICompletionsCompat["cacheControlFormat"];
 	deferredToolsMode?: OpenAICompletionsCompat["deferredToolsMode"];
 	supportsThinkingTokenBudget?: OpenAICompletionsCompat["supportsThinkingTokenBudget"];
 	thinkingTokenBudgetField?: OpenAICompletionsCompat["thinkingTokenBudgetField"];
+	vllmPriority?: OpenAICompletionsCompat["vllmPriority"];
 };
 
 type ResolvedChatTemplateKwargValue = string | number | boolean | null;
@@ -329,6 +334,15 @@ export const stream: StreamFunction<"openai-completions", OpenAICompletionsOptio
 			timestamp: Date.now(),
 		};
 
+		// `reasoning_details` are replay metadata, not user-visible stream deltas.
+		// Keep them in memory during streaming and serialize once when the block is finalized.
+		let streamedReasoningDetails: OpenAIReasoningDetail[] | undefined;
+		const applyStreamedReasoningDetails = (block: ThinkingContent): void => {
+			if (streamedReasoningDetails !== undefined) {
+				block.thinkingSignature = JSON.stringify(streamedReasoningDetails);
+			}
+		};
+
 		try {
 			const apiKey = getClientApiKey(model.provider, options?.apiKey, options?.headers);
 			const compat = getCompat(model);
@@ -419,6 +433,7 @@ export const stream: StreamFunction<"openai-completions", OpenAICompletionsOptio
 						partial: output,
 					});
 				} else if (block.type === "thinking") {
+					applyStreamedReasoningDetails(block);
 					stream.push({
 						type: "thinking_end",
 						contentIndex,
@@ -646,13 +661,12 @@ export const stream: StreamFunction<"openai-completions", OpenAICompletionsOptio
 					if (Array.isArray(reasoningDetails)) {
 						for (const detail of reasoningDetails) {
 							if (!isOpenAIReasoningDetail(detail)) continue;
-							const block = ensureThinkingBlock("");
-							const preservedDetails = parseOpenAIReasoningDetails(block.thinkingSignature) ?? [];
-							appendOpenAIReasoningDetail(preservedDetails, detail);
+							ensureThinkingBlock("");
+							streamedReasoningDetails ??= [];
 							// Keep provider replay data in the existing signature slot. OpenRouter streams
 							// reasoning_details as deltas: consecutive text/summary deltas are merged into
 							// logical entries, while encrypted entries remain opaque and discrete.
-							block.thinkingSignature = JSON.stringify(preservedDetails);
+							appendOpenAIReasoningDetail(streamedReasoningDetails, detail);
 						}
 					}
 				}
@@ -682,6 +696,9 @@ export const stream: StreamFunction<"openai-completions", OpenAICompletionsOptio
 			stream.end();
 		} catch (error) {
 			for (const block of output.content) {
+				if (block.type === "thinking") {
+					applyStreamedReasoningDetails(block);
+				}
 				delete (block as { index?: number }).index;
 				// Streaming scratch buffers are only used during parsing; never persist them.
 				delete (block as { partialArgs?: string }).partialArgs;
@@ -837,6 +854,10 @@ function buildParams(
 
 	if (options?.toolChoice) {
 		params.tool_choice = options.toolChoice;
+	}
+
+	if (compat.vllmPriority !== undefined) {
+		(params as any).priority = compat.vllmPriority;
 	}
 
 	const thinkingTokenBudgetField = resolveThinkingTokenBudgetField(compat);
@@ -1641,7 +1662,7 @@ function detectCompat(model: Model<"openai-completions">): ResolvedOpenAIComplet
 		supportsStrictMode: !isMoonshot && !isTogether && !isCloudflareAiGateway && !isNvidia,
 		supportsOpenAIGrammarTools: false,
 		cacheControlFormat,
-		sendSessionAffinityHeaders: false,
+		sendSessionAffinityHeaders: isOpenRouter,
 		deferredToolsMode: undefined,
 		sessionAffinityFormat: isOpenRouter ? "openrouter" : "openai",
 		supportsLongCacheRetention: !(
@@ -1691,5 +1712,6 @@ function getCompat(model: Model<"openai-completions">): ResolvedOpenAICompletion
 		deferredToolsMode: model.compat.deferredToolsMode ?? detected.deferredToolsMode,
 		sessionAffinityFormat: model.compat.sessionAffinityFormat ?? detected.sessionAffinityFormat,
 		supportsLongCacheRetention: model.compat.supportsLongCacheRetention ?? detected.supportsLongCacheRetention,
+		vllmPriority: model.compat.vllmPriority,
 	};
 }

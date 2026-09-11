@@ -1,6 +1,6 @@
 {
 	"name": "@punch-bot/client",
-	"version": "0.84.3",
+	"version": "0.85.1",
 	"description": "Transport-neutral client for remote pi sessions over framed CBOR bytes",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -40,17 +40,18 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/punch-bot/core.git",
+		"url": "git+https://github.com/earendil-works/pi.git",
 		"directory": "packages/client"
 	},
 	"engines": {
 		"node": ">=22.19.0"
 	},
 	"dependencies": {
-		"@punch-bot/protocol": "^0.84.3"
+		"@punch-bot/chord": "^0.85.1",
+		"@punch-bot/protocol": "^0.85.1"
 	},
 	"devDependencies": {
 		"shx": "0.4.0",
-		"vitest": "5.0.0"
+		"vitest": "4.1.9"
 	}
 }

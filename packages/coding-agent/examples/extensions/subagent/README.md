@@ -1,6 +1,8 @@
-# Subagent Example
+# Subagents
 
 Delegate tasks to specialized subagents with isolated context windows.
+
+The `subagent` tool is built into Punch. The files in this directory provide the bundled agent definitions and optional workflow prompt templates.
 
 ## Features
 
@@ -16,8 +18,6 @@ Delegate tasks to specialized subagents with isolated context windows.
 ```
 subagent/
 ├── README.md            # This file
-├── index.ts             # The extension (entry point)
-├── agents.ts            # Agent discovery logic
 ├── agents/              # Sample agent definitions
 │   ├── scout.md         # Fast recon, returns compressed context
 │   ├── planner.md       # Creates implementation plans
@@ -29,27 +29,13 @@ subagent/
     └── implement-and-review.md  # worker -> reviewer -> worker
 ```
 
-## Installation
+## Workflow prompt installation
 
-From the repository root, symlink the files:
+The tool and the `scout`, `planner`, `reviewer`, and `worker` agents require no installation. To add the optional workflow prompts to your user configuration, copy them from the installed package:
 
 ```bash
-# Symlink the extension (must be in a subdirectory with index.ts)
-mkdir -p ~/.pi/agent/extensions/subagent
-ln -sf "$(pwd)/packages/coding-agent/examples/extensions/subagent/index.ts" ~/.pi/agent/extensions/subagent/index.ts
-ln -sf "$(pwd)/packages/coding-agent/examples/extensions/subagent/agents.ts" ~/.pi/agent/extensions/subagent/agents.ts
-
-# Symlink agents
-mkdir -p ~/.pi/agent/agents
-for f in packages/coding-agent/examples/extensions/subagent/agents/*.md; do
-  ln -sf "$(pwd)/$f" ~/.pi/agent/agents/$(basename "$f")
-done
-
-# Symlink workflow prompts
 mkdir -p ~/.pi/agent/prompts
-for f in packages/coding-agent/examples/extensions/subagent/prompts/*.md; do
-  ln -sf "$(pwd)/$f" ~/.pi/agent/prompts/$(basename "$f")
-done
+cp node_modules/@punch-bot/cli/examples/extensions/subagent/prompts/*.md ~/.pi/agent/prompts/
 ```
 
 ## Security Model
@@ -58,7 +44,7 @@ This tool executes a separate `pi` subprocess with a delegated system prompt and
 
 **Project-local agents** (`.pi/agents/*.md`) are repo-controlled prompts that can instruct the model to read files, run bash commands, etc.
 
-**Default behavior:** Only loads **user-level agents** from `~/.pi/agent/agents`.
+**Default behavior:** Loads bundled agents and **user-level agents** from `~/.pi/agent/agents`. User definitions override bundled definitions with the same name.
 
 To enable project-local agents, pass `agentScope: "both"` (or `"project"`). Only do this for repositories you trust.
 
@@ -143,10 +129,11 @@ When `a2aUrl` is set, the subagent delegates to an external A2A agent (for examp
 When `model` is omitted, the subagent inherits the dispatching session's active model and thinking level.
 
 **Locations:**
+- Bundled `scout`, `planner`, `reviewer`, and `worker` definitions
 - `~/.pi/agent/agents/*.md` - User-level (always loaded)
 - `.pi/agents/*.md` - Project-level (only with `agentScope: "project"` or `"both"`)
 
-Project agents override user agents with the same name when `agentScope: "both"`.
+User agents override bundled agents. Project agents override both with the same name when their scope is enabled.
 
 ## Sample Agents
 

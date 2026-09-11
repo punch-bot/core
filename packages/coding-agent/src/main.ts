@@ -7,6 +7,7 @@
 
 import { createInterface } from "node:readline";
 import { type ImageContent, modelsAreEqual } from "@punch-bot/ai";
+import { setCapabilityOverrides } from "@punch-bot/tui";
 import chalk from "chalk";
 import { type Args, type Mode, normalizeSessionName, parseArgs, printHelp } from "./cli/args.ts";
 import {
@@ -26,8 +27,6 @@ import {
 	validateAuthCommandArgs,
 } from "./cli/auth-command.ts";
 import { resolveCredentialForPrint } from "./cli/credential-print.ts";
-import { experimentalCli } from "./cli/experimental/cli.ts";
-import { runExperimentalServer } from "./cli/experimental/run-server.ts";
 import { processFileArguments } from "./cli/file-processor.ts";
 import { buildInitialMessage } from "./cli/initial-message.ts";
 import { listModels } from "./cli/list-models.ts";
@@ -65,7 +64,8 @@ import { hasTrustRequiringProjectResources, ProjectTrustStore } from "./core/tru
 import { builtInExtensions } from "./extensions/index.ts";
 import { runMigrations, showDeprecationWarnings } from "./migrations.ts";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.ts";
-import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.ts";
+import { initTheme, setThemeJsonValidator, stopThemeWatcher } from "./modes/interactive/theme/theme.ts";
+import { validateThemeJson } from "./modes/interactive/theme/theme-json.ts";
 import { cleanupManagedInstall, handleConfigCommand, handlePackageCommand } from "./package-manager-cli.ts";
 import { isLocalPath, normalizePath, resolvePath } from "./utils/paths.ts";
 import { cleanupWindowsSelfUpdateQuarantine } from "./utils/windows-self-update.ts";
@@ -559,31 +559,6 @@ export interface MainOptions {
 	extensionFactories?: InlineExtension[];
 }
 
-async function handleExperimentalCommand(args: string[]): Promise<boolean> {
-	const subcommand = args[0];
-	if (subcommand !== "server" && subcommand !== "client") {
-		return false;
-	}
-
-	const result = await experimentalCli.execute(args, {
-		runPi: async () => {
-			throw new Error("Unexpected pi command in server/client entrypoint");
-		},
-		runServer: runExperimentalServer,
-		runClient: async () => {
-			console.error(chalk.red("Error: Experimental client mode is not implemented yet"));
-			process.exit(1);
-		},
-	});
-	if (!result.ok) {
-		for (const error of result.errors) {
-			console.error(chalk.red(`Error: ${error}`));
-		}
-		process.exit(1);
-	}
-	return true;
-}
-
 export async function main(args: string[], options?: MainOptions) {
 	resetTimings();
 	const extensionFactories = [...builtInExtensions, ...(options?.extensionFactories ?? [])];
@@ -594,10 +569,6 @@ export async function main(args: string[], options?: MainOptions) {
 	}
 
 	if (await runAuthCommand(args)) {
-		return;
-	}
-
-	if (await handleExperimentalCommand(args)) {
 		return;
 	}
 
@@ -875,6 +846,7 @@ export async function main(args: string[], options?: MainOptions) {
 	time("createAgentSessionRuntime");
 	const { services, session, modelFallbackMessage } = runtime;
 	const { settingsManager, modelRuntime, resourceLoader } = services;
+	setCapabilityOverrides(settingsManager.getTerminalCapabilityOverrides());
 	applyHttpProxySettings(settingsManager.getGlobalSettings().httpProxy);
 	configureHttpDispatcher(settingsManager.getHttpIdleTimeoutMs());
 
@@ -910,6 +882,8 @@ export async function main(args: string[], options?: MainOptions) {
 		stdinContent,
 	);
 	time("prepareInitialMessage");
+	// pi reads user-authored themes, so it opts into full validation before any theme loads.
+	setThemeJsonValidator(validateThemeJson);
 	initTheme(settingsManager.getTheme(), appMode === "interactive");
 	time("initTheme");
 

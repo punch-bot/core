@@ -1,0 +1,10 @@
+{
+	"name": "@earendil-works/pi-example-plugin",
+	"version": "1.0.0",
+	"private": true,
+	"type": "module",
+	"peerDependencies": {
+		"@punch-bot/chord": "^0.84.4",
+		"@punch-bot/cli": "^0.84.4"
+	}
+}
