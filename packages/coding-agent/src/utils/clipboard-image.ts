@@ -207,10 +207,6 @@ async function readClipboardImageViaXclip(): Promise<ClipboardImage | null | und
 	return undefined;
 }
 
-async function readClipboardImageViaNativeClipboard(): Promise<ClipboardImage | null | undefined> {
-	return undefined;
-}
-
 export async function readClipboardImage(options?: {
 	env?: NodeJS.ProcessEnv;
 	platform?: NodeJS.Platform;
@@ -232,9 +228,8 @@ export async function readClipboardImage(options?: {
 		if (image === undefined) image = await readClipboardImageViaXclip();
 		// Preserve Linux's empty/unavailable distinction if Windows has no image.
 		if (!image && wsl) image = (await readClipboardImageViaPowerShell()) ?? image;
-		if (image === undefined) image = await readClipboardImageViaNativeClipboard();
-	} else {
-		image = await readClipboardImageViaNativeClipboard();
+	} else if (platform === "win32") {
+		image = await readClipboardImageViaPowerShell();
 	}
 
 	if (!image) {

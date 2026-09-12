@@ -97,7 +97,12 @@ type ColorMode = "truecolor" | "256color";
 
 export type RgbColor = { r: number; g: number; b: number };
 
-function detectColorMode(): ColorMode {
+function detectColorMode(trueColor?: boolean): ColorMode {
+	if (trueColor === true) return "truecolor";
+	if (trueColor === false) return "256color";
+	const override = process.env.PI_TRUE_COLOR?.toLowerCase();
+	if (override === "1" || override === "true" || override === "yes") return "truecolor";
+	if (override === "0" || override === "false" || override === "no") return "256color";
 	const colorterm = process.env.COLORTERM?.toLowerCase();
 	if (colorterm === "truecolor" || colorterm === "24bit") return "truecolor";
 	return "256color";
@@ -774,18 +779,19 @@ export function setRegisteredThemes(themes: Theme[]): void {
 	}
 }
 
-export function initTheme(themeName?: string, enableWatcher: boolean = false): void {
+export function initTheme(themeName?: string, enableWatcher: boolean = false, trueColor?: boolean): void {
 	const name = themeName ?? getDefaultTheme();
 	currentThemeName = name;
+	const colorMode = detectColorMode(trueColor);
 	try {
-		setGlobalTheme(loadTheme(name));
+		setGlobalTheme(loadTheme(name, colorMode));
 		if (enableWatcher) {
 			startThemeWatcher();
 		}
 	} catch (_error) {
 		// Theme is invalid - fall back to dark theme silently
 		currentThemeName = "dark";
-		setGlobalTheme(loadTheme("dark"));
+		setGlobalTheme(loadTheme("dark", colorMode));
 		// Don't start watcher for fallback theme
 	}
 }

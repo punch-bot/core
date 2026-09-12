@@ -78,7 +78,15 @@ class DialogLlamaUi implements LlamaUi {
 	): Promise<string | undefined> {
 		const query = await this.ctx.ui.input("Search Hugging Face models", "owner/name");
 		if (!query || query.trim().length < 2) return undefined;
-		const results = await search(query.trim(), new AbortController().signal);
+		const trimmed = query.trim();
+		if (/^[^/\s]+\/[^:\s]+(?::[^:\s]+)?$/u.test(trimmed)) return trimmed;
+		let results: HuggingFaceModel[];
+		try {
+			results = await search(trimmed, new AbortController().signal);
+		} catch (error: unknown) {
+			this.ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
+			return undefined;
+		}
 		if (results.length === 0) {
 			this.ctx.ui.notify("No models found", "warning");
 			return undefined;
@@ -99,7 +107,8 @@ class DialogLlamaUi implements LlamaUi {
 
 	updateProgress(state: ProgressState): void {
 		const percent = state.ratio !== undefined ? ` ${Math.round(state.ratio * 100)}%` : "";
-		this.ctx.ui.notify(`${state.title}${percent}: ${state.message ?? state.model}`);
+		const detail = state.detail ? ` (${state.detail})` : "";
+		this.ctx.ui.notify(`${state.title}${percent}: ${state.message ?? state.model}${detail}`);
 	}
 }
 
@@ -126,14 +135,32 @@ export async function runWithProgress<T>(
 	const controller = new AbortController();
 	const state: ProgressState = { title: options.title, model: options.model, message: options.initialMessage };
 	ui.updateProgress(state);
-	try {
-		const value = await options.run(controller.signal, (progress) => {
+	const settled = options
+		.run(controller.signal, (progress) => {
 			Object.assign(state, progress);
 			ui.updateProgress(state);
-		});
-		return { cancelled: false, value };
-	} catch (error) {
-		if (controller.signal.aborted) return { cancelled: true };
-		throw error;
+		})
+		.then(
+			(value) => ({ ok: true as const, value }),
+			(error: unknown) => ({ ok: false as const, error }),
+		);
+	const outcome = await Promise.race([
+		settled.then((result) => ({ kind: "settled" as const, result })),
+		ui.confirm(options.cancelTitle, options.cancelMessage).then((stop) => ({ kind: "cancel" as const, stop })),
+	]);
+	if (outcome.kind === "cancel" && outcome.stop) {
+		try {
+			await options.cancel();
+		} finally {
+			controller.abort(new Error("Cancelled"));
+		}
+		await settled;
+		return { cancelled: true };
 	}
+	const result = await settled;
+	if (!result.ok) {
+		if (controller.signal.aborted) return { cancelled: true };
+		throw result.error;
+	}
+	return { cancelled: false, value: result.value };
 }

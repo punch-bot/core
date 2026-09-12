@@ -144,18 +144,11 @@ See [docs/providers.md](docs/providers.md) for other provider setup instructions
 
 ---
 
-## Interactive Mode
+## Headless modes
 
-<p align="center"><img src="docs/images/interactive-mode.png" alt="Interactive Mode" width="600"></p>
+Interactive TUI mode has been removed. Use print (`-p`), JSON (`--mode json`), RPC (`--mode rpc` / `rpc-entry`), or the SDK.
 
-The interface from top to bottom:
-
-- **Startup header** - Shows shortcuts (`/hotkeys` for all), loaded AGENTS.md files, prompt templates, skills, and extensions
-- **Messages** - Your messages, assistant responses, tool calls and results, notifications, errors, and extension UI
-- **Editor** - Where you type; border color indicates thinking level and the border shows the streaming working indicator
-- **Footer** - Working directory, session name, total token/cache usage (`↑` input, `↓` output, `R` cache read, `W` cache write, `CH` latest cache hit rate), cost, context usage, current model. Totals include assistant responses, usage reported by tools, and summary generation.
-
-The editor can be temporarily replaced by other UI, like built-in `/settings` or custom UI from extensions (e.g., a Q&A tool that lets the user answer model questions in a structured format). [Extensions](#extensions) can also replace the editor, add widgets above/below it, a status line, custom footer, or overlays.
+Slash commands and extension UI dialogs still work over RPC via `ctx.ui`.
 
 ### Editor
 
@@ -244,14 +237,14 @@ Sessions auto-save to `~/.pi/agent/sessions/` organized by working directory.
 
 ```bash
 pi -c                  # Continue most recent session
-pi -r                  # Browse and select from past sessions
+pi -r                  # Continue most recent session
 pi --no-session        # Ephemeral mode (don't save)
 pi --name "my task"    # Set session display name at startup
 pi --session <path|id> # Use specific session file or ID
 pi --fork <path|id>    # Fork specific session file or ID into a new session
 ```
 
-Use `/session` in interactive mode to see the current session ID before reusing it with `--session <id>` or `--fork <id>`.
+Use `/session` over RPC to see the current session ID before reusing it with `--session <id>` or `--fork <id>`.
 
 ### Branching
 
@@ -295,17 +288,17 @@ See [docs/settings.md](docs/settings.md) for all options.
 
 ### Project Trust
 
-On interactive startup, pi asks before trusting a project folder that contains project-local settings, resources, or project `.agents/skills` and has no saved decision for the folder or a parent folder in `~/.pi/agent/trust.json`. Trusting a project allows pi to load `.pi/settings.json` and `.pi` resources, install missing project packages, and execute project extensions.
+Headless modes do not prompt for project trust. Trusting a project allows pi to load `.pi/settings.json` and `.pi` resources, install missing project packages, and execute project extensions.
 
 Before the trust decision, pi loads only context files, user/global extensions, and CLI `-e` extensions so they can handle the `project_trust` event. Project-local extensions, project package-managed extensions, and project settings are loaded only after the project is trusted. This split also applies when switching to a session from a different cwd whose trust has not been resolved in the current process.
 
 Non-interactive modes (`-p`, `--mode json`, and `--mode rpc`) do not show a trust prompt. Without an applicable saved trust decision, they use `defaultProjectTrust` from global settings: `ask` (default) and `never` ignore those project resources, while `always` trusts them. Pass `--approve`/`-a` or `--no-approve`/`-na` to override project trust for one run.
 
-If no extension or saved decision applies, `defaultProjectTrust` controls the fallback behavior. Set it to `"ask"`, `"always"`, or `"never"` in `~/.pi/agent/settings.json`, or change it with `/settings`.
+If no extension or saved decision applies, `defaultProjectTrust` controls the fallback behavior. Set it to `"ask"`, `"always"`, or `"never"` in `~/.pi/agent/settings.json`.
 
 `pi config` and package commands use the same project trust flow, except `pi update` never prompts. Pass `--approve` to trust project-local settings for one command or `--no-approve` to ignore them.
 
-Use `/trust` in interactive mode to save a project trust decision for future sessions, including trust for the immediate parent folder. It writes `~/.pi/agent/trust.json` only; the current session is not reloaded, so restart pi for changes to take effect.
+Use `/trust` over RPC to save a project trust decision for future sessions, including trust for the immediate parent folder. It writes `~/.pi/agent/trust.json` only; the current session is not reloaded, so restart pi for changes to take effect.
 
 ### Telemetry and update checks
 
@@ -609,8 +602,7 @@ Combine `--no-*` with explicit flags to load exactly what you need, ignoring set
 |--------|-------------|
 | `--system-prompt <text>` | Replace default prompt (context files and skills still appended) |
 | `--append-system-prompt <text>` | Append to system prompt |
-| `--tui-mode <mode>` | TUI mode: `regular` (default) or experimental `fullscreen` |
-| `--use-theme <name[/name]>` | Set the initial interactive theme for this run without changing settings |
+| `--use-theme <name[/name]>` | Set the theme for this run without changing settings |
 | `--verbose` | Force verbose startup |
 | `-a`, `--approve` | Trust project-local files for this run |
 | `-na`, `--no-approve` | Ignore project-local files for this run |
@@ -631,10 +623,10 @@ pi @code.ts @test.ts "Review these files"
 ### Examples
 
 ```bash
-# Interactive with initial prompt
-pi "List all .ts files in src/"
+# Print mode
+pi -p "List all .ts files in src/"
 
-# Non-interactive
+# Print mode
 pi -p "Summarize this codebase"
 
 # Prompt beginning with a dash
@@ -709,7 +701,6 @@ MIT
 
 - [@punch-bot/ai](https://www.npmjs.com/package/@punch-bot/ai): Core LLM toolkit
 - [@punch-bot/agent](https://www.npmjs.com/package/@punch-bot/agent): Agent framework
-- [@punch-bot/tui](https://www.npmjs.com/package/@punch-bot/tui): Terminal UI components
 
 <p align="center">
   <a href="https://pi.dev">pi.dev</a> domain graciously donated by

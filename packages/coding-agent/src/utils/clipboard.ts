@@ -18,17 +18,21 @@ function emitOsc52(text: string): boolean {
 
 /** Read plain text from the system clipboard. */
 export async function readClipboardText(): Promise<string | null> {
-	if (platform() === "linux") {
-		const commands: [string, string[]][] = [];
+	const p = platform();
+	const commands: [string, string[]][] = [];
+	if (p === "darwin") commands.push(["pbpaste", []]);
+	else if (p === "win32") {
+		commands.push(["powershell", ["-NoProfile", "-Command", "Get-Clipboard"]]);
+	} else {
 		if (process.env.TERMUX_VERSION) commands.push(["termux-clipboard-get", []]);
 		if (process.env.WAYLAND_DISPLAY) commands.push(["wl-paste", ["--no-newline", "--type", "text"]]);
 		if (process.env.DISPLAY) {
 			commands.push(["xclip", ["-selection", "clipboard", "-out"]], ["xsel", ["--clipboard", "--output"]]);
 		}
-		for (const [command, args] of commands) {
-			const bytes = await runClipboardCommand(command, args, { timeoutMs: 5000 });
-			if (bytes !== undefined) return bytes.toString("utf8") || null;
-		}
+	}
+	for (const [command, args] of commands) {
+		const bytes = await runClipboardCommand(command, args, { timeoutMs: 5000 });
+		if (bytes !== undefined) return bytes.toString("utf8") || null;
 	}
 	return null;
 }

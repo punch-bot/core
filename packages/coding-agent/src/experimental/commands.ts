@@ -65,7 +65,9 @@ async function runServerCommand(command: ServerCommand): Promise<void> {
 
 async function runClientCommand(command: ClientCommand): Promise<void> {
 	if (command.prompt === undefined && process.stdin.isTTY === true && process.stdout.isTTY === true) {
-		throw new Error("Interactive client TUI was removed; pass --prompt or run in print/RPC mode");
+		throw new Error(
+			"Interactive client TUI was removed; pass a positional prompt, pipe stdin, or run with a non-TTY",
+		);
 	}
 	let streamedText = false;
 	const result = await runClient(command, {

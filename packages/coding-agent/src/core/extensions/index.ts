@@ -28,6 +28,7 @@ export type {
 	AgentToolResult,
 	AgentToolUpdateCallback,
 	AppendEntryHandler,
+	AutocompleteItem,
 	// Events - Tool (ToolCallEvent types)
 	BashToolCallEvent,
 	BashToolResultEvent,
