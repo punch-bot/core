@@ -4,7 +4,6 @@ import type { ClientCommand } from "../cli/experimental/commands/client.ts";
 import type { ServerCommand } from "../cli/experimental/commands/server.ts";
 import { areExperimentalFeaturesEnabled } from "../core/experimental.ts";
 import { runClient } from "./client.ts";
-import { runClientTui } from "./client-tui.ts";
 import type { RadiusRelayHostStatus } from "./radius-relay.ts";
 import { startForegroundServer } from "./server.ts";
 
@@ -66,8 +65,7 @@ async function runServerCommand(command: ServerCommand): Promise<void> {
 
 async function runClientCommand(command: ClientCommand): Promise<void> {
 	if (command.prompt === undefined && process.stdin.isTTY === true && process.stdout.isTTY === true) {
-		await runClientTui(command);
-		return;
+		throw new Error("Interactive client TUI was removed; pass --prompt or run in print/RPC mode");
 	}
 	let streamedText = false;
 	const result = await runClient(command, {

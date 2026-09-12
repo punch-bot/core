@@ -4,7 +4,7 @@ Punch is a fork of the [pi agent harness](https://github.com/earendil-works/pi).
 
 This repo is [`punch-bot/core`](https://github.com/punch-bot/core).
 
-* **[@punch-bot/cli](packages/coding-agent)**: Interactive coding agent CLI (`pi`)
+* **[@punch-bot/cli](packages/coding-agent)**: Headless coding agent SDK, RPC, and print modes (`pi`)
 * **[@punch-bot/agent](packages/agent)**: Agent runtime with tool calling and state management
 * **[@punch-bot/ai](packages/ai)**: Unified multi-provider LLM API
 
@@ -14,16 +14,14 @@ CLI docs: [packages/coding-agent/README.md](packages/coding-agent/README.md).
 
 | Package | Directory | Description |
 |---------|-----------|-------------|
-| **[@punch-bot/cli](packages/coding-agent)** | `packages/coding-agent` | Interactive coding agent CLI |
+| **[@punch-bot/cli](packages/coding-agent)** | `packages/coding-agent` | Headless coding agent SDK, RPC, and print modes |
 | **[@punch-bot/agent](packages/agent)** | `packages/agent` | Agent runtime with tool calling and state management |
 | **[@punch-bot/ai](packages/ai)** | `packages/ai` | Unified multi-provider LLM API |
-| **[@punch-bot/tui](packages/tui)** | `packages/tui` | Terminal UI library with differential rendering |
 | **[@punch-bot/telemetry](packages/telemetry)** | `packages/telemetry` | Vendor-neutral telemetry contracts and reference adapter |
 | **[@punch-bot/protocol](packages/protocol)** | `packages/protocol` | Session protocol schemas, CBOR encoding, and framing |
 | **[@punch-bot/client](packages/client)** | `packages/client` | Transport-neutral client for remote sessions |
 | **[@punch-bot/server](packages/server)** | `packages/server` | Experimental session server |
 | **[@punch-bot/sqlite-node](packages/session-backends/sqlite-node)** | `packages/session-backends/sqlite-node` | Node SQLite session backend for `@punch-bot/agent` |
-| **[@punch-bot/evals](packages/evals)** | `packages/evals` | Private model-backed eval harness |
 
 ## Install
 

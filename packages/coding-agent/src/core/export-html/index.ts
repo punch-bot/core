@@ -2,11 +2,11 @@ import type { AgentState } from "@punch-bot/agent";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { basename, join } from "path";
 import { APP_NAME, getExportTemplateDir } from "../../config.ts";
-import { getResolvedThemeColors, getThemeExportColors } from "../../modes/interactive/theme/theme.ts";
 import { normalizePath, resolvePath } from "../../utils/paths.ts";
 import type { ToolDefinition } from "../extensions/types.ts";
 import type { SessionEntry } from "../session-manager.ts";
 import { SessionManager } from "../session-manager.ts";
+import { getResolvedThemeColors, getThemeExportColors } from "../theme/theme.ts";
 
 /**
  * Interface for rendering custom tools to HTML.

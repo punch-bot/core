@@ -10,7 +10,6 @@ const packages = [
 	{ directory: "packages/chord", name: "@punch-bot/chord" },
 	{ directory: "packages/telemetry", name: "@punch-bot/telemetry" },
 	{ directory: "packages/ai", name: "@punch-bot/ai" },
-	{ directory: "packages/tui", name: "@punch-bot/tui" },
 	{ directory: "packages/agent", name: "@punch-bot/agent" },
 	{ directory: "packages/protocol", name: "@punch-bot/protocol" },
 	{ directory: "packages/client", name: "@punch-bot/client" },

@@ -3,10 +3,10 @@
  */
 
 import type { Api, Model } from "@punch-bot/ai";
-import { fuzzyFilter } from "@punch-bot/tui";
 import chalk from "chalk";
 import { formatNoModelsAvailableMessage } from "../core/auth-guidance.ts";
 import type { ModelRuntime } from "../core/model-runtime.ts";
+import { fuzzyFilter } from "../utils/fuzzy.ts";
 
 /**
  * Format a number as human-readable (e.g., 200000 -> "200K", 1000000 -> "1M")

@@ -298,8 +298,6 @@ async function runBuild(bundle) {
 				"run",
 				"build",
 				"--workspace",
-				"packages/tui",
-				"--workspace",
 				"packages/telemetry",
 				"--workspace",
 				"packages/ai",

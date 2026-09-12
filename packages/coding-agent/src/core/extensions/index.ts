@@ -28,9 +28,6 @@ export type {
 	AgentToolResult,
 	AgentToolUpdateCallback,
 	AppendEntryHandler,
-	// App keybindings (for custom editors)
-	AppKeybinding,
-	AutocompleteProviderFactory,
 	// Events - Tool (ToolCallEvent types)
 	BashToolCallEvent,
 	BashToolResultEvent,
@@ -49,12 +46,9 @@ export type {
 	ContextUsage,
 	CustomToolCallEvent,
 	CustomToolResultEvent,
-	EditorFactory,
 	EditToolCallEvent,
 	EditToolResultEvent,
 	// Message and Entry Rendering
-	EntryRenderer,
-	EntryRenderOptions,
 	ExecOptions,
 	ExecResult,
 	Extension,
@@ -91,7 +85,6 @@ export type {
 	InputEvent,
 	InputEventResult,
 	InputSource,
-	KeybindingsManager,
 	LoadExtensionsResult,
 	LsToolCallEvent,
 	LsToolResultEvent,
@@ -99,8 +92,6 @@ export type {
 	MarkdownTransformer,
 	// Events - Message
 	MessageEndEvent,
-	MessageRenderer,
-	MessageRenderOptions,
 	MessageStartEvent,
 	MessageUpdateEvent,
 	ModelSelectEvent,
@@ -147,7 +138,6 @@ export type {
 	SetLabelHandler,
 	SetModelHandler,
 	SetThinkingLevelHandler,
-	TerminalInputHandler,
 	// Events - Tool
 	ToolCallEvent,
 	ToolCallEventResult,
@@ -160,7 +150,6 @@ export type {
 	ToolExecutionStartEvent,
 	ToolExecutionUpdateEvent,
 	ToolInfo,
-	ToolRenderResultOptions,
 	ToolResultEvent,
 	ToolResultEventResult,
 	TreePreparation,

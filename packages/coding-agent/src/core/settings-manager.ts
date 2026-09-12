@@ -1,6 +1,13 @@
 import type { ThinkingLevel } from "@punch-bot/agent";
 import { DEFAULT_MAX_AGENT_RETRY_DELAY_MS, type Model, type Transport } from "@punch-bot/ai";
-import type { TuiMode as RendererTuiMode, ScrollViewScrollbar, TerminalCapabilities } from "@punch-bot/tui";
+export type TuiMode = "regular" | "fullscreen";
+export type ScrollViewScrollbar = "hidden" | "auto" | "always";
+export interface TerminalCapabilities {
+	trueColor?: boolean;
+	hyperlinks?: boolean;
+	images?: boolean;
+}
+
 import { randomUUID } from "crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
@@ -46,7 +53,6 @@ export interface RetrySettings {
 	provider?: ProviderRetrySettings;
 }
 
-export type TuiMode = RendererTuiMode;
 export type FullscreenExitOutput = "transcript" | "resume-hint";
 
 export interface TerminalSettings {
@@ -1177,9 +1183,7 @@ export class SettingsManager {
 
 	getTerminalCapabilityOverrides(): Partial<TerminalCapabilities> {
 		const terminal = this.settings.terminal;
-		const images = terminal?.images;
 		return {
-			...(images === "kitty" || images === "iterm2" ? { images } : images === false ? { images: null } : {}),
 			...(typeof terminal?.trueColor === "boolean" ? { trueColor: terminal.trueColor } : {}),
 			...(typeof terminal?.hyperlinks === "boolean" ? { hyperlinks: terminal.hyperlinks } : {}),
 		};
