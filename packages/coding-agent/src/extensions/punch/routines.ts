@@ -47,14 +47,7 @@ interface RoutineExecution {
 const DATA_DIR = process.env.PI_DATA_DIR || join(process.cwd(), ".pi");
 const ROUTINES_FILE = join(DATA_DIR, "routines.json");
 const HISTORY_FILE = join(DATA_DIR, "routine-history.json");
-const MAX_ATTEMPTS = Math.max(1, Number(process.env.PI_ROUTINE_MAX_ATTEMPTS) || 5);
-const BASE_RETRY_MS = Math.max(1000, Number(process.env.PI_ROUTINE_RETRY_BASE_MS) || 30000);
-const IDLE_POLL_MS = 60000;
-
 let seq = 0;
-let timer: NodeJS.Timeout | null = null;
-let onFireCallback: ((routine: Routine) => Promise<void>) | null = null;
-let runDuePending = false;
 const hadRoutinesFile = existsSync(ROUTINES_FILE);
 const hadHistoryFile = existsSync(HISTORY_FILE);
 const routines: Routine[] = loadJsonArray<Routine>(ROUTINES_FILE)
@@ -298,7 +291,6 @@ function addRoutine(input: {
 	};
 	routines.push(routine);
 	saveRoutines();
-	scheduleNext();
 	return routine;
 }
 
@@ -307,7 +299,6 @@ function removeRoutine(id: string, userId: string): boolean {
 	if (index === -1) return false;
 	routines.splice(index, 1);
 	saveRoutines();
-	scheduleNext();
 	return true;
 }
 
@@ -321,7 +312,6 @@ function setRoutineEnabled(id: string, userId: string, enabled: boolean): Routin
 		routine.nextRunAt = computeNextRun(routine.schedule, Date.now(), routine.timezone) ?? routine.nextRunAt;
 	}
 	saveRoutines();
-	scheduleNext();
 	return routine;
 }
 
@@ -348,119 +338,6 @@ function listHistory(userId: string, routineId: string | null = null, limit = 20
 		.reverse();
 }
 
-function appendHistory(entry: RoutineExecution): void {
-	history.push(entry);
-	if (history.length > 2000) history = history.slice(-2000);
-	saveHistory();
-}
-
-function markStarted(routine: Routine): RoutineExecution {
-	routine.state = "running";
-	routine.attempts += 1;
-	routine.lastError = null;
-	saveRoutines();
-	return {
-		id: newId(),
-		routineId: routine.id,
-		userId: routine.userId,
-		status: "running",
-		attempt: routine.attempts,
-		startedAt: Date.now(),
-		finishedAt: null,
-		error: null,
-	};
-}
-
-function completeRoutine(routine: Routine, execution: RoutineExecution): void {
-	const finishedAt = Date.now();
-	execution.status = "succeeded";
-	execution.finishedAt = finishedAt;
-	appendHistory(execution);
-	const index = routines.findIndex((r) => r.id === routine.id);
-	if (index === -1) return;
-	if (routine.schedule.kind === "once") {
-		routines.splice(index, 1);
-	} else {
-		routine.state = "succeeded";
-		routine.lastRunAt = finishedAt;
-		routine.attempts = 0;
-		routine.nextRunAt = computeNextRun(routine.schedule, finishedAt, routine.timezone) ?? routine.nextRunAt;
-		routine.state = "queued";
-	}
-	saveRoutines();
-}
-
-function failRoutine(routine: Routine, execution: RoutineExecution, error: unknown): void {
-	const finishedAt = Date.now();
-	const message = String(error instanceof Error ? error.message : error || "Routine failed").slice(0, 2000);
-	execution.status = "failed";
-	execution.finishedAt = finishedAt;
-	execution.error = message;
-	appendHistory(execution);
-	routine.lastError = message;
-	if (routine.attempts >= MAX_ATTEMPTS) {
-		routine.state = "failed";
-		routine.enabled = false;
-	} else {
-		routine.state = "queued";
-		const retryMs = Math.min(3600000, BASE_RETRY_MS * 2 ** Math.max(0, routine.attempts - 1));
-		routine.nextRunAt = nextActiveTime(null, finishedAt + retryMs);
-	}
-	saveRoutines();
-}
-
-function clearTimer(): void {
-	if (timer) {
-		clearTimeout(timer);
-		timer = null;
-	}
-}
-
-async function runDue(): Promise<void> {
-	const now = Date.now();
-	const due = routines.filter((r) => r.enabled && r.state === "queued" && r.nextRunAt <= now);
-	for (const routine of due) {
-		const execution = markStarted(routine);
-		try {
-			if (onFireCallback) await onFireCallback(routine);
-			completeRoutine(routine, execution);
-		} catch (err) {
-			failRoutine(routine, execution, err);
-		}
-	}
-	const upcoming = routines
-		.filter((r) => r.enabled && r.state === "queued" && r.nextRunAt > now)
-		.sort((a, b) => a.nextRunAt - b.nextRunAt);
-	const delay = upcoming.length ? Math.min(2147483647, Math.max(0, upcoming[0].nextRunAt - Date.now())) : IDLE_POLL_MS;
-	timer = setTimeout(() => {
-		void scheduleNext();
-	}, delay);
-	timer.unref();
-}
-
-function scheduleNext(): void {
-	clearTimer();
-	if (runDuePending) return;
-	runDuePending = true;
-	void runDue()
-		.catch((err) => {
-			console.error("[punch] routines scheduler error:", err);
-		})
-		.finally(() => {
-			runDuePending = false;
-		});
-}
-
-function startScheduler(onFire: (routine: Routine) => Promise<void>): void {
-	onFireCallback = onFire;
-	scheduleNext();
-}
-
-function stopScheduler(): void {
-	clearTimer();
-	onFireCallback = null;
-}
-
 export {
 	DEFAULT_TIME_ZONE,
 	addRoutine,
@@ -474,8 +351,6 @@ export {
 	pauseRoutine,
 	removeRoutine,
 	resumeRoutine,
-	startScheduler,
-	stopScheduler,
 };
 
 for (const routine of routines) {

@@ -6,7 +6,6 @@ import { Type } from "typebox";
 import type { ExtensionAPI } from "../../core/extensions/types.ts";
 import { getAuthHeader, isAuthConfigured } from "./auth.ts";
 import { validateCollabWorkspace } from "./collabs.ts";
-import { startScheduler } from "./routines.ts";
 import { startPunchServer } from "./server.ts";
 import { installTodos } from "./todos.ts";
 
@@ -71,19 +70,6 @@ function workspaceFor(collab: { workspaces: Record<string, string> }, actorKey: 
 
 export default function punchExtension(pi: ExtensionAPI): void {
 	if (process.env.PUNCH_EMBEDDED_SERVER !== "0") {
-		startScheduler(async (routine) => {
-			switch (routine.type) {
-				case "message":
-					pi.sendUserMessage(routine.payload);
-					break;
-				case "heartbeat":
-					pi.sendUserMessage(`heartbeat: ${routine.payload}`);
-					break;
-				case "llm":
-					pi.sendUserMessage(routine.payload);
-					break;
-			}
-		});
 		if (!isAuthConfigured()) {
 			console.warn("punch server disabled: no auth credentials configured");
 		}
