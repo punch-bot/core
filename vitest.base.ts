@@ -22,6 +22,7 @@ export const workspaceSourcePaths = {
 	serverUnix: fileURLToPath(new URL("./packages/server/src/transports/unix/index.ts", import.meta.url)),
 	codingAgentIndex: fileURLToPath(new URL("./packages/coding-agent/src/index.ts", import.meta.url)),
 	tuiIndex: fileURLToPath(new URL("./packages/tui/src/index.ts", import.meta.url)),
+	a2aIndex: fileURLToPath(new URL("./packages/a2a/src/index.ts", import.meta.url)),
 } as const;
 
 export default defineConfig({

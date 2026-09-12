@@ -28,6 +28,8 @@ System instructions for the agent.
 
 Omit `model` to inherit the parent session's model and thinking level. Set `a2aUrl` to delegate through A2A instead of starting a local `pi` process.
 
+Punch sandboxes on the same machine also advertise an A2A listener automatically. Use the `a2a` tool (`list` / `send`) to talk to those peers by sandbox name without configuring `a2aUrl`.
+
 ## Project agents and trust
 
 The default `agentScope` is `user`, which loads bundled and user agents but not repository-controlled definitions. Set it to `project` or `both` to discover the nearest `.pi/agents` directory. In an untrusted interactive project, Punch asks for confirmation before executing any requested project agent. Project definitions override user and bundled definitions with the same name.
