@@ -56,6 +56,7 @@ export type {
 	AgentStartEvent,
 	AgentToolResult,
 	AgentToolUpdateCallback,
+	AutocompleteItem,
 	BashToolCallEvent,
 	BeforeAgentStartEvent,
 	BeforeAgentStartEventResult,

@@ -6,7 +6,6 @@ import type { ThinkingLevel } from "@punch-bot/agent";
 import chalk from "chalk";
 import { APP_NAME, CONFIG_DIR_NAME, ENV_AGENT_DIR, ENV_SESSION_DIR } from "../config.ts";
 import type { ExtensionFlag } from "../core/extensions/types.ts";
-import type { TuiMode } from "../core/settings-manager.ts";
 
 export type Mode = "text" | "json" | "rpc";
 
@@ -47,7 +46,6 @@ export interface Args {
 	noContextFiles?: boolean;
 	listModels?: string | true;
 	offline?: boolean;
-	tuiMode?: TuiMode;
 	verbose?: boolean;
 	projectTrustOverride?: boolean;
 	messages: string[];
@@ -202,18 +200,13 @@ export function parseArgs(args: string[]): Args {
 			}
 		} else if (arg === "--tui-mode") {
 			const mode = args[i + 1];
-			if (mode === "regular" || mode === "fullscreen") {
-				result.tuiMode = mode;
+			if (mode !== undefined && !mode.startsWith("-")) {
 				i++;
-			} else if (mode === undefined || mode.startsWith("-")) {
-				result.diagnostics.push({ type: "error", message: "--tui-mode requires regular or fullscreen" });
-			} else {
-				i++;
-				result.diagnostics.push({
-					type: "error",
-					message: `Invalid TUI mode "${mode}". Valid values: regular, fullscreen`,
-				});
 			}
+			result.diagnostics.push({
+				type: "warning",
+				message: "--tui-mode is no longer supported; interactive TUI was removed",
+			});
 		} else if (arg === "--verbose") {
 			result.verbose = true;
 		} else if (arg === "--approve" || arg === "-a") {

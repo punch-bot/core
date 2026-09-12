@@ -5,7 +5,7 @@ export type ScrollViewScrollbar = "hidden" | "auto" | "always";
 export interface TerminalCapabilities {
 	trueColor?: boolean;
 	hyperlinks?: boolean;
-	images?: boolean;
+	images?: boolean | "kitty" | "iterm2" | null;
 }
 
 import { randomUUID } from "crypto";
@@ -1183,7 +1183,9 @@ export class SettingsManager {
 
 	getTerminalCapabilityOverrides(): Partial<TerminalCapabilities> {
 		const terminal = this.settings.terminal;
+		const images = terminal?.images;
 		return {
+			...(images === "kitty" || images === "iterm2" ? { images } : images === false ? { images: null } : {}),
 			...(typeof terminal?.trueColor === "boolean" ? { trueColor: terminal.trueColor } : {}),
 			...(typeof terminal?.hyperlinks === "boolean" ? { hyperlinks: terminal.hyperlinks } : {}),
 		};

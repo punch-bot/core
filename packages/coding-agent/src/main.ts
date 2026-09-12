@@ -5,7 +5,6 @@
  * createAgentSession() options. The SDK does the heavy lifting.
  */
 
-import { createInterface } from "node:readline";
 import { type ImageContent, modelsAreEqual } from "@punch-bot/ai";
 import chalk from "chalk";
 import { type Args, type Mode, normalizeSessionName, parseArgs, printHelp } from "./cli/args.ts";
@@ -266,20 +265,6 @@ async function resolveSessionPath(sessionArg: string, cwd: string, sessionDir?: 
 	return { type: "not_found", arg: sessionArg };
 }
 
-/** Prompt user for yes/no confirmation */
-async function promptConfirm(message: string): Promise<boolean> {
-	return new Promise((resolve) => {
-		const rl = createInterface({
-			input: process.stdin,
-			output: process.stdout,
-		});
-		rl.question(`${message} [y/N] `, (answer) => {
-			rl.close();
-			resolve(answer.toLowerCase() === "y" || answer.toLowerCase() === "yes");
-		});
-	});
-}
-
 function validateForkFlags(parsed: Args): void {
 	if (!parsed.fork) return;
 
@@ -381,13 +366,13 @@ export async function createSessionManager(
 				return openSessionOrExit(resolved.path, sessionDir);
 
 			case "global": {
-				console.log(chalk.yellow(`Session found in different project: ${resolved.cwd}`));
-				const shouldFork = await promptConfirm("Fork this session into current directory?");
-				if (!shouldFork) {
-					console.log(chalk.dim("Aborted."));
-					process.exit(0);
-				}
-				return forkSessionOrExit(resolved.path, cwd, sessionDir);
+				console.error(
+					chalk.red(
+						`Session found in different project: ${resolved.cwd}. Use --fork ${parsed.session} to copy it into the current directory.`,
+					),
+				);
+				process.exit(1);
+				return SessionManager.inMemory(cwd);
 			}
 
 			case "not_found":
@@ -829,7 +814,7 @@ export async function main(args: string[], options?: MainOptions) {
 	time("prepareInitialMessage");
 	// pi reads user-authored themes, so it opts into full validation before any theme loads.
 	setThemeJsonValidator(validateThemeJson);
-	initTheme(settingsManager.getTheme(), false);
+	initTheme(settingsManager.getTheme(), false, settingsManager.getTerminalCapabilityOverrides().trueColor);
 	time("initTheme");
 
 	time("resolveModelScope");
