@@ -44,11 +44,9 @@
 			"@punch-bot/server": ["./packages/server/src/index.ts"],
 			"@punch-bot/server/unix": ["./packages/server/src/transports/unix/index.ts"],
 			"@punch-bot/server/*": ["./packages/server/src/*"],
-			"typebox": ["./node_modules/typebox"],
-			"@punch-bot/tui": ["./packages/tui/src/index.ts"],
-			"@punch-bot/tui/*": ["./packages/tui/src/*"]
+			"typebox": ["./node_modules/typebox"]
 		}
 	},
-	"include": ["packages/*/src/**/*", "packages/*/test/**/*", "packages/session-backends/*/src/**/*", "packages/session-backends/*/test/**/*", "packages/coding-agent/examples/**/*"],
+	"include": ["packages/*/src/**/*", "packages/*/test/**/*", "packages/session-backends/*/src/**/*", "packages/session-backends/*/test/**/*"],
 	"exclude": ["**/dist/**", "packages/coding-agent/examples/extensions/gondolin/**"]
 }

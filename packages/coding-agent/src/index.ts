@@ -56,8 +56,6 @@ export type {
 	AgentStartEvent,
 	AgentToolResult,
 	AgentToolUpdateCallback,
-	AppKeybinding,
-	AutocompleteProviderFactory,
 	BashToolCallEvent,
 	BeforeAgentStartEvent,
 	BeforeAgentStartEventResult,
@@ -70,8 +68,6 @@ export type {
 	ContextUsage,
 	CustomToolCallEvent,
 	EditToolCallEvent,
-	EntryRenderer,
-	EntryRenderOptions,
 	ExecOptions,
 	ExecResult,
 	Extension,
@@ -97,14 +93,11 @@ export type {
 	InputEvent,
 	InputEventResult,
 	InputSource,
-	KeybindingsManager,
 	LoadExtensionsResult,
 	LsToolCallEvent,
 	MarkdownTransformContext,
 	MarkdownTransformer,
 	MessageEndEvent,
-	MessageRenderer,
-	MessageRenderOptions,
 	MessageStartEvent,
 	MessageUpdateEvent,
 	PowerShellToolCallEvent,
@@ -131,7 +124,6 @@ export type {
 	SlashCommandInfo,
 	SlashCommandSource,
 	SourceInfo,
-	TerminalInputHandler,
 	ToolCallEvent,
 	ToolCallEventResult,
 	ToolDefinition,
@@ -140,7 +132,6 @@ export type {
 	ToolExecutionStartEvent,
 	ToolExecutionUpdateEvent,
 	ToolInfo,
-	ToolRenderResultOptions,
 	ToolResultEvent,
 	TurnEndEvent,
 	TurnStartEvent,
@@ -278,6 +269,14 @@ export {
 	type SkillFrontmatter,
 } from "./core/skills.ts";
 export { createSyntheticSourceInfo } from "./core/source-info.ts";
+// Theme utilities
+export {
+	getLanguageFromPath,
+	highlightCode,
+	initTheme,
+	Theme,
+	type ThemeColor,
+} from "./core/theme/theme.ts";
 export { type EditDiffResult, generateDiffString, generateUnifiedPatch } from "./core/tools/edit-diff.ts";
 // Tools
 export {
@@ -348,8 +347,6 @@ export {
 export { type MainOptions, main } from "./main.ts";
 // Run modes for programmatic SDK usage
 export {
-	InteractiveMode,
-	type InteractiveModeOptions,
 	type JsonAgentSessionEvent,
 	type ModelInfo,
 	type PrintModeOptions,
@@ -364,57 +361,6 @@ export {
 	runPrintMode,
 	runRpcMode,
 } from "./modes/index.ts";
-// UI components for extensions
-export {
-	ArminComponent,
-	AssistantMessageComponent,
-	BashExecutionComponent,
-	BorderedLoader,
-	BranchSummaryMessageComponent,
-	CompactionSummaryMessageComponent,
-	CustomEditor,
-	type CustomEditorOptions,
-	CustomMessageComponent,
-	DynamicBorder,
-	ExtensionEditorComponent,
-	ExtensionInputComponent,
-	ExtensionSelectorComponent,
-	FooterComponent,
-	keyHint,
-	keyText,
-	LoginDialogComponent,
-	ModelSelectorComponent,
-	OAuthSelectorComponent,
-	type RenderDiffOptions,
-	rawKeyHint,
-	renderDiff,
-	SessionSelectorComponent,
-	type SettingsCallbacks,
-	type SettingsConfig,
-	SettingsSelectorComponent,
-	ShowImagesSelectorComponent,
-	SkillInvocationMessageComponent,
-	ThemeSelectorComponent,
-	ThinkingSelectorComponent,
-	ToolExecutionComponent,
-	type ToolExecutionOptions,
-	TreeSelectorComponent,
-	truncateToVisualLines,
-	UserMessageComponent,
-	UserMessageSelectorComponent,
-	type VisualTruncateResult,
-} from "./modes/interactive/components/index.ts";
-// Theme utilities for custom tools and extensions
-export {
-	getLanguageFromPath,
-	getMarkdownTheme,
-	getSelectListTheme,
-	getSettingsListTheme,
-	highlightCode,
-	initTheme,
-	Theme,
-	type ThemeColor,
-} from "./modes/interactive/theme/theme.ts";
 // Clipboard utilities
 export { copyToClipboard } from "./utils/clipboard.ts";
 export { parseFrontmatter, stripFrontmatter } from "./utils/frontmatter.ts";

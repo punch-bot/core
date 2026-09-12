@@ -1,6 +1,6 @@
 import type { ModelsRefreshOptions, ModelsRefreshResult } from "@punch-bot/ai";
 import { describe, expect, it, vi } from "vitest";
-import { refreshModelCatalogs } from "../src/modes/interactive/model-catalog-refresh.ts";
+import { refreshModelCatalogs } from "../src/core/model-catalog-refresh.ts";
 
 interface Deferred<T> {
 	promise: Promise<T>;
@@ -19,7 +19,7 @@ function successfulRefresh(): ModelsRefreshResult {
 	return { aborted: false, errors: new Map() };
 }
 
-describe("interactive model catalog refresh", () => {
+describe("model catalog refresh", () => {
 	it("shares one runtime refresh between concurrent callers", async () => {
 		const deferred = createDeferred<ModelsRefreshResult>();
 		const runtime = { refresh: vi.fn((_options?: ModelsRefreshOptions) => deferred.promise) };

@@ -9,9 +9,7 @@
 			"@punch-bot/agent": ["../agent/dist/index.d.ts"],
 			"@punch-bot/agent/*": ["../agent/dist/*.d.ts"],
 			"@punch-bot/ai": ["../ai/dist/index.d.ts"],
-			"@punch-bot/ai/*": ["../ai/dist/*.d.ts", "../ai/dist/providers/*.d.ts"],
-			"@punch-bot/tui": ["../tui/dist/index.d.ts"],
-			"@punch-bot/tui/*": ["../tui/dist/*.d.ts", "../tui/dist/components/*.d.ts"]
+			"@punch-bot/ai/*": ["../ai/dist/*.d.ts", "../ai/dist/providers/*.d.ts"]
 		},
 		"rootDir": "./src"
 	},

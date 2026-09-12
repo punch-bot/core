@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Removed interactive TUI mode and the `@punch-bot/tui` dependency. `@punch-bot/cli` is headless: RPC (`--mode rpc` / `rpc-entry`), print/JSON, and the programmatic SDK remain. Extension APIs that rendered TUI components (`renderCall`, `renderResult`, custom editors/footers/headers, `InteractiveMode`) are gone.
+
 ### Added
 
 - Added `ctx.modelRegistry.stream()` and `streamSimple()` for extension model calls through configured providers with resolved authentication ([#8964](https://github.com/earendil-works/pi/issues/8964)).

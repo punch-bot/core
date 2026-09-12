@@ -12,8 +12,6 @@ import type { Provider } from "@punch-bot/ai";
 import * as _bundledPiAiCompat from "@punch-bot/ai/compat";
 import * as _bundledPiAiOauth from "@punch-bot/ai/oauth";
 import * as _bundledPiAiProviders from "@punch-bot/ai/providers/all";
-import type { KeyId } from "@punch-bot/tui";
-import * as _bundledPiTui from "@punch-bot/tui";
 import { createJiti } from "jiti/static";
 // Static imports of packages that extensions may use.
 // These MUST be static so Bun bundles them into the compiled binary.
@@ -33,14 +31,13 @@ import { readPiManifest } from "../pi-manifest.ts";
 import { createSyntheticSourceInfo } from "../source-info.ts";
 import { time } from "../timings.ts";
 import type {
-	EntryRenderer,
 	Extension,
 	ExtensionAPI,
 	ExtensionFactory,
 	ExtensionRuntime,
+	KeyId,
 	LoadExtensionsResult,
 	MarkdownTransformer,
-	MessageRenderer,
 	ProviderConfig,
 	RegisteredCommand,
 	ToolDefinition,
@@ -55,7 +52,6 @@ const VIRTUAL_MODULES: Record<string, unknown> = {
 	"@sinclair/typebox/compile": _bundledTypeboxCompile,
 	"@sinclair/typebox/value": _bundledTypeboxValue,
 	"@punch-bot/agent": _bundledPiAgentCore,
-	"@punch-bot/tui": _bundledPiTui,
 	// Extensions resolve the pi-ai root to the compat entrypoint (a strict
 	// superset of the core entrypoint): existing extensions using the old
 	// global API keep working at runtime until compat is removed.
@@ -65,7 +61,6 @@ const VIRTUAL_MODULES: Record<string, unknown> = {
 	"@punch-bot/ai/providers/all": _bundledPiAiProviders,
 	"@punch-bot/cli": _bundledPiCodingAgent,
 	"@mariozechner/pi-agent-core": _bundledPiAgentCore,
-	"@mariozechner/pi-tui": _bundledPiTui,
 	"@mariozechner/pi-ai": _bundledPiAiCompat,
 	"@mariozechner/pi-ai/compat": _bundledPiAiCompat,
 	"@mariozechner/pi-ai/oauth": _bundledPiAiOauth,
@@ -107,7 +102,6 @@ function getAliases(): Record<string, string> {
 
 	const piCodingAgentEntry = packageIndex;
 	const piAgentCoreEntry = resolveWorkspaceOrImport("agent/dist/index.js", "@punch-bot/agent");
-	const piTuiEntry = resolveWorkspaceOrImport("tui/dist/index.js", "@punch-bot/tui");
 	// Extensions resolve the pi-ai root to the compat entrypoint (a strict
 	// superset of the core entrypoint): existing extensions using the old
 	// global API keep working at runtime until compat is removed.
@@ -118,14 +112,12 @@ function getAliases(): Record<string, string> {
 	_aliases = {
 		"@punch-bot/cli": piCodingAgentEntry,
 		"@punch-bot/agent": piAgentCoreEntry,
-		"@punch-bot/tui": piTuiEntry,
 		"@punch-bot/ai/providers/all": piAiProvidersEntry,
 		"@punch-bot/ai/compat": piAiCompatEntry,
 		"@punch-bot/ai/oauth": piAiOauthEntry,
 		"@punch-bot/ai": piAiCompatEntry,
 		"@mariozechner/pi-coding-agent": piCodingAgentEntry,
 		"@mariozechner/pi-agent-core": piAgentCoreEntry,
-		"@mariozechner/pi-tui": piTuiEntry,
 		"@mariozechner/pi-ai/providers/all": piAiProvidersEntry,
 		"@mariozechner/pi-ai/compat": piAiCompatEntry,
 		"@mariozechner/pi-ai/oauth": piAiOauthEntry,
@@ -335,20 +327,9 @@ function createExtensionAPI(
 			}
 		},
 
-		registerMessageRenderer<T>(customType: string, renderer: MessageRenderer<T>): void {
-			assertActive();
-			extension.messageRenderers.set(customType, renderer as MessageRenderer);
-		},
-
 		registerMarkdownTransformer(transformer: MarkdownTransformer): void {
 			assertActive();
 			extension.markdownTransformer = transformer;
-		},
-
-		registerEntryRenderer<T>(customType: string, renderer: EntryRenderer<T>): void {
-			assertActive();
-			extension.entryRenderers ??= new Map();
-			extension.entryRenderers.set(customType, renderer as EntryRenderer);
 		},
 
 		// Flag access - checks extension registered it, reads from runtime
@@ -534,8 +515,6 @@ function createExtension(extensionPath: string, resolvedPath: string): Extension
 		sourceInfo: createSyntheticSourceInfo(extensionPath, { source, baseDir }),
 		handlers: new Map(),
 		tools: new Map(),
-		messageRenderers: new Map(),
-		entryRenderers: new Map(),
 		commands: new Map(),
 		flags: new Map(),
 		shortcuts: new Map(),

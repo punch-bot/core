@@ -6,8 +6,8 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { refreshModelCatalogs } from "../../../core/model-catalog-refresh.ts";
 import type { ModelRuntime } from "../../../core/model-runtime.ts";
-import { refreshModelCatalogs } from "../../../modes/interactive/model-catalog-refresh.ts";
 import type {
 	AuthPromptRequest,
 	CommandResult,

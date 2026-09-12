@@ -33,32 +33,17 @@ import type {
 	ToolResultMessage,
 	Usage,
 } from "@punch-bot/ai";
-import type {
-	AutocompleteItem,
-	AutocompleteProvider,
-	Component,
-	EditorComponent,
-	EditorTheme,
-	KeyId,
-	OverlayHandle,
-	OverlayOptions,
-	TUI,
-} from "@punch-bot/tui";
 import type { Static, TSchema } from "typebox";
-import type { Theme } from "../../modes/interactive/theme/theme.ts";
 import type { BashResult } from "../bash-executor.ts";
 import type { CompactionPreparation, CompactionResult } from "../compaction/index.ts";
 import type { EventBus } from "../event-bus.ts";
 import type { ExecOptions, ExecResult } from "../exec.ts";
-import type { ReadonlyFooterDataProvider } from "../footer-data-provider.ts";
-import type { KeybindingsManager } from "../keybindings.ts";
 import type { CustomMessage } from "../messages.ts";
 import type { ModelRegistry } from "../model-registry.ts";
 import type { ScopedModel } from "../model-resolver.ts";
 import type {
 	BranchSummaryEntry,
 	CompactionEntry,
-	CustomEntry,
 	ReadonlySessionManager,
 	SessionEntry,
 	SessionManager,
@@ -66,6 +51,7 @@ import type {
 import type { SlashCommandInfo } from "../slash-commands.ts";
 import type { SourceInfo } from "../source-info.ts";
 import type { BuildSystemPromptOptions } from "../system-prompt.ts";
+import type { Theme } from "../theme/theme.ts";
 import type { BashOperations } from "../tools/bash.ts";
 import type { EditToolDetails } from "../tools/edit.ts";
 import type {
@@ -88,7 +74,14 @@ import type {
 export type { ExecOptions, ExecResult } from "../exec.ts";
 export type { BuildSystemPromptOptions } from "../system-prompt.ts";
 export type { AgentToolResult, AgentToolUpdateCallback, ToolExecutionMode };
-export type { AppKeybinding, KeybindingsManager } from "../keybindings.ts";
+
+export type KeyId = string;
+
+export interface AutocompleteItem {
+	value: string;
+	label?: string;
+	description?: string;
+}
 
 // ============================================================================
 // UI Context
@@ -111,10 +104,7 @@ export interface ExtensionWidgetOptions {
 	placement?: WidgetPlacement;
 }
 
-/** Raw terminal input listener for extensions. */
-export type TerminalInputHandler = (data: string) => { consume?: boolean; data?: string } | undefined;
-
-/** Working indicator configuration for the interactive streaming loader. */
+/** Working indicator configuration for streaming hosts that display one. */
 export interface WorkingIndicatorOptions {
 	/** Animation frames. Use an empty array to hide the indicator entirely. Custom frames are rendered verbatim. */
 	frames?: string[];
@@ -122,13 +112,9 @@ export interface WorkingIndicatorOptions {
 	intervalMs?: number;
 }
 
-/** Wrap the current autocomplete provider with additional behavior. */
-export type AutocompleteProviderFactory = (current: AutocompleteProvider) => AutocompleteProvider;
-export type EditorFactory = (tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => EditorComponent;
-
 /**
- * UI context for extensions to request interactive UI.
- * Each mode (interactive, RPC, print) provides its own implementation.
+ * UI context for extensions to request user interaction.
+ * RPC and print modes provide their own implementations.
  */
 export interface ExtensionUIContext {
 	/** Show a selector and return the user's choice. */
@@ -143,126 +129,38 @@ export interface ExtensionUIContext {
 	/** Show a notification to the user. */
 	notify(message: string, type?: "info" | "warning" | "error"): void;
 
-	/** Listen to raw terminal input (interactive mode only). Returns an unsubscribe function. */
-	onTerminalInput(handler: TerminalInputHandler): () => void;
-
-	/** Set status text in the footer/status bar. Pass undefined to clear. */
+	/** Set status text. Pass undefined to clear. */
 	setStatus(key: string, text: string | undefined): void;
 
 	/** Set the working/loading message shown during streaming. Call with no argument to restore default. */
 	setWorkingMessage(message?: string): void;
 
-	/** Show or hide the built-in interactive working loader row during streaming. */
+	/** Show or hide the working indicator during streaming. */
 	setWorkingVisible(visible: boolean): void;
 
-	/**
-	 * Configure the interactive working indicator shown during streaming.
-	 *
-	 * - Omit the argument to restore the default animated spinner.
-	 * - Use `frames: ["●"]` for a static indicator.
-	 * - Use `frames: []` to hide the indicator entirely.
-	 * - Custom frames are rendered as provided, so extensions must add their own colors.
-	 */
+	/** Configure the working indicator shown during streaming. */
 	setWorkingIndicator(options?: WorkingIndicatorOptions): void;
 
 	/** Set the label shown for hidden thinking blocks. Call with no argument to restore default. */
 	setHiddenThinkingLabel(label?: string): void;
 
-	/** Set a widget to display above or below the editor. Accepts string array or component factory. */
+	/** Set a widget of text lines. */
 	setWidget(key: string, content: string[] | undefined, options?: ExtensionWidgetOptions): void;
-	setWidget(
-		key: string,
-		content: ((tui: TUI, theme: Theme) => Component & { dispose?(): void }) | undefined,
-		options?: ExtensionWidgetOptions,
-	): void;
 
-	/** Set a custom footer component, or undefined to restore the built-in footer.
-	 *
-	 * The factory receives a FooterDataProvider for data not otherwise accessible:
-	 * git branch and extension statuses from setStatus(). Context usage is on
-	 * ctx.getContextUsage(), token stats on ctx.sessionManager.getEntries(), model info on ctx.model.
-	 */
-	setFooter(
-		factory:
-			| ((tui: TUI, theme: Theme, footerData: ReadonlyFooterDataProvider) => Component & { dispose?(): void })
-			| undefined,
-	): void;
-
-	/** Set a custom header component (shown at startup, above chat), or undefined to restore the built-in header. */
-	setHeader(factory: ((tui: TUI, theme: Theme) => Component & { dispose?(): void }) | undefined): void;
-
-	/** Set the terminal window/tab title. */
+	/** Set the window/tab title. */
 	setTitle(title: string): void;
 
-	/** Show a custom component with keyboard focus. */
-	custom<T>(
-		factory: (
-			tui: TUI,
-			theme: Theme,
-			keybindings: KeybindingsManager,
-			done: (result: T) => void,
-		) => (Component & { dispose?(): void }) | Promise<Component & { dispose?(): void }>,
-		options?: {
-			overlay?: boolean;
-			/** Overlay positioning/sizing options. Can be static or a function for dynamic updates. */
-			overlayOptions?: OverlayOptions | (() => OverlayOptions);
-			/** Called with the overlay handle after the overlay is shown. Use to control visibility. */
-			onHandle?: (handle: OverlayHandle) => void;
-		},
-	): Promise<T>;
-
-	/** Paste text into the editor, triggering paste handling (collapse for large content). */
+	/** Paste text into the host editor. */
 	pasteToEditor(text: string): void;
 
-	/** Set the text in the core input editor. */
+	/** Set the text in the host editor. */
 	setEditorText(text: string): void;
 
-	/** Get the current text from the core input editor. */
+	/** Get the current text from the host editor. */
 	getEditorText(): string;
 
 	/** Show a multi-line editor for text editing. */
 	editor(title: string, prefill?: string): Promise<string | undefined>;
-
-	/** Stack additional autocomplete behavior on top of the built-in provider. */
-	addAutocompleteProvider(factory: AutocompleteProviderFactory): void;
-
-	/**
-	 * Set a custom editor component via factory function.
-	 * Pass undefined to restore the default editor.
-	 *
-	 * The factory receives:
-	 * - `theme`: EditorTheme for styling borders and autocomplete
-	 * - `keybindings`: KeybindingsManager for app-level keybindings
-	 *
-	 * For full app keybinding support (escape, ctrl+d, model switching, etc.),
-	 * extend `CustomEditor` from `@punch-bot/cli` and call
-	 * `super.handleInput(data)` for keys you don't handle.
-	 *
-	 * @example
-	 * ```ts
-	 * import { CustomEditor } from "@punch-bot/cli";
-	 *
-	 * class VimEditor extends CustomEditor {
-	 *   private mode: "normal" | "insert" = "insert";
-	 *
-	 *   handleInput(data: string): void {
-	 *     if (this.mode === "normal") {
-	 *       // Handle vim normal mode keys...
-	 *       if (data === "i") { this.mode = "insert"; return; }
-	 *     }
-	 *     super.handleInput(data);  // App keybindings + text editing
-	 *   }
-	 * }
-	 *
-	 * ctx.ui.setEditorComponent((tui, theme, keybindings) =>
-	 *   new VimEditor(tui, theme, keybindings)
-	 * );
-	 * ```
-	 */
-	setEditorComponent(factory: EditorFactory | undefined): void;
-
-	/** Get the currently configured custom editor factory, or undefined when using the default editor. */
-	getEditorComponent(): EditorFactory | undefined;
 
 	/** Get the current theme for styling. */
 	readonly theme: Theme;
@@ -409,46 +307,10 @@ export interface ReplacedSessionContext extends ExtensionCommandContext {
 // Tool Types
 // ============================================================================
 
-/** Rendering options for tool results */
-export interface ToolRenderResultOptions {
-	/** Whether the result view is expanded */
-	expanded: boolean;
-	/** Whether this is a partial/streaming result */
-	isPartial: boolean;
-}
-
-/** Context passed to tool renderers. */
-export interface ToolRenderContext<TState = any, TArgs = any> {
-	/** Current tool call arguments. Shared across call/result renders for the same tool call. */
-	args: TArgs;
-	/** Unique id for this tool execution. Stable across call/result renders for the same tool call. */
-	toolCallId: string;
-	/** Invalidate just this tool execution component for redraw. */
-	invalidate: () => void;
-	/** Previously returned component for this render slot, if any. */
-	lastComponent: Component | undefined;
-	/** Shared renderer state for this tool row. Initialized by tool-execution.ts. */
-	state: TState;
-	/** Working directory for this tool execution. */
-	cwd: string;
-	/** Whether the tool execution has started. */
-	executionStarted: boolean;
-	/** Whether the tool call arguments are complete. */
-	argsComplete: boolean;
-	/** Whether the tool result is partial/streaming. */
-	isPartial: boolean;
-	/** Whether the result view is expanded. */
-	expanded: boolean;
-	/** Whether inline images are currently shown in the TUI. */
-	showImages: boolean;
-	/** Whether the current result is an error. */
-	isError: boolean;
-}
-
 /**
  * Tool definition for registerTool().
  */
-export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = unknown, TState = any> {
+export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = unknown, _TState = any> {
 	/** Tool name (used in LLM tool calls) */
 	name: string;
 	/** Human-readable label for UI */
@@ -463,8 +325,6 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 	parameters: TParams;
 	/** Optional provider-side constrained sampling request for this tool. Set false to explicitly disable it, equivalent to leaving it undefined. */
 	constrainedSampling?: false | ConstrainedSamplingConfig;
-	/** Controls whether ToolExecutionComponent renders the standard colored shell or the tool renders its own framing. */
-	renderShell?: "default" | "self";
 
 	/** Optional compatibility shim to prepare raw tool call arguments before schema validation. Must return an object conforming to TParams. */
 	prepareArguments?: (args: unknown) => Static<TParams>;
@@ -486,17 +346,6 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 		onUpdate: AgentToolUpdateCallback<TDetails> | undefined,
 		ctx: ExtensionContext,
 	): Promise<AgentToolResult<TDetails>>;
-
-	/** Custom rendering for tool call display */
-	renderCall?: (args: Static<TParams>, theme: Theme, context: ToolRenderContext<TState, Static<TParams>>) => Component;
-
-	/** Custom rendering for tool result display */
-	renderResult?: (
-		result: AgentToolResult<TDetails>,
-		options: ToolRenderResultOptions,
-		theme: Theme,
-		context: ToolRenderContext<TState, Static<TParams>>,
-	) => Component;
 }
 
 type AnyToolDefinition = ToolDefinition<any, any, any>;
@@ -1189,14 +1038,8 @@ export interface SessionBeforeTreeResult {
 }
 
 // ============================================================================
-// Message and Entry Rendering
+// Message rendering
 // ============================================================================
-
-export interface MessageRenderOptions {
-	expanded: boolean;
-	/** Horizontal padding configured by the outputPad setting. */
-	outputPad: number;
-}
 
 export interface MarkdownTransformContext {
 	messageType: "user" | "assistant" | "assistant-thinking";
@@ -1205,22 +1048,6 @@ export interface MarkdownTransformContext {
 }
 
 export type MarkdownTransformer = (markdown: string, context: MarkdownTransformContext) => string;
-
-export interface EntryRenderOptions {
-	expanded: boolean;
-}
-
-export type MessageRenderer<T = unknown> = (
-	message: CustomMessage<T>,
-	options: MessageRenderOptions,
-	theme: Theme,
-) => Component | undefined;
-
-export type EntryRenderer<T = unknown> = (
-	entry: CustomEntry<T>,
-	options: EntryRenderOptions,
-	theme: Theme,
-) => Component | undefined;
 
 // ============================================================================
 // Command Registration
@@ -1348,14 +1175,8 @@ export interface ExtensionAPI {
 	// Message Rendering
 	// =========================================================================
 
-	/** Register a custom renderer for CustomMessageEntry. */
-	registerMessageRenderer<T = unknown>(customType: string, renderer: MessageRenderer<T>): void;
-
-	/** Register a transformer for user and assistant Markdown before Pi renders it in the interactive transcript. */
+	/** Register a transformer for user and assistant Markdown. */
 	registerMarkdownTransformer(transformer: MarkdownTransformer): void;
-
-	/** Register a custom renderer for CustomEntry. Custom entries do not participate in LLM context. */
-	registerEntryRenderer<T = unknown>(customType: string, renderer: EntryRenderer<T>): void;
 
 	// =========================================================================
 	// Actions
@@ -1769,9 +1590,7 @@ export interface Extension {
 	sourceInfo: SourceInfo;
 	handlers: Map<string, HandlerFn[]>;
 	tools: Map<string, RegisteredTool>;
-	messageRenderers: Map<string, MessageRenderer>;
 	markdownTransformer?: MarkdownTransformer;
-	entryRenderers?: Map<string, EntryRenderer>;
 	commands: Map<string, RegisteredCommand>;
 	flags: Map<string, ExtensionFlag>;
 	shortcuts: Map<KeyId, ExtensionShortcut>;
