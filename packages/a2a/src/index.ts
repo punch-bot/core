@@ -11,7 +11,6 @@ export {
 	defaultA2aDiscoveryDir,
 	LocalA2aDiscovery,
 	type LocalA2aDiscoveryOptions,
-	pidAlive,
 } from "./discovery.ts";
 export {
 	HarnessAgentExecutor,

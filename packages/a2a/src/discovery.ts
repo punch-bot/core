@@ -16,10 +16,10 @@ export interface LocalA2aDiscoveryOptions {
 	dir: string;
 	ttlMs?: number;
 	now?: () => number;
-	isAlive?: (pid: number) => boolean;
 }
 
 const DEFAULT_TTL_MS = 45_000;
+const ID_PATTERN = /^[A-Za-z0-9._-]+$/;
 
 export function defaultA2aDiscoveryDir(env: NodeJS.ProcessEnv = process.env): string {
 	const configured = env.PUNCH_A2A_DISCOVERY_DIR;
@@ -34,15 +34,6 @@ function currentUid(): string | number {
 	return "user";
 }
 
-export function pidAlive(pid: number): boolean {
-	try {
-		process.kill(pid, 0);
-		return true;
-	} catch {
-		return false;
-	}
-}
-
 function isHttpUrl(value: string): boolean {
 	try {
 		const url = new URL(value);
@@ -55,7 +46,7 @@ function isHttpUrl(value: string): boolean {
 function parseRecord(raw: unknown): A2aPeerRecord | undefined {
 	if (!raw || typeof raw !== "object") return undefined;
 	const value = raw as Record<string, unknown>;
-	if (typeof value.id !== "string" || value.id.length === 0) return undefined;
+	if (typeof value.id !== "string" || !ID_PATTERN.test(value.id)) return undefined;
 	if (typeof value.name !== "string" || value.name.trim().length === 0) return undefined;
 	if (typeof value.url !== "string" || !isHttpUrl(value.url)) return undefined;
 	if (typeof value.pid !== "number" || !Number.isInteger(value.pid) || value.pid <= 0) return undefined;
@@ -88,11 +79,15 @@ function unlinkQuiet(file: string): void {
 	}
 }
 
+function leasePath(dir: string, id: string): string {
+	if (!ID_PATTERN.test(id)) throw new Error("Invalid A2A peer id.");
+	return path.join(dir, `${id}.json`);
+}
+
 export class LocalA2aDiscovery {
 	readonly dir: string;
 	private readonly ttlMs: number;
 	private readonly now: () => number;
-	private readonly isAlive: (pid: number) => boolean;
 	private record: A2aPeerRecord | undefined;
 	private filePath: string | undefined;
 
@@ -100,7 +95,6 @@ export class LocalA2aDiscovery {
 		this.dir = path.resolve(options.dir);
 		this.ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
 		this.now = options.now ?? Date.now;
-		this.isAlive = options.isAlive ?? pidAlive;
 	}
 
 	advertise(input: Omit<A2aPeerRecord, "updatedAt">): A2aPeerRecord {
@@ -108,7 +102,7 @@ export class LocalA2aDiscovery {
 		if (!record.name) throw new Error("A2A peer name is required.");
 		if (!isHttpUrl(record.url)) throw new Error("A2A peer URL must be absolute http(s).");
 		this.record = record;
-		this.filePath = path.join(this.dir, `${record.id}.json`);
+		this.filePath = leasePath(this.dir, record.id);
 		atomicWrite(this.filePath, record);
 		return record;
 	}
@@ -120,7 +114,7 @@ export class LocalA2aDiscovery {
 		return this.record;
 	}
 
-	list(options?: { excludeId?: string; excludePid?: number }): A2aPeerRecord[] {
+	list(options?: { excludeId?: string }): A2aPeerRecord[] {
 		mkdirSync(this.dir, { recursive: true, mode: 0o700 });
 		let entries: string[];
 		try {
@@ -131,11 +125,11 @@ export class LocalA2aDiscovery {
 		}
 		const now = this.now();
 		const excludeId = options?.excludeId ?? this.record?.id;
-		const excludePid = options?.excludePid;
 		const peers: A2aPeerRecord[] = [];
 		for (const entry of entries) {
 			if (!entry.endsWith(".json")) continue;
 			const file = path.join(this.dir, entry);
+			if (path.dirname(file) !== this.dir) continue;
 			let parsed: unknown;
 			try {
 				parsed = JSON.parse(readFileSync(file, "utf8"));
@@ -145,21 +139,24 @@ export class LocalA2aDiscovery {
 			const record = parseRecord(parsed);
 			if (!record) continue;
 			if (excludeId && record.id === excludeId) continue;
-			if (excludePid !== undefined && record.pid === excludePid) continue;
-			const stale = now - record.updatedAt > this.ttlMs;
-			const dead = !this.isAlive(record.pid);
-			if (stale || dead) {
+			if (now - record.updatedAt <= this.ttlMs) {
+				peers.push(record);
+				continue;
+			}
+			let latest = record;
+			try {
+				latest = parseRecord(JSON.parse(readFileSync(file, "utf8"))) ?? record;
+			} catch {}
+			if (now - latest.updatedAt > this.ttlMs) {
 				try {
 					unlinkQuiet(file);
 				} catch {}
-				continue;
 			}
-			peers.push(record);
 		}
 		return peers.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
 	}
 
-	find(name: string, options?: { excludeId?: string; excludePid?: number }): A2aPeerRecord | undefined {
+	find(name: string, options?: { excludeId?: string }): A2aPeerRecord | undefined {
 		const lowered = name.trim().toLowerCase();
 		if (!lowered) return undefined;
 		const matches = this.list(options).filter((peer) => peer.name.toLowerCase() === lowered);

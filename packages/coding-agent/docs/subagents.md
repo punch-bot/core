@@ -28,7 +28,7 @@ System instructions for the agent.
 
 Omit `model` to inherit the parent session's model and thinking level. Set `a2aUrl` to delegate through A2A instead of starting a local `pi` process.
 
-Punch sandboxes on the same machine also advertise an A2A listener automatically. Use the `a2a` tool (`list` / `send`) to talk to those peers by sandbox name without configuring `a2aUrl`.
+Punch sandboxes on the same machine also advertise an A2A listener when `SANDBOX_NAME` is set (or `PUNCH_A2A=1`). Use the `a2a` tool (`list` / `send`) to talk to those peers by sandbox name without configuring `a2aUrl`.
 
 ## Project agents and trust
 

@@ -24,17 +24,18 @@ export interface CreateA2aServerOptions {
 
 export interface A2aServer {
 	app: Express;
-	requestHandler: DefaultRequestHandler;
+	requestHandler: DefaultRequestHandler | undefined;
 	listen(port?: number, host?: string): Promise<A2aListenAddress>;
 	close(): Promise<void>;
 	address(): A2aListenAddress | undefined;
+	unref(): void;
 }
 
 export async function createA2aServer(options: CreateA2aServerOptions): Promise<A2aServer> {
 	const taskStore = new InMemoryTaskStore();
 	const agentExecutor = new HarnessAgentExecutor(options.runnerFactory);
 	const app = express();
-	let requestHandler!: DefaultRequestHandler;
+	let requestHandler: DefaultRequestHandler | undefined;
 	let routesMounted = false;
 	let server: ReturnType<Express["listen"]> | undefined;
 	let bound: A2aListenAddress | undefined;
@@ -86,6 +87,9 @@ export async function createA2aServer(options: CreateA2aServerOptions): Promise<
 		},
 		address() {
 			return bound;
+		},
+		unref() {
+			server?.unref();
 		},
 		close() {
 			return new Promise((resolve, reject) => {

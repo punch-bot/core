@@ -47,7 +47,7 @@ discovery.advertise({
 const bob = discovery.find("bob");
 ```
 
-Stale leases and dead PIDs are dropped on list. Docker sandboxes that do not share loopback should set `PUNCH_A2A_DISCOVERY_DIR` to a shared volume and advertise a reachable URL.
+Stale leases (past TTL without a heartbeat) are dropped on list. Docker sandboxes that do not share loopback should set `PUNCH_A2A_DISCOVERY_DIR` to a shared volume and advertise a reachable URL.
 
 ## Client
 

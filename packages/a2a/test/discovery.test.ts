@@ -37,17 +37,8 @@ describe("defaultA2aDiscoveryDir", () => {
 describe("LocalA2aDiscovery", () => {
 	test("advertises and discovers peers in the same directory", () => {
 		const dir = tempDir();
-		const alive = new Set([11, 22]);
-		const alice = new LocalA2aDiscovery({
-			dir,
-			now: () => 1_000,
-			isAlive: (pid) => alive.has(pid),
-		});
-		const bob = new LocalA2aDiscovery({
-			dir,
-			now: () => 1_000,
-			isAlive: (pid) => alive.has(pid),
-		});
+		const alice = new LocalA2aDiscovery({ dir, now: () => 1_000 });
+		const bob = new LocalA2aDiscovery({ dir, now: () => 1_000 });
 
 		alice.advertise({
 			id: "alice-id",
@@ -80,28 +71,12 @@ describe("LocalA2aDiscovery", () => {
 		expect(alice.find("missing")).toBeUndefined();
 	});
 
-	test("drops stale and dead advertisements", () => {
+	test("drops stale advertisements using TTL, not PID liveness", () => {
 		const dir = tempDir();
 		let now = 1_000;
-		const alive = new Set([11, 22]);
-		const alice = new LocalA2aDiscovery({
-			dir,
-			ttlMs: 100,
-			now: () => now,
-			isAlive: (pid) => alive.has(pid),
-		});
-		const bob = new LocalA2aDiscovery({
-			dir,
-			ttlMs: 100,
-			now: () => now,
-			isAlive: (pid) => alive.has(pid),
-		});
-		const carol = new LocalA2aDiscovery({
-			dir,
-			ttlMs: 100,
-			now: () => now,
-			isAlive: (pid) => alive.has(pid),
-		});
+		const alice = new LocalA2aDiscovery({ dir, ttlMs: 100, now: () => now });
+		const bob = new LocalA2aDiscovery({ dir, ttlMs: 100, now: () => now });
+		const carol = new LocalA2aDiscovery({ dir, ttlMs: 100, now: () => now });
 
 		alice.advertise({
 			id: "alice-id",
@@ -125,12 +100,24 @@ describe("LocalA2aDiscovery", () => {
 			startedAt: now,
 		});
 
-		alive.delete(33);
 		now = 1_050;
+		bob.heartbeat();
+		now = 1_101;
 		expect(alice.list().map((peer) => peer.name)).toEqual(["bob"]);
+	});
 
-		now = 1_200;
-		expect(alice.list()).toEqual([]);
+	test("rejects peer ids that would escape the discovery directory", () => {
+		const dir = tempDir();
+		const alice = new LocalA2aDiscovery({ dir, now: () => 1 });
+		expect(() =>
+			alice.advertise({
+				id: "../escape",
+				name: "alice",
+				url: "http://127.0.0.1:1/",
+				pid: 11,
+				startedAt: 1,
+			}),
+		).toThrow("Invalid A2A peer id.");
 	});
 
 	test("discovered peers are reachable over A2A", async () => {
@@ -144,8 +131,8 @@ describe("LocalA2aDiscovery", () => {
 			}),
 		});
 		const bound = await server.listen(0, "127.0.0.1");
-		const alice = new LocalA2aDiscovery({ dir, isAlive: () => true });
-		const bob = new LocalA2aDiscovery({ dir, isAlive: () => true });
+		const alice = new LocalA2aDiscovery({ dir });
+		const bob = new LocalA2aDiscovery({ dir });
 		try {
 			bob.advertise({
 				id: "bob-id",
@@ -167,8 +154,8 @@ describe("LocalA2aDiscovery", () => {
 
 	test("close removes the local advertisement", () => {
 		const dir = tempDir();
-		const alice = new LocalA2aDiscovery({ dir, now: () => 1, isAlive: () => true });
-		const bob = new LocalA2aDiscovery({ dir, now: () => 1, isAlive: () => true });
+		const alice = new LocalA2aDiscovery({ dir, now: () => 1 });
+		const bob = new LocalA2aDiscovery({ dir, now: () => 1 });
 		alice.advertise({
 			id: "alice-id",
 			name: "alice",

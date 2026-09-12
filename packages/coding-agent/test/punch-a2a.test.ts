@@ -77,8 +77,8 @@ describe("installA2a", () => {
 	it("lists and sends to a discovered local sandbox", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "punch-a2a-"));
 		dirs.push(dir);
-		const aliceDiscovery = new LocalA2aDiscovery({ dir, isAlive: () => true });
-		const bobDiscovery = new LocalA2aDiscovery({ dir, isAlive: () => true });
+		const aliceDiscovery = new LocalA2aDiscovery({ dir });
+		const bobDiscovery = new LocalA2aDiscovery({ dir });
 		const server = await createA2aServer({
 			name: "bob",
 			runnerFactory: () => ({

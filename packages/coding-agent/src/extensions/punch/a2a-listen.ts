@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 
-import { createA2aServer, defaultA2aDiscoveryDir, LocalA2aDiscovery } from "@punch-bot/a2a";
+import { createA2aServer, type LocalA2aDiscovery } from "@punch-bot/a2a";
 
 import { createCodingAgentHarnessRunnerFactory } from "../../server/a2a/harness-runner.ts";
-import { punchSandboxName } from "./a2a.ts";
+import { punchA2aDiscovery, punchSandboxName } from "./a2a.ts";
 
 const HEARTBEAT_MS = 15_000;
 
@@ -31,7 +31,7 @@ export async function startPunchA2aListener(
 	if (processA2a) return processA2a;
 	if (processA2aStart) return processA2aStart;
 	processA2aStart = (async () => {
-		const registry = discovery ?? new LocalA2aDiscovery({ dir: defaultA2aDiscoveryDir(env) });
+		const registry = discovery ?? punchA2aDiscovery(env);
 		const host = env.PUNCH_A2A_HOST || "127.0.0.1";
 		const port = parseListenPort(env);
 		const name = punchSandboxName(env);
@@ -47,6 +47,7 @@ export async function startPunchA2aListener(
 		});
 		try {
 			const bound = await server.listen(port, host);
+			server.unref();
 			const url = advertiseUrl || bound.url;
 			registry.advertise({
 				id: randomUUID(),
@@ -57,7 +58,11 @@ export async function startPunchA2aListener(
 				startedAt: Date.now(),
 			});
 			const timer = setInterval(() => {
-				registry.heartbeat();
+				try {
+					registry.heartbeat();
+				} catch (err) {
+					console.warn(`punch a2a heartbeat failed: ${(err as Error).message}`);
+				}
 			}, HEARTBEAT_MS);
 			timer.unref();
 			const close = async () => {
@@ -81,4 +86,12 @@ export async function startPunchA2aListener(
 		return undefined;
 	});
 	return processA2aStart;
+}
+
+export async function stopPunchA2aListener(): Promise<void> {
+	const pending = processA2aStart;
+	processA2aStart = undefined;
+	const runtime = processA2a ?? (await pending);
+	processA2a = undefined;
+	await runtime?.close();
 }

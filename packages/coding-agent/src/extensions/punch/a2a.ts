@@ -5,7 +5,6 @@ import {
 	LocalA2aDiscovery,
 } from "@punch-bot/a2a";
 import type { AgentMessage } from "@punch-bot/agent";
-import { StringEnum } from "@punch-bot/ai";
 import { Type } from "typebox";
 
 import type { ExtensionAPI } from "../../core/extensions/types.ts";
@@ -49,15 +48,21 @@ export function formatA2aPeers(peers: readonly A2aPeerRecord[]): string {
 		.join("\n");
 }
 
+let sharedDiscovery: LocalA2aDiscovery | undefined;
+
+export function punchA2aDiscovery(env: NodeJS.ProcessEnv = process.env): LocalA2aDiscovery {
+	sharedDiscovery ??= new LocalA2aDiscovery({ dir: defaultA2aDiscoveryDir(env) });
+	return sharedDiscovery;
+}
+
 export function installA2a(pi: ExtensionAPI, options: InstallPunchA2aOptions = {}): void {
 	const env = options.env ?? process.env;
 	if (!isPunchA2aEnabled(env)) return;
 
-	const discovery = options.discovery ?? new LocalA2aDiscovery({ dir: defaultA2aDiscoveryDir(env) });
-	const excludePid = process.pid;
+	const discovery = options.discovery ?? punchA2aDiscovery(env);
 
 	pi.on("context", (event) => {
-		const peers = discovery.list({ excludePid });
+		const peers = discovery.list();
 		if (peers.length === 0) return;
 		const message: AgentMessage = {
 			role: "custom",
@@ -80,18 +85,18 @@ export function installA2a(pi: ExtensionAPI, options: InstallPunchA2aOptions = {
 			"Use a2a with action=send to ask a named local sandbox to do work.",
 		],
 		parameters: Type.Object({
-			action: StringEnum(["list", "send"] as const),
+			action: Type.Union([Type.Literal("list"), Type.Literal("send")]),
 			name: Type.Optional(Type.String({ description: "Sandbox name, for send" })),
 			task: Type.Optional(Type.String({ description: "Work to send to the peer sandbox" })),
 		}),
 		async execute(_toolCallId, args, signal, onUpdate) {
 			if (args.action === "list") {
-				const peers = discovery.list({ excludePid });
+				const peers = discovery.list();
 				return { content: [{ type: "text", text: formatA2aPeers(peers) }], details: { peers } };
 			}
 			if (!args.name?.trim()) throw new Error("name is required to send");
 			if (!args.task?.trim()) throw new Error("task is required to send");
-			const peer = discovery.find(args.name, { excludePid });
+			const peer = discovery.find(args.name);
 			if (!peer) throw new Error(`No local punch sandbox named "${args.name.trim()}"`);
 			const result = await delegateToA2aAgentPreferStream({ url: peer.url, task: args.task, signal }, (text) => {
 				onUpdate?.({
