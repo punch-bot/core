@@ -1,4 +1,4 @@
-import type { ExtensionCommandContext } from "../../core/extensions/types.ts";
+import type { ExtensionCommandContext, ExtensionUIDialogOptions } from "../../core/extensions/types.ts";
 import type { LlamaModelInfo, LlamaProgress } from "./client.ts";
 import type { HuggingFaceModel } from "./huggingface.ts";
 
@@ -34,7 +34,7 @@ function modelLabel(model: LlamaModelInfo): string {
 export interface LlamaUi {
 	showModels(serverUrl: string, models: LlamaModelInfo[]): Promise<LlamaManagerAction>;
 	select(title: string, options: string[]): Promise<string | undefined>;
-	confirm(title: string, message: string): Promise<boolean>;
+	confirm(title: string, message: string, opts?: ExtensionUIDialogOptions): Promise<boolean>;
 	connectionError(serverUrl: string, message: string): Promise<"retry" | "close">;
 	searchModels(
 		search: (query: string, signal: AbortSignal) => Promise<HuggingFaceModel[]>,
@@ -64,8 +64,8 @@ class DialogLlamaUi implements LlamaUi {
 		return this.ctx.ui.select(title, options);
 	}
 
-	confirm(title: string, message: string): Promise<boolean> {
-		return this.ctx.ui.confirm(title, message);
+	confirm(title: string, message: string, opts?: ExtensionUIDialogOptions): Promise<boolean> {
+		return this.ctx.ui.confirm(title, message, opts);
 	}
 
 	async connectionError(serverUrl: string, message: string): Promise<"retry" | "close"> {
@@ -137,26 +137,47 @@ export async function runWithProgress<T>(
 	ui.updateProgress(state);
 	const settled = options
 		.run(controller.signal, (progress) => {
-			Object.assign(state, progress);
+			state.message = progress.message;
+			state.ratio = progress.ratio;
+			state.detail = progress.detail;
 			ui.updateProgress(state);
 		})
 		.then(
 			(value) => ({ ok: true as const, value }),
 			(error: unknown) => ({ ok: false as const, error }),
 		);
-	const outcome = await Promise.race([
-		settled.then((result) => ({ kind: "settled" as const, result })),
-		ui.confirm(options.cancelTitle, options.cancelMessage).then((stop) => ({ kind: "cancel" as const, stop })),
-	]);
-	if (outcome.kind === "cancel" && outcome.stop) {
-		try {
-			await options.cancel();
-		} finally {
-			controller.abort(new Error("Cancelled"));
+	let completed = false;
+	void settled.finally(() => {
+		completed = true;
+	});
+
+	while (!completed) {
+		const dialogAbort = new AbortController();
+		const started = Date.now();
+		const outcome = await Promise.race([
+			settled.then(() => "settled" as const),
+			ui
+				.confirm(options.cancelTitle, options.cancelMessage, { signal: dialogAbort.signal })
+				.then((stop) => (stop ? ("stop" as const) : ("keep" as const))),
+		]);
+		dialogAbort.abort();
+		if (outcome === "settled") break;
+		if (outcome === "stop" && !completed) {
+			try {
+				await options.cancel();
+			} finally {
+				controller.abort(new Error("Cancelled"));
+			}
+			await settled;
+			return { cancelled: true };
 		}
-		await settled;
-		return { cancelled: true };
+		// Instant false means a no-op UI (print mode). Wait for the job instead of spinning.
+		if (Date.now() - started < 50) {
+			await settled;
+			break;
+		}
 	}
+
 	const result = await settled;
 	if (!result.ok) {
 		if (controller.signal.aborted) return { cancelled: true };

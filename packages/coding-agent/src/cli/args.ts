@@ -321,23 +321,17 @@ ${chalk.bold("Examples:")}
   # Print an OAuth bearer token for an external client (refreshes if expired)
   ${APP_NAME} auth print-bearer-token --provider openai-codex
 
-  # Interactive mode
-  ${APP_NAME}
-
-  # Interactive mode with initial prompt
-  ${APP_NAME} "List all .ts files in src/"
-
-  # Include files in initial message
-  ${APP_NAME} @prompt.md @image.png "What color is the sky?"
-
-  # Non-interactive mode (process and exit)
+  # Print mode (default)
   ${APP_NAME} -p "List all .ts files in src/"
+
+  # Include files in the prompt
+  ${APP_NAME} -p @prompt.md @image.png "What color is the sky?"
 
   # Prompt beginning with a dash
   ${APP_NAME} -p -- "- Summarize these points"
 
-  # Multiple messages (interactive)
-  ${APP_NAME} "Read package.json" "What dependencies do we have?"
+  # RPC mode for process integration
+  ${APP_NAME} --mode rpc
 
   # Continue previous session
   ${APP_NAME} --continue "What did we discuss?"
