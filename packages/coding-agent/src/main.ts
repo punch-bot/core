@@ -144,7 +144,15 @@ async function runAuthCommand(args: string[]): Promise<boolean> {
 	}
 	try {
 		if (parsed.diagnostics.length > 0) {
-			throw new AuthCommandError(parsed.diagnostics.map((diagnostic) => diagnostic.message).join("\n"));
+			const errors = parsed.diagnostics.filter((diagnostic) => diagnostic.type === "error");
+			for (const diagnostic of parsed.diagnostics) {
+				if (diagnostic.type === "warning") {
+					console.error(chalk.yellow(`Warning: ${diagnostic.message}`));
+				}
+			}
+			if (errors.length > 0) {
+				throw new AuthCommandError(errors.map((diagnostic) => diagnostic.message).join("\n"));
+			}
 		}
 		if (command.kind !== "check") {
 			const signal = AbortSignal.timeout(15_000);
@@ -361,7 +369,19 @@ export async function createSessionManager(
 		const resolved = await resolveSessionPath(parsed.session, cwd, sessionDir);
 
 		switch (resolved.type) {
-			case "path":
+			case "path": {
+				const session = openSessionOrExit(resolved.path, sessionDir);
+				if (session.getCwd() && resolvePath(session.getCwd()) !== resolvePath(cwd)) {
+					console.error(
+						chalk.red(
+							`Session found in different project: ${session.getCwd()}. Use --fork ${parsed.session} to copy it into the current directory.`,
+						),
+					);
+					process.exit(1);
+				}
+				return session;
+			}
+
 			case "local":
 				return openSessionOrExit(resolved.path, sessionDir);
 
@@ -372,7 +392,7 @@ export async function createSessionManager(
 					),
 				);
 				process.exit(1);
-				return SessionManager.inMemory(cwd);
+				break;
 			}
 
 			case "not_found":
