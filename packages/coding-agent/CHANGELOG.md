@@ -5,6 +5,7 @@
 ### Breaking Changes
 
 - Removed interactive TUI mode and the `@punch-bot/tui` dependency. `@punch-bot/cli` is headless: RPC (`--mode rpc` / `rpc-entry`), print/JSON, and the programmatic SDK remain. Extension APIs that rendered TUI components (`renderCall`, `renderResult`, custom editors/footers/headers, `InteractiveMode`) are gone.
+- `pi config` no longer opens a resource-toggle UI. It prints resolved package paths as JSON. Enable or disable resources in settings.json, or use `pi install` / `pi remove`.
 
 ### Added
 

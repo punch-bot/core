@@ -30,17 +30,10 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 
 | Extension | Description |
 |-----------|-------------|
-| `todo.ts` | Todo list tool + `/todos` command with custom rendering and state persistence |
 | `hello.ts` | Minimal custom tool example |
-| `question.ts` | Demonstrates `ctx.ui.select()` for asking the user questions with custom UI |
-| `questionnaire.ts` | Multi-question input with tab bar navigation between questions |
 | `tool-override.ts` | Override built-in tools (e.g., add logging/access control to `read`) |
 | `dynamic-tools.ts` | Register tools after startup (`session_start`) and at runtime via command, with prompt snippets and tool-specific prompt guidelines |
 | `kimi-deferred-tools.ts` | Search for and progressively activate tools for Kimi's deferred-tool loading protocol |
-| `structured-output.ts` | Final structured-output tool that returns `terminate: true` so the agent can end on the tool call |
-| `built-in-tool-renderer.ts` | Custom compact rendering for built-in tools (read, bash, edit, write) while keeping original behavior |
-| `minimal-mode.ts` | Override built-in tool rendering for minimal display (only tool calls, no output in collapsed mode) |
-| `truncated-tool.ts` | Wraps ripgrep with proper output truncation (50KB/2000 lines) |
 | `ssh.ts` | Delegate all tools to a remote machine via SSH using pluggable operations |
 | `subagent/` | Delegate tasks to specialized subagents with isolated context windows |
 
@@ -48,35 +41,18 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 
 | Extension | Description |
 |-----------|-------------|
-| `preset.ts` | Named presets for model, thinking level, tools, and instructions via `--preset` flag and `/preset` command |
-| `plan-mode/` | Claude Code-style plan mode for read-only exploration with `/plan` command and step tracking |
-| `tools.ts` | Interactive `/tools` command to enable/disable tools with session persistence |
-| `handoff.ts` | Transfer context to a new focused session via `/handoff <goal>` |
-| `qna.ts` | Extracts questions from last response into editor via `ctx.ui.setEditorText()` |
-| `status-line.ts` | Shows turn progress in footer via `ctx.ui.setStatus()` with themed colors |
-| `github-issue-autocomplete.ts` | Adds `#1234` issue completions by stacking a custom autocomplete provider that preloads open issues from `gh issue list` |
-| `widget-placement.ts` | Shows widgets above and below the editor via `ctx.ui.setWidget()` placement |
+| `status-line.ts` | Shows turn progress via `ctx.ui.setStatus()` |
+| `widget-placement.ts` | Shows widgets via `ctx.ui.setWidget()` |
 | `hidden-thinking-label.ts` | Customizes the collapsed thinking label via `ctx.ui.setHiddenThinkingLabel()` |
 | `working-indicator.ts` | Customizes the streaming working indicator via `ctx.ui.setWorkingIndicator()` |
 | `model-status.ts` | Shows model changes in status bar via `model_select` hook |
-| `snake.ts` | Snake game with custom UI, keyboard handling, and session persistence |
-| `tic-tac-toe.ts` | Tic-tac-toe vs the agent with `executionMode: "sequential"` tools to prevent race conditions on shared cursor state |
 | `send-user-message.ts` | Demonstrates `pi.sendUserMessage()` for sending user messages from extensions |
 | `timed-confirm.ts` | Demonstrates AbortSignal for auto-dismissing `ctx.ui.confirm()` and `ctx.ui.select()` dialogs |
-| `rpc-demo.ts` | Exercises all RPC-supported extension UI methods; pair with [`examples/rpc-extension-ui.ts`](../rpc-extension-ui.ts) |
-| `modal-editor.ts` | Custom vim-like modal editor via `ctx.ui.setEditorComponent()` |
-| `rainbow-editor.ts` | Animated rainbow text effect via custom editor |
+| `rpc-demo.ts` | Exercises RPC-supported extension UI methods |
 | `notify.ts` | Desktop notifications via OSC 777 when agent finishes (Ghostty, iTerm2, WezTerm) |
 | `titlebar-spinner.ts` | Braille spinner animation in terminal title while the agent is working |
-| `summarize.ts` | Summarize conversation with GPT-5.2 and show in transient UI |
-| `custom-footer.ts` | Custom footer with git branch and token stats via `ctx.ui.setFooter()` |
-| `custom-header.ts` | Custom header via `ctx.ui.setHeader()` |
-| `overlay-test.ts` | Test overlay compositing with inline text inputs and edge cases |
-| `overlay-qa-tests.ts` | Comprehensive overlay QA tests: anchors, margins, stacking, overflow, animation |
-| `doom-overlay/` | DOOM game running as an overlay at 35 FPS (demonstrates real-time game rendering) |
 | `shutdown-command.ts` | Adds `/quit` command demonstrating `ctx.shutdown()` |
 | `reload-runtime.ts` | Adds `/reload-runtime` and `reload_runtime` tool showing safe reload flow |
-| `interactive-shell.ts` | Run interactive commands (vim, htop) with full terminal via `user_bash` hook |
 | `inline-bash.ts` | Expands `!{command}` patterns in prompts via `input` event transformation |
 | `input-transform-streaming.ts` | Skips expensive input preprocessing for mid-stream steering via `streamingBehavior` |
 
@@ -112,8 +88,6 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 
 | Extension | Description |
 |-----------|-------------|
-| `message-renderer.ts` | Custom message rendering with colors and expandable details via `registerMessageRenderer` |
-| `entry-renderer.ts` | TUI-only session entry rendering via `appendEntry` and `registerEntryRenderer` |
 | `event-bus.ts` | Inter-extension communication via `pi.events` |
 
 ### Session Metadata
