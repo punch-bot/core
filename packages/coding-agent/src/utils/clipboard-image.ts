@@ -1,11 +1,9 @@
-import { getNativeClipboard } from "@punch-bot/tui";
 import { randomUUID } from "crypto";
 import { readFileSync, unlinkSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
 import { runClipboardCommand } from "./clipboard-command.ts";
-import { detectSupportedImageMimeType } from "./mime.ts";
 import { loadPhoton } from "./photon.ts";
 
 export type ClipboardImage = {
@@ -210,10 +208,7 @@ async function readClipboardImageViaXclip(): Promise<ClipboardImage | null | und
 }
 
 async function readClipboardImageViaNativeClipboard(): Promise<ClipboardImage | null | undefined> {
-	const bytes = await getNativeClipboard()?.getImage();
-	if (bytes === undefined) return undefined;
-	if (!bytes?.length) return null;
-	return { bytes, mimeType: detectSupportedImageMimeType(bytes) ?? "application/octet-stream" };
+	return undefined;
 }
 
 export async function readClipboardImage(options?: {
