@@ -97,3 +97,17 @@ These variables are read by Pi itself:
 Provider credentials such as `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and cloud-provider configuration are listed in [Providers](providers.md#environment-variables-or-auth-file).
 
 `PI_SERVER_DIR` and `PI_SERVER_ID` apply only to the source-only [experimental remote harness](development.md#experimental-remote-harness), not distributed builds.
+
+## Punch sandbox A2A discovery
+
+When `SANDBOX_NAME` is set, or `PUNCH_A2A=1`, a punch sandbox starts a loopback A2A server and advertises it so other sandboxes on the same machine can connect. Set `PUNCH_A2A=0` to disable.
+
+| Variable | Description |
+|----------|-------------|
+| `SANDBOX_NAME` | Sandbox identity used in A2A advertisements and collab |
+| `PUNCH_A2A` | `1` enables discovery without `SANDBOX_NAME`; `0` disables it |
+| `PUNCH_A2A_DISCOVERY_DIR` | Directory for advertisement files; default is `$XDG_RUNTIME_DIR/punch/a2a` or a per-user temp dir |
+| `PUNCH_A2A_HOST` | Bind host for the A2A listener; default `127.0.0.1` |
+| `PUNCH_A2A_PORT` | Bind port; default `0` (ephemeral) |
+| `PUNCH_A2A_ADVERTISE_HOST` | Host written into the advertised URL when it should differ from the bind address |
+| `PUNCH_A2A_ADVERTISE_URL` | Full advertised A2A URL override |

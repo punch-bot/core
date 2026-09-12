@@ -7,6 +7,13 @@ export {
 	delegateToA2aAgentStream,
 } from "./client.ts";
 export {
+	type A2aPeerRecord,
+	defaultA2aDiscoveryDir,
+	LocalA2aDiscovery,
+	type LocalA2aDiscoveryOptions,
+	pidAlive,
+} from "./discovery.ts";
+export {
 	HarnessAgentExecutor,
 	type HarnessPromptError,
 	type HarnessPromptOutcome,
@@ -15,5 +22,11 @@ export {
 	type HarnessPromptRunnerFactory,
 	isHarnessPromptError,
 } from "./executor.ts";
+export { formatA2aHttpUrl } from "./http-url.ts";
 export { createTextMessage, extractTextFromMessage, extractTextFromPart } from "./message.ts";
-export { type A2aServer, type CreateA2aServerOptions, createA2aServer } from "./server.ts";
+export {
+	type A2aListenAddress,
+	type A2aServer,
+	type CreateA2aServerOptions,
+	createA2aServer,
+} from "./server.ts";
