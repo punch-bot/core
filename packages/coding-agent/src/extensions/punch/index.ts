@@ -70,23 +70,25 @@ function workspaceFor(collab: { workspaces: Record<string, string> }, actorKey: 
 }
 
 export default function punchExtension(pi: ExtensionAPI): void {
-	startScheduler(async (routine) => {
-		switch (routine.type) {
-			case "message":
-				pi.sendUserMessage(routine.payload);
-				break;
-			case "heartbeat":
-				pi.sendUserMessage(`heartbeat: ${routine.payload}`);
-				break;
-			case "llm":
-				pi.sendUserMessage(routine.payload);
-				break;
+	if (process.env.PUNCH_EMBEDDED_SERVER !== "0") {
+		startScheduler(async (routine) => {
+			switch (routine.type) {
+				case "message":
+					pi.sendUserMessage(routine.payload);
+					break;
+				case "heartbeat":
+					pi.sendUserMessage(`heartbeat: ${routine.payload}`);
+					break;
+				case "llm":
+					pi.sendUserMessage(routine.payload);
+					break;
+			}
+		});
+		if (!isAuthConfigured()) {
+			console.warn("punch server disabled: no auth credentials configured");
 		}
-	});
-	if (!isAuthConfigured()) {
-		console.warn("punch server disabled: no auth credentials configured");
+		startPunchServer();
 	}
-	startPunchServer();
 	installTodos(pi);
 
 	pi.registerTool({

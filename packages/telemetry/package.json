@@ -34,7 +34,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/earendil-works/pi.git",
+		"url": "git+https://github.com/punch-bot/core.git",
 		"directory": "packages/telemetry"
 	},
 	"engines": {

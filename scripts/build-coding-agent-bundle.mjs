@@ -30,6 +30,13 @@ const allowedExternalPackages = new Set([
 	"kerberos",
 	// Optional debug output coloring.
 	"supports-color",
+	// Playwright pulls optional native/desktop deps (fsevents, electron,
+	// chromium-bidi) and is a declared runtime dependency, so keep it external.
+	"playwright",
+	"playwright-core",
+	// esbuild's placeholder for dynamic require() calls left in place, e.g.
+	// express's lazy view-engine loader.
+	"<runtime>",
 ]);
 
 const lazyJitiPlugin = {
@@ -86,7 +93,7 @@ function commonBuildOptions() {
 		banner,
 		bundle: true,
 		define: { PI_BUNDLED_NODE: "true" },
-		external: ["@punch-bot/chord", "@silvia-odwyer/photon-node"],
+		external: ["@punch-bot/chord", "@silvia-odwyer/photon-node", "playwright", "playwright-core"],
 		format: "esm",
 		legalComments: "none",
 		logLevel: "warning",
