@@ -281,9 +281,9 @@ ${chalk.bold("Options:")}
   --system-prompt <text>         System prompt (default: coding assistant prompt)
   --append-system-prompt <text>  Append text or file contents to the system prompt (can be used multiple times)
   --mode <mode>                  Output mode: text (default), json, or rpc
-  --print, -p                    Non-interactive mode: process prompt and exit
+  --print, -p                    Process prompt and exit
   --continue, -c                 Continue previous session
-  --resume, -r                   Select a session to resume
+  --resume, -r                   Continue the most recent session
   --session <path|id>            Use specific session file or partial UUID
   --session-id <id>              Use exact project session ID, creating it if missing
   --fork <path|id>               Fork specific session file or partial UUID into a new session
@@ -306,13 +306,12 @@ ${chalk.bold("Options:")}
   --prompt-template <path>       Load a prompt template file or directory (can be used multiple times)
   --no-prompt-templates, -np     Disable prompt template discovery and loading
   --theme <path>                 Load a theme file or directory (can be used multiple times)
-  --use-theme <name[/name]>      Set the initial interactive theme for this run
+  --use-theme <name[/name]>      Set the theme for this run
   --no-themes                    Disable theme discovery and loading
   --no-context-files, -nc        Disable AGENTS.md and CLAUDE.md discovery and loading
   --export <file>                Export session file to HTML and exit
   --list-models [search]         List available models (with optional fuzzy search)
   --verbose                      Force verbose startup (overrides quietStartup setting)
-  --tui-mode <mode>              TUI mode: regular (default) or fullscreen
   --approve, -a                  Trust project-local files for this run
   --no-approve, -na              Ignore project-local files for this run
   --offline                      Disable startup network operations (same as PI_OFFLINE=1)

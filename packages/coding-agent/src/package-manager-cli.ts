@@ -263,12 +263,14 @@ function printConfigCommandHelp(): void {
 	console.log(`${chalk.bold("Usage:")}
   ${CONFIG_COMMAND_USAGE}
 
-Open the resource configuration TUI to enable or disable package resources.
-Without -l, starts in global settings (~/${CONFIG_DIR_NAME}/agent/settings.json).
-Press Tab in the TUI to switch between global and project-local modes.
+Print resolved package resource paths as JSON.
+Enable or disable resources by editing settings.json, or use install/remove.
+
+Without -l, prints global settings (~/${CONFIG_DIR_NAME}/agent/settings.json).
+With -l, prints project overrides when the project is trusted.
 
 Options:
-  -l, --local       Edit project overrides (${CONFIG_DIR_NAME}/settings.json)
+  -l, --local       Use project overrides (${CONFIG_DIR_NAME}/settings.json)
   -a, --approve     Trust project-local files for this command with -l
   -na, --no-approve Ignore project-local files for this command with -l
 `);
@@ -705,7 +707,7 @@ interface CommandSettingsResult {
 }
 
 function getCommandAppMode(): AppMode {
-	return process.stdin.isTTY && process.stdout.isTTY ? "interactive" : "print";
+	return "print";
 }
 
 function reportProjectTrustWarnings(warnings: readonly string[]): void {
@@ -754,7 +756,7 @@ async function createCommandSettingsManager(options: {
 			cwd: options.cwd,
 			mode: appMode,
 			settingsManager,
-			hasUI: appMode === "interactive",
+			hasUI: false,
 		}),
 		onExtensionError: (message) => projectTrustWarnings.push(message),
 	});
