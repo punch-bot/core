@@ -26,6 +26,7 @@ export default mergeConfig(
 				{ find: /^@mariozechner\/pi-ai$/, replacement: workspaceSourcePaths.aiIndex },
 				{ find: /^@mariozechner\/pi-ai\/oauth$/, replacement: workspaceSourcePaths.aiOAuth },
 				{ find: /^@mariozechner\/pi-agent-core$/, replacement: workspaceSourcePaths.agentIndex },
+				{ find: /^@punch-bot\/a2a$/, replacement: workspaceSourcePaths.a2aIndex },
 			],
 		},
 	}),
