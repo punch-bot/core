@@ -4,6 +4,8 @@ import { StringEnum } from "@punch-bot/ai";
 import { Type } from "typebox";
 
 import type { ExtensionAPI } from "../../core/extensions/types.ts";
+import { installA2a, isPunchA2aEnabled } from "./a2a.ts";
+import { startPunchA2aListener, stopPunchA2aListener } from "./a2a-listen.ts";
 import { getAuthHeader, isAuthConfigured } from "./auth.ts";
 import { validateCollabWorkspace } from "./collabs.ts";
 import { startPunchServer } from "./server.ts";
@@ -76,6 +78,13 @@ export default function punchExtension(pi: ExtensionAPI): void {
 		startPunchServer();
 	}
 	installTodos(pi);
+	installA2a(pi);
+	if (isPunchA2aEnabled()) {
+		void startPunchA2aListener();
+		pi.on("session_shutdown", () => {
+			void stopPunchA2aListener();
+		});
+	}
 
 	pi.registerTool({
 		name: "collab",

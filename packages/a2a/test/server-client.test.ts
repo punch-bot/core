@@ -4,20 +4,17 @@ import { createA2aServer } from "../src/server.ts";
 
 describe("A2A server and client", () => {
 	test("delegates to a local A2A agent", async () => {
-		const port = 41241;
-		const baseUrl = `http://127.0.0.1:${port}`;
 		const server = await createA2aServer({
-			baseUrl,
 			runnerFactory: () => ({
 				async prompt(text) {
 					return { text: `echo:${text}` };
 				},
 			}),
 		});
-		await server.listen(port);
+		const bound = await server.listen(0, "127.0.0.1");
 		try {
 			const result = await delegateToA2aAgent({
-				url: baseUrl,
+				url: bound.url,
 				task: "ping",
 			});
 			expect(result.text).toBe("echo:ping");
@@ -28,20 +25,17 @@ describe("A2A server and client", () => {
 	});
 
 	test("surfaces harness failures to callers", async () => {
-		const port = 41242;
-		const baseUrl = `http://127.0.0.1:${port}`;
 		const server = await createA2aServer({
-			baseUrl,
 			runnerFactory: () => ({
 				async prompt() {
 					return { message: "boom" };
 				},
 			}),
 		});
-		await server.listen(port);
+		const bound = await server.listen(0, "127.0.0.1");
 		try {
 			const result = await delegateToA2aAgent({
-				url: baseUrl,
+				url: bound.url,
 				task: "fail",
 			});
 			expect(result.failed).toBe(true);
