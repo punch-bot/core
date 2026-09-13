@@ -28,6 +28,7 @@ function createUi(
 		updateProgress: (state) => {
 			onProgress?.(state);
 		},
+		clearProgress: () => {},
 	};
 }
 

@@ -37,7 +37,6 @@ import type {
 	InputSource,
 	KeyId,
 	LoadExtensionsResult,
-	MarkdownTransformer,
 	MessageEndEvent,
 	MessageEndEventResult,
 	ProjectTrustContext,
@@ -533,10 +532,6 @@ export class ExtensionRunner {
 			}
 		}
 		return false;
-	}
-
-	getMarkdownTransformers(): MarkdownTransformer[] {
-		return this.extensions.flatMap((ext) => (ext.markdownTransformer ? [ext.markdownTransformer] : []));
 	}
 
 	private resolveRegisteredCommands(): ResolvedCommand[] {

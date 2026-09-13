@@ -371,23 +371,6 @@ describe("extensions discovery", () => {
 		expect(result.extensions[0].tools.has("parse_duration")).toBe(true);
 	});
 
-	it("registers markdown transformers", async () => {
-		const extCode = `
-			export default function(pi) {
-				pi.registerMarkdownTransformer((markdown) => {
-					return markdown;
-				});
-			}
-		`;
-		fs.writeFileSync(path.join(extensionsDir, "with-renderer.ts"), extCode);
-
-		const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-
-		expect(result.errors).toHaveLength(0);
-		expect(result.extensions).toHaveLength(1);
-		expect(result.extensions[0].markdownTransformer).toBeDefined();
-	});
-
 	it("reports error when extension throws during initialization", async () => {
 		const extCode = `
 			export default function(pi) {

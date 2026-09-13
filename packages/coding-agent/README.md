@@ -71,21 +71,18 @@ Installer alternative:
 curl -fsSL https://pi.dev/install.sh | sh
 ```
 
-Authenticate with an API key:
+Authenticate with an API key, then run in print mode:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-pi
+pi -p "Say hello"
 ```
 
-Or use your existing subscription:
+For process integration, use RPC (`pi --mode rpc` or `rpc-entry`). Send slash commands such as `/login` as prompts; the host answers `ctx.ui` dialogs. See [docs/rpc.md](docs/rpc.md).
 
-```bash
-pi
-/login  # Then select provider
-```
+To embed pi in your own app, use the SDK (`createAgentSession`). See [Programmatic Usage](#programmatic-usage).
 
-Then just talk to pi. By default, pi gives the model four tools: `read`, `write`, `edit`, and `bash`. The model uses these to fulfill your requests. Add capabilities via [skills](#skills), [prompt templates](#prompt-templates), [extensions](#extensions), or [pi packages](#pi-packages).
+By default, pi gives the model four tools: `read`, `write`, `edit`, and `bash`. The model uses these to fulfill your requests. Add capabilities via [skills](#skills), [prompt templates](#prompt-templates), [extensions](#extensions), or [pi packages](#pi-packages).
 
 **Platform notes:** [Windows](docs/windows.md) | [Termux (Android)](docs/termux.md) | [tmux](docs/tmux.md) | [Terminal setup](docs/terminal-setup.md) | [Shell aliases](docs/shell-aliases.md)
 
@@ -93,7 +90,7 @@ Then just talk to pi. By default, pi gives the model four tools: `read`, `write`
 
 ## Providers & Models
 
-For each built-in provider, pi maintains a list of tool-capable models. Configured provider catalogs refresh automatically; run `pi update --models` to force an immediate refresh. Authenticate via subscription (`/login`) or API key, then select any model from that provider via `/model` (or Ctrl+L). Press Ctrl+S in the model picker to save the highlighted model as the startup default.
+For each built-in provider, pi maintains a list of tool-capable models. Configured provider catalogs refresh automatically; run `pi update --models` to force an immediate refresh. Authenticate via subscription (`/login` over RPC) or API key, then select any model from that provider via `/model`.
 
 **Subscriptions:**
 - Anthropic Claude Pro/Max

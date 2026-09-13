@@ -37,7 +37,6 @@ import type {
 	ExtensionRuntime,
 	KeyId,
 	LoadExtensionsResult,
-	MarkdownTransformer,
 	ProviderConfig,
 	RegisteredCommand,
 	ToolDefinition,
@@ -325,11 +324,6 @@ function createExtensionAPI(
 					runtime.flagValues.set(name, options.default);
 				}
 			}
-		},
-
-		registerMarkdownTransformer(transformer: MarkdownTransformer): void {
-			assertActive();
-			extension.markdownTransformer = transformer;
 		},
 
 		// Flag access - checks extension registered it, reads from runtime
