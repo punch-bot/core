@@ -9,10 +9,9 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join, resolve } from "node:path";
-import { Markdown, type MarkdownTheme } from "@punch-bot/tui";
+
 import chalk from "chalk";
 import lockfile from "proper-lockfile";
-import { selectConfig } from "./cli/config-selector.ts";
 import { createProjectTrustContext } from "./cli/project-trust.ts";
 import {
 	APP_NAME,
@@ -220,23 +219,6 @@ async function runManagedSelfUpdate(managedRoot: string, version: string): Promi
 	}
 }
 
-const SELF_UPDATE_NOTE_MARKDOWN_THEME: MarkdownTheme = {
-	heading: (text) => chalk.bold(chalk.yellow(text)),
-	link: (text) => chalk.cyan(text),
-	linkUrl: (text) => chalk.dim(text),
-	code: (text) => chalk.yellow(text),
-	codeBlock: (text) => chalk.dim(text),
-	codeBlockBorder: (text) => chalk.dim(text),
-	quote: (text) => chalk.dim(text),
-	quoteBorder: (text) => chalk.dim(text),
-	hr: (text) => chalk.dim(text),
-	listBullet: (text) => chalk.yellow(text),
-	bold: (text) => chalk.bold(text),
-	italic: (text) => chalk.italic(text),
-	strikethrough: (text) => chalk.strikethrough(text),
-	underline: (text) => chalk.underline(text),
-};
-
 interface PackageCommandOptions {
 	command: PackageCommand;
 	source?: string;
@@ -281,12 +263,14 @@ function printConfigCommandHelp(): void {
 	console.log(`${chalk.bold("Usage:")}
   ${CONFIG_COMMAND_USAGE}
 
-Open the resource configuration TUI to enable or disable package resources.
-Without -l, starts in global settings (~/${CONFIG_DIR_NAME}/agent/settings.json).
-Press Tab in the TUI to switch between global and project-local modes.
+Print resolved package resource paths as JSON.
+Enable or disable resources by editing settings.json, or use install/remove.
+
+Without -l, prints global settings (~/${CONFIG_DIR_NAME}/agent/settings.json).
+With -l, prints project overrides when the project is trusted.
 
 Options:
-  -l, --local       Edit project overrides (${CONFIG_DIR_NAME}/settings.json)
+  -l, --local       Use project overrides (${CONFIG_DIR_NAME}/settings.json)
   -a, --approve     Trust project-local files for this command with -l
   -na, --no-approve Ignore project-local files for this command with -l
 `);
@@ -639,15 +623,7 @@ function printSelfUpdateNote(note: string): void {
 
 	console.log();
 	console.log(chalk.bold(chalk.yellow("Update note")));
-	try {
-		const width = Math.max(20, process.stdout.columns ?? 80);
-		const renderedLines = new Markdown(trimmedNote, 0, 0, SELF_UPDATE_NOTE_MARKDOWN_THEME)
-			.render(width)
-			.map((line) => line.trimEnd());
-		console.log(renderedLines.join("\n"));
-	} catch {
-		console.log(trimmedNote);
-	}
+	console.log(trimmedNote);
 	console.log();
 }
 
@@ -731,7 +707,7 @@ interface CommandSettingsResult {
 }
 
 function getCommandAppMode(): AppMode {
-	return process.stdin.isTTY && process.stdout.isTTY ? "interactive" : "print";
+	return "print";
 }
 
 function reportProjectTrustWarnings(warnings: readonly string[]): void {
@@ -780,7 +756,7 @@ async function createCommandSettingsManager(options: {
 			cwd: options.cwd,
 			mode: appMode,
 			settingsManager,
-			hasUI: appMode === "interactive",
+			hasUI: false,
 		}),
 		onExtensionError: (message) => projectTrustWarnings.push(message),
 	});
@@ -849,14 +825,17 @@ export async function handleConfigCommand(
 		? await new DefaultPackageManager({ cwd, agentDir, settingsManager }).resolve()
 		: globalResolvedPaths;
 
-	await selectConfig({
-		resolvedPaths: { global: globalResolvedPaths, project: projectResolvedPaths },
-		settingsManager,
-		cwd,
-		agentDir,
-		writeScope: local ? "project" : "global",
-		projectModeAvailable: settingsManager.isProjectTrusted(),
-	});
+	console.log(
+		JSON.stringify(
+			{
+				global: globalResolvedPaths,
+				project: projectResolvedPaths,
+				writeScope: local ? "project" : "global",
+			},
+			null,
+			2,
+		),
+	);
 
 	process.exit(0);
 }

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Removed interactive TUI mode and the `@punch-bot/tui` dependency. `@punch-bot/cli` is headless: RPC (`--mode rpc` / `rpc-entry`), print/JSON, and the programmatic SDK remain. Extension APIs that rendered TUI components (`renderCall`, `renderResult`, custom editors/footers/headers, `InteractiveMode`, `registerMarkdownTransformer`) are gone.
+- `pi config` no longer opens a resource-toggle UI. It prints resolved package paths as JSON. Enable or disable resources in settings.json, or use `pi install` / `pi remove`.
+
 ### Added
 
 - Added `ctx.modelRegistry.stream()` and `streamSimple()` for extension model calls through configured providers with resolved authentication ([#8964](https://github.com/earendil-works/pi/issues/8964)).
@@ -15,6 +20,9 @@
 
 ### Fixed
 
+- Llama load/download cancel now loops an abortable confirm over RPC so a finished job cannot leave a stale Stop dialog, and declining still allows a later cancel. Progress updates go through keyed `setStatus` instead of a notify per SSE event.
+- Restored the install/update telemetry ping on headless startup after `lastChangelogVersion` advances.
+- `--use-theme` now applies to the runtime settings manager used by `initTheme` and HTML export.
 - Capped agent-level retry backoff at `retry.maxAgentDelayMs` (60s by default) so long retry runs stay responsive during prolonged transient outages ([#8826](https://github.com/earendil-works/pi/issues/8826)).
 - Fixed direct RPC `steer` and `follow_up` commands bypassing extension `input` handlers ([#8718](https://github.com/earendil-works/pi/issues/8718)).
 - Fixed premature missing-model errors after login by waiting for catalog discovery. Radius now defaults to `balanced`, falling back to the first available Radius model when needed.

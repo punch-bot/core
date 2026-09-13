@@ -1,11 +1,9 @@
-import { getNativeClipboard } from "@punch-bot/tui";
 import { randomUUID } from "crypto";
 import { readFileSync, unlinkSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
 import { runClipboardCommand } from "./clipboard-command.ts";
-import { detectSupportedImageMimeType } from "./mime.ts";
 import { loadPhoton } from "./photon.ts";
 
 export type ClipboardImage = {
@@ -209,13 +207,6 @@ async function readClipboardImageViaXclip(): Promise<ClipboardImage | null | und
 	return undefined;
 }
 
-async function readClipboardImageViaNativeClipboard(): Promise<ClipboardImage | null | undefined> {
-	const bytes = await getNativeClipboard()?.getImage();
-	if (bytes === undefined) return undefined;
-	if (!bytes?.length) return null;
-	return { bytes, mimeType: detectSupportedImageMimeType(bytes) ?? "application/octet-stream" };
-}
-
 export async function readClipboardImage(options?: {
 	env?: NodeJS.ProcessEnv;
 	platform?: NodeJS.Platform;
@@ -237,9 +228,8 @@ export async function readClipboardImage(options?: {
 		if (image === undefined) image = await readClipboardImageViaXclip();
 		// Preserve Linux's empty/unavailable distinction if Windows has no image.
 		if (!image && wsl) image = (await readClipboardImageViaPowerShell()) ?? image;
-		if (image === undefined) image = await readClipboardImageViaNativeClipboard();
-	} else {
-		image = await readClipboardImageViaNativeClipboard();
+	} else if (platform === "win32") {
+		image = await readClipboardImageViaPowerShell();
 	}
 
 	if (!image) {

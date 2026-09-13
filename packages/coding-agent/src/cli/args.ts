@@ -6,7 +6,6 @@ import type { ThinkingLevel } from "@punch-bot/agent";
 import chalk from "chalk";
 import { APP_NAME, CONFIG_DIR_NAME, ENV_AGENT_DIR, ENV_SESSION_DIR } from "../config.ts";
 import type { ExtensionFlag } from "../core/extensions/types.ts";
-import type { TuiMode } from "../core/settings-manager.ts";
 
 export type Mode = "text" | "json" | "rpc";
 
@@ -47,7 +46,6 @@ export interface Args {
 	noContextFiles?: boolean;
 	listModels?: string | true;
 	offline?: boolean;
-	tuiMode?: TuiMode;
 	verbose?: boolean;
 	projectTrustOverride?: boolean;
 	messages: string[];
@@ -202,18 +200,13 @@ export function parseArgs(args: string[]): Args {
 			}
 		} else if (arg === "--tui-mode") {
 			const mode = args[i + 1];
-			if (mode === "regular" || mode === "fullscreen") {
-				result.tuiMode = mode;
+			if (mode !== undefined && !mode.startsWith("-")) {
 				i++;
-			} else if (mode === undefined || mode.startsWith("-")) {
-				result.diagnostics.push({ type: "error", message: "--tui-mode requires regular or fullscreen" });
-			} else {
-				i++;
-				result.diagnostics.push({
-					type: "error",
-					message: `Invalid TUI mode "${mode}". Valid values: regular, fullscreen`,
-				});
 			}
+			result.diagnostics.push({
+				type: "warning",
+				message: "--tui-mode is no longer supported; interactive TUI was removed",
+			});
 		} else if (arg === "--verbose") {
 			result.verbose = true;
 		} else if (arg === "--approve" || arg === "-a") {
@@ -270,7 +263,7 @@ ${chalk.bold("Commands:")}
   ${APP_NAME} uninstall <source> [-l]   Alias for remove
   ${APP_NAME} update [source|self|pi]   Update pi, extensions, or model catalogs
   ${APP_NAME} list                      List installed extensions from settings
-  ${APP_NAME} config [-l]               Open TUI to enable/disable package resources (Tab switches scope)
+  ${APP_NAME} config [-l]               Print resolved package resource paths as JSON
   ${APP_NAME} auth <command>            Print credentials or check provider readiness
   ${APP_NAME} <command> --help          Show help for install/remove/uninstall/update/list/config/auth
 
@@ -281,9 +274,9 @@ ${chalk.bold("Options:")}
   --system-prompt <text>         System prompt (default: coding assistant prompt)
   --append-system-prompt <text>  Append text or file contents to the system prompt (can be used multiple times)
   --mode <mode>                  Output mode: text (default), json, or rpc
-  --print, -p                    Non-interactive mode: process prompt and exit
+  --print, -p                    Process prompt and exit
   --continue, -c                 Continue previous session
-  --resume, -r                   Select a session to resume
+  --resume, -r                   Continue the most recent session
   --session <path|id>            Use specific session file or partial UUID
   --session-id <id>              Use exact project session ID, creating it if missing
   --fork <path|id>               Fork specific session file or partial UUID into a new session
@@ -306,13 +299,12 @@ ${chalk.bold("Options:")}
   --prompt-template <path>       Load a prompt template file or directory (can be used multiple times)
   --no-prompt-templates, -np     Disable prompt template discovery and loading
   --theme <path>                 Load a theme file or directory (can be used multiple times)
-  --use-theme <name[/name]>      Set the initial interactive theme for this run
+  --use-theme <name[/name]>      Set the theme for this run
   --no-themes                    Disable theme discovery and loading
   --no-context-files, -nc        Disable AGENTS.md and CLAUDE.md discovery and loading
   --export <file>                Export session file to HTML and exit
   --list-models [search]         List available models (with optional fuzzy search)
   --verbose                      Force verbose startup (overrides quietStartup setting)
-  --tui-mode <mode>              TUI mode: regular (default) or fullscreen
   --approve, -a                  Trust project-local files for this run
   --no-approve, -na              Ignore project-local files for this run
   --offline                      Disable startup network operations (same as PI_OFFLINE=1)
@@ -329,23 +321,17 @@ ${chalk.bold("Examples:")}
   # Print an OAuth bearer token for an external client (refreshes if expired)
   ${APP_NAME} auth print-bearer-token --provider openai-codex
 
-  # Interactive mode
-  ${APP_NAME}
-
-  # Interactive mode with initial prompt
-  ${APP_NAME} "List all .ts files in src/"
-
-  # Include files in initial message
-  ${APP_NAME} @prompt.md @image.png "What color is the sky?"
-
-  # Non-interactive mode (process and exit)
+  # Print mode (default)
   ${APP_NAME} -p "List all .ts files in src/"
+
+  # Include files in the prompt
+  ${APP_NAME} -p @prompt.md @image.png "What color is the sky?"
 
   # Prompt beginning with a dash
   ${APP_NAME} -p -- "- Summarize these points"
 
-  # Multiple messages (interactive)
-  ${APP_NAME} "Read package.json" "What dependencies do we have?"
+  # RPC mode for process integration
+  ${APP_NAME} --mode rpc
 
   # Continue previous session
   ${APP_NAME} --continue "What did we discuss?"

@@ -1,6 +1,13 @@
 import type { ThinkingLevel } from "@punch-bot/agent";
 import { DEFAULT_MAX_AGENT_RETRY_DELAY_MS, type Model, type Transport } from "@punch-bot/ai";
-import type { TuiMode as RendererTuiMode, ScrollViewScrollbar, TerminalCapabilities } from "@punch-bot/tui";
+export type TuiMode = "regular" | "fullscreen";
+export type ScrollViewScrollbar = "hidden" | "auto" | "always";
+export interface TerminalCapabilities {
+	trueColor?: boolean;
+	hyperlinks?: boolean;
+	images?: boolean | "kitty" | "iterm2" | null;
+}
+
 import { randomUUID } from "crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
@@ -46,7 +53,6 @@ export interface RetrySettings {
 	provider?: ProviderRetrySettings;
 }
 
-export type TuiMode = RendererTuiMode;
 export type FullscreenExitOutput = "transcript" | "resume-hint";
 
 export interface TerminalSettings {
