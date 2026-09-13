@@ -426,23 +426,6 @@ describe("ExtensionRunner", () => {
 		});
 	});
 
-	describe("message and entry renderers", () => {
-		it("gets Markdown transformers in extension load order", async () => {
-			const extCode = `
-				export default function(pi) {
-					pi.registerMarkdownTransformer((markdown) => markdown);
-				}
-			`;
-			fs.writeFileSync(path.join(extensionsDir, "markdown-renderer-a.ts"), extCode);
-			fs.writeFileSync(path.join(extensionsDir, "markdown-renderer-b.ts"), extCode);
-
-			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
-
-			expect(runner.getMarkdownTransformers()).toHaveLength(2);
-		});
-	});
-
 	describe("flags", () => {
 		it("collects flags from extensions", async () => {
 			const extCode = `

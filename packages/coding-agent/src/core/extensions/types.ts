@@ -1038,18 +1038,6 @@ export interface SessionBeforeTreeResult {
 }
 
 // ============================================================================
-// Message rendering
-// ============================================================================
-
-export interface MarkdownTransformContext {
-	messageType: "user" | "assistant" | "assistant-thinking";
-	isStreaming: boolean;
-	availableWidth: number;
-}
-
-export type MarkdownTransformer = (markdown: string, context: MarkdownTransformContext) => string;
-
-// ============================================================================
 // Command Registration
 // ============================================================================
 
@@ -1170,13 +1158,6 @@ export interface ExtensionAPI {
 
 	/** Get the value of a registered CLI flag. */
 	getFlag(name: string): boolean | string | undefined;
-
-	// =========================================================================
-	// Message Rendering
-	// =========================================================================
-
-	/** Register a transformer for user and assistant Markdown. */
-	registerMarkdownTransformer(transformer: MarkdownTransformer): void;
 
 	// =========================================================================
 	// Actions
@@ -1590,7 +1571,6 @@ export interface Extension {
 	sourceInfo: SourceInfo;
 	handlers: Map<string, HandlerFn[]>;
 	tools: Map<string, RegisteredTool>;
-	markdownTransformer?: MarkdownTransformer;
 	commands: Map<string, RegisteredCommand>;
 	flags: Map<string, ExtensionFlag>;
 	shortcuts: Map<KeyId, ExtensionShortcut>;

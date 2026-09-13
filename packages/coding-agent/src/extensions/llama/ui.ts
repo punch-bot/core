@@ -42,10 +42,12 @@ export interface LlamaUi {
 	showStatus(title: string, message: string): void;
 	progress(state: ProgressState): Promise<void>;
 	updateProgress(state: ProgressState): void;
+	clearProgress(): void;
 }
 
 class DialogLlamaUi implements LlamaUi {
 	private readonly ctx: ExtensionCommandContext;
+	private readonly progressKey = "llama-progress";
 
 	constructor(ctx: ExtensionCommandContext) {
 		this.ctx = ctx;
@@ -108,15 +110,22 @@ class DialogLlamaUi implements LlamaUi {
 	updateProgress(state: ProgressState): void {
 		const percent = state.ratio !== undefined ? ` ${Math.round(state.ratio * 100)}%` : "";
 		const detail = state.detail ? ` (${state.detail})` : "";
-		this.ctx.ui.notify(`${state.title}${percent}: ${state.message ?? state.model}${detail}`);
+		this.ctx.ui.setStatus(this.progressKey, `${state.title}${percent}: ${state.message ?? state.model}${detail}`);
+	}
+
+	clearProgress(): void {
+		this.ctx.ui.setStatus(this.progressKey, undefined);
 	}
 }
 
 export async function showLlamaUi(ctx: ExtensionCommandContext, run: (ui: LlamaUi) => Promise<void>): Promise<void> {
+	const ui = new DialogLlamaUi(ctx);
 	try {
-		await run(new DialogLlamaUi(ctx));
+		await run(ui);
 	} catch (error: unknown) {
 		ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
+	} finally {
+		ui.clearProgress();
 	}
 }
 
@@ -135,53 +144,57 @@ export async function runWithProgress<T>(
 	const controller = new AbortController();
 	const state: ProgressState = { title: options.title, model: options.model, message: options.initialMessage };
 	ui.updateProgress(state);
-	const settled = options
-		.run(controller.signal, (progress) => {
-			state.message = progress.message;
-			state.ratio = progress.ratio;
-			state.detail = progress.detail;
-			ui.updateProgress(state);
-		})
-		.then(
-			(value) => ({ ok: true as const, value }),
-			(error: unknown) => ({ ok: false as const, error }),
-		);
-	let completed = false;
-	void settled.finally(() => {
-		completed = true;
-	});
+	try {
+		const settled = options
+			.run(controller.signal, (progress) => {
+				state.message = progress.message;
+				state.ratio = progress.ratio;
+				state.detail = progress.detail;
+				ui.updateProgress(state);
+			})
+			.then(
+				(value) => ({ ok: true as const, value }),
+				(error: unknown) => ({ ok: false as const, error }),
+			);
+		let completed = false;
+		void settled.finally(() => {
+			completed = true;
+		});
 
-	while (!completed) {
-		const dialogAbort = new AbortController();
-		const started = Date.now();
-		const outcome = await Promise.race([
-			settled.then(() => "settled" as const),
-			ui
-				.confirm(options.cancelTitle, options.cancelMessage, { signal: dialogAbort.signal })
-				.then((stop) => (stop ? ("stop" as const) : ("keep" as const))),
-		]);
-		dialogAbort.abort();
-		if (outcome === "settled") break;
-		if (outcome === "stop" && !completed) {
-			try {
-				await options.cancel();
-			} finally {
-				controller.abort(new Error("Cancelled"));
+		while (!completed) {
+			const dialogAbort = new AbortController();
+			const started = Date.now();
+			const outcome = await Promise.race([
+				settled.then(() => "settled" as const),
+				ui
+					.confirm(options.cancelTitle, options.cancelMessage, { signal: dialogAbort.signal })
+					.then((stop) => (stop ? ("stop" as const) : ("keep" as const))),
+			]);
+			dialogAbort.abort();
+			if (outcome === "settled") break;
+			if (outcome === "stop" && !completed) {
+				try {
+					await options.cancel();
+				} finally {
+					controller.abort(new Error("Cancelled"));
+				}
+				await settled;
+				return { cancelled: true };
 			}
-			await settled;
-			return { cancelled: true };
+			// Instant false means a no-op UI (print mode). Wait for the job instead of spinning.
+			if (Date.now() - started < 50) {
+				await settled;
+				break;
+			}
 		}
-		// Instant false means a no-op UI (print mode). Wait for the job instead of spinning.
-		if (Date.now() - started < 50) {
-			await settled;
-			break;
-		}
-	}
 
-	const result = await settled;
-	if (!result.ok) {
-		if (controller.signal.aborted) return { cancelled: true };
-		throw result.error;
+		const result = await settled;
+		if (!result.ok) {
+			if (controller.signal.aborted) return { cancelled: true };
+			throw result.error;
+		}
+		return { cancelled: false, value: result.value };
+	} finally {
+		ui.clearProgress();
 	}
-	return { cancelled: false, value: result.value };
 }

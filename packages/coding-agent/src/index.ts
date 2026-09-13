@@ -96,8 +96,6 @@ export type {
 	InputSource,
 	LoadExtensionsResult,
 	LsToolCallEvent,
-	MarkdownTransformContext,
-	MarkdownTransformer,
 	MessageEndEvent,
 	MessageStartEvent,
 	MessageUpdateEvent,

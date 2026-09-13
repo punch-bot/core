@@ -50,6 +50,7 @@ import { getMissingSessionCwdIssue, MissingSessionCwdError } from "./core/sessio
 import { assertValidSessionId, SessionManager } from "./core/session-manager.ts";
 import { collectSettingsDiagnostics, deduplicateDiagnostics } from "./core/settings-diagnostics.ts";
 import { SettingsManager } from "./core/settings-manager.ts";
+import { recordInstallTelemetry } from "./core/telemetry.ts";
 import { initTheme, setThemeJsonValidator, stopThemeWatcher } from "./core/theme/theme.ts";
 import { validateThemeJson } from "./core/theme/theme-json.ts";
 import { printTimings, resetTimings, time } from "./core/timings.ts";
@@ -680,6 +681,9 @@ export async function main(args: string[], options?: MainOptions) {
 				parsed.projectTrustOverride ??
 				(!hasTrustRequiringResources || trustStore.get(cwd) === true));
 		const runtimeSettingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted });
+		if (parsed.useTheme !== undefined) {
+			runtimeSettingsManager.applyOverrides({ theme: parsed.useTheme });
+		}
 		const services = await createAgentSessionServices({
 			cwd,
 			agentDir,
@@ -836,6 +840,9 @@ export async function main(args: string[], options?: MainOptions) {
 	setThemeJsonValidator(validateThemeJson);
 	initTheme(settingsManager.getTheme(), false, settingsManager.getTerminalCapabilityOverrides().trueColor);
 	time("initTheme");
+	if (!parsed.help && parsed.listModels === undefined) {
+		recordInstallTelemetry(settingsManager, VERSION);
+	}
 
 	time("resolveModelScope");
 	const startupDiagnostics = deduplicateDiagnostics([...startupSettingsDiagnostics, ...runtime.diagnostics]);
