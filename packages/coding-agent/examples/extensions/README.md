@@ -33,7 +33,6 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 | `hello.ts` | Minimal custom tool example |
 | `tool-override.ts` | Override built-in tools (e.g., add logging/access control to `read`) |
 | `dynamic-tools.ts` | Register tools after startup (`session_start`) and at runtime via command, with prompt snippets and tool-specific prompt guidelines |
-| `kimi-deferred-tools.ts` | Search for and progressively activate tools for Kimi's deferred-tool loading protocol |
 | `ssh.ts` | Delegate all tools to a remote machine via SSH using pluggable operations |
 | `subagent/` | Delegate tasks to specialized subagents with isolated context windows |
 

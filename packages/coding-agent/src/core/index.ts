@@ -74,6 +74,7 @@ export {
 	type ExtensionUIContext,
 	type InlineExtension,
 	type LoadExtensionsResult,
+	type NormalizedBuildSystemPromptOptions,
 	type RegisteredCommand,
 	type SessionBeforeCompactEvent,
 	type SessionBeforeForkEvent,

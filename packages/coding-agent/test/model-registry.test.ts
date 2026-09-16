@@ -1,13 +1,13 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AnthropicMessagesCompat, Api, Context, Model, OpenAICompletionsCompat } from "@punch-bot/ai/compat";
+import { normalizeContext } from "@punch-bot/ai";
+import type { AnthropicMessagesCompat, Api, Model, OpenAICompletionsCompat } from "@punch-bot/ai/compat";
 import { getApiProvider, getModels, getSupportedThinkingLevels } from "@punch-bot/ai/compat";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import type { ModelsJsonProvider } from "../src/core/model-config.ts";
 import { clearApiKeyCache, type ModelRegistry, type ProviderConfigInput } from "../src/core/model-registry.ts";
-
 import { createModelRegistry } from "./model-runtime-test-utils.ts";
 
 describe("ModelRegistry", () => {
@@ -87,9 +87,9 @@ describe("ModelRegistry", () => {
 		maxTokens: 4096,
 	};
 
-	const emptyContext: Context = {
+	const emptyContext = normalizeContext({
 		messages: [],
-	};
+	});
 
 	describe("baseUrl override (no custom models)", () => {
 		test("overriding baseUrl keeps all built-in models", async () => {
