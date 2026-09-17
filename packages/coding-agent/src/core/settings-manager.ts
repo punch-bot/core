@@ -4,8 +4,6 @@ export type TuiMode = "regular" | "fullscreen";
 export type ScrollViewScrollbar = "hidden" | "auto" | "always";
 export interface TerminalCapabilities {
 	trueColor?: boolean;
-	hyperlinks?: boolean;
-	images?: boolean | "kitty" | "iterm2" | null;
 }
 
 import { randomUUID } from "crypto";
@@ -60,8 +58,6 @@ export interface TerminalSettings {
 	imageWidthCells?: number; // default: 60 (preferred inline image width in terminal cells)
 	clearOnShrink?: boolean; // default: false (clear empty rows when content shrinks)
 	showTerminalProgress?: boolean; // default: false (OSC 9;4 terminal progress indicators)
-	hyperlinks?: boolean | "auto";
-	images?: "kitty" | "iterm2" | "auto" | false;
 	trueColor?: boolean | "auto";
 }
 
@@ -1183,11 +1179,8 @@ export class SettingsManager {
 
 	getTerminalCapabilityOverrides(): Partial<TerminalCapabilities> {
 		const terminal = this.settings.terminal;
-		const images = terminal?.images;
 		return {
-			...(images === "kitty" || images === "iterm2" ? { images } : images === false ? { images: null } : {}),
 			...(typeof terminal?.trueColor === "boolean" ? { trueColor: terminal.trueColor } : {}),
-			...(typeof terminal?.hyperlinks === "boolean" ? { hyperlinks: terminal.hyperlinks } : {}),
 		};
 	}
 

@@ -40,7 +40,7 @@ Sessions are saved automatically to `~/.pi/agent/sessions/`, organized by workin
 
 ```bash
 pi -c                  # Continue most recent session
-pi -r                  # Browse and select a session
+pi -r                  # Continue most recent session (alias for -c)
 pi --no-session        # Ephemeral mode; do not save
 pi --name "my task"    # Set session display name at startup
 pi --session <path|id> # Use a specific session file or session ID
@@ -80,17 +80,17 @@ Append to the default prompt without replacing it with `APPEND_SYSTEM.md` in eit
 
 ### Project Trust
 
-On interactive startup, pi asks before trusting a project folder that contains project-local settings, resources, or project `.agents/skills` and has no saved decision for the folder or a parent folder in `~/.pi/agent/trust.json`. Trusting a project allows pi to load `.pi/settings.json` and `.pi` resources, install missing project packages, and execute project extensions.
+When a UI is available (for example an RPC client that answers `ctx.ui` dialogs), pi asks before trusting a project folder that contains project-local settings, resources, or project `.agents/skills` and has no saved decision for the folder or a parent folder in `~/.pi/agent/trust.json`. Trusting a project allows pi to load `.pi/settings.json` and `.pi` resources, install missing project packages, and execute project extensions.
 
 Before the trust decision, pi loads only context files, user/global extensions, and CLI `-e` extensions so they can handle the `project_trust` event. Project-local extensions, project package-managed extensions, and project settings are loaded only after the project is trusted. This split also applies when switching to a session from a different cwd whose trust has not been resolved in the current process.
 
-Non-interactive modes (`-p`, `--mode json`, and `--mode rpc`) do not show a trust prompt. Without an applicable saved trust decision, they use `defaultProjectTrust` from global settings: `ask` (default) and `never` ignore those project resources, while `always` trusts them. Pass `--approve`/`-a` or `--no-approve`/`-na` to override project trust for one run.
+Headless modes (`-p`, `--mode json`, and RPC clients without dialog support) do not show a trust prompt. Without an applicable saved trust decision, they use `defaultProjectTrust` from global settings: `ask` (default) and `never` ignore those project resources, while `always` trusts them. Pass `--approve`/`-a` or `--no-approve`/`-na` to override project trust for one run.
 
 If no extension or saved decision applies, `defaultProjectTrust` controls the fallback behavior. Set it to `"ask"`, `"always"`, or `"never"` in `~/.pi/agent/settings.json`, or change it with `/settings`.
 
 `pi config` and package commands use the same project trust flow, except `pi update` never prompts. Pass `--approve` to trust project-local settings for one command or `--no-approve` to ignore them.
 
-Use `/trust` in interactive mode to save a project trust decision for future sessions, including trust for the immediate parent folder. It writes `~/.pi/agent/trust.json` only; the current session is not reloaded, so restart pi for changes to take effect.
+Use `/trust` to save a project trust decision for future sessions, including trust for the immediate parent folder. It writes `~/.pi/agent/trust.json` only; the current session is not reloaded, so restart pi for changes to take effect.
 
 
 ## Exporting and Sharing Sessions
@@ -120,7 +120,7 @@ pi update --models           # Refresh model catalogs only
 pi update --self             # Update pi only
 pi update --extension <src>  # Update one package
 pi list                      # List installed packages
-pi config                    # Enable/disable package resources
+pi config                    # Print resolved package resource paths as JSON
 ```
 
 These commands manage pi packages and `pi update` can update the pi CLI installation. To uninstall pi itself, see [Quickstart](quickstart.md#uninstall). `pi config` and project package commands accept `--approve`/`--no-approve` to trust or ignore project-local settings for one command. `pi update` never prompts for project trust.
@@ -131,7 +131,7 @@ See [Pi Packages](packages.md) for package sources and security notes.
 
 | Flag | Description |
 |------|-------------|
-| default | Interactive mode |
+| default | Print response and exit (same as `-p`) |
 | `-p`, `--print` | Print response and exit |
 | `--mode json` | Output all events as JSON lines; see [JSON mode](json.md) |
 | `--mode rpc` | RPC mode over stdin/stdout; see [RPC mode](rpc.md) |
@@ -159,7 +159,7 @@ cat README.md | pi -p "Summarize this text"
 | Option | Description |
 |--------|-------------|
 | `-c`, `--continue` | Continue the most recent session |
-| `-r`, `--resume` | Browse and select a session |
+| `-r`, `--resume` | Continue the most recent session (alias for `-c`) |
 | `--session <path\|id>` | Use a specific session file or partial UUID |
 | `--fork <path\|id>` | Fork a session file or partial UUID into a new session |
 | `--session-dir <dir>` | Custom session storage directory |
@@ -203,18 +203,13 @@ pi --no-extensions -e ./my-extension.ts
 |--------|-------------|
 | `--system-prompt <text>` | Replace default prompt; context files and skills are still appended |
 | `--append-system-prompt <text>` | Append to system prompt |
-| `--tui-mode <mode>` | TUI mode: `regular` (default) or experimental `fullscreen` |
-| `--use-theme <name[/name]>` | Set the initial interactive theme for this run without changing settings |
+| `--use-theme <name[/name]>` | Set the theme for this run without changing settings |
 | `--verbose` | Force verbose startup |
 | `-a`, `--approve` | Trust project-local files for this run |
 | `-na`, `--no-approve` | Ignore project-local files for this run |
 | `--` | Stop option parsing; remaining arguments are prompts or `@file` inputs |
 | `-h`, `--help` | Show help |
 | `-v`, `--version` | Show version |
-
-In `fullscreen` mode, the transcript scrolls inside the terminal viewport while queued messages, working status, extension widgets, editor, and footer remain fixed at the bottom. Mouse/trackpad input scrolls the region under the pointer; keyboard viewport actions always remain available. Inline images work in terminals that support the Kitty graphics protocol, including Kitty and Ghostty. In iTerm2 they render as text placeholders because its inline-image protocol cannot delete or crop placements during application-owned scrolling. In `regular` mode, pi uses the main screen and terminal-owned scrollback, and iTerm2 inline images continue to render normally. See [Terminal setup](terminal-setup.md) for terminal-specific settings and workarounds.
-
-Set **TUI mode** in `/settings` to switch between `regular` and `fullscreen` immediately and choose the default for future sessions. **Fullscreen exit output** controls whether exiting fullscreen prints the final transcript or restores the previous screen and prints only the session resume hint.
 
 ### File Arguments
 
@@ -229,10 +224,10 @@ pi @code.ts @test.ts "Review these files"
 ### Examples
 
 ```bash
-# Interactive with initial prompt
+# Print a response for a prompt
 pi "List all .ts files in src/"
 
-# Non-interactive
+# Explicit print mode
 pi -p "Summarize this codebase"
 
 # Prompt beginning with a dash

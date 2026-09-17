@@ -840,9 +840,7 @@ export async function main(args: string[], options?: MainOptions) {
 	setThemeJsonValidator(validateThemeJson);
 	initTheme(settingsManager.getTheme(), false, settingsManager.getTerminalCapabilityOverrides().trueColor);
 	time("initTheme");
-	if (!parsed.help && parsed.listModels === undefined) {
-		recordInstallTelemetry(settingsManager, VERSION);
-	}
+	recordInstallTelemetry(settingsManager, VERSION);
 
 	time("resolveModelScope");
 	const startupDiagnostics = deduplicateDiagnostics([...startupSettingsDiagnostics, ...runtime.diagnostics]);

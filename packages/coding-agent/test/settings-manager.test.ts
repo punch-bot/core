@@ -340,17 +340,9 @@ describe("SettingsManager", () => {
 			const getOverrides = (terminal: NonNullable<Settings["terminal"]>) =>
 				SettingsManager.inMemory({ terminal }).getTerminalCapabilityOverrides();
 
-			expect(getOverrides({ images: false, trueColor: false, hyperlinks: false })).toEqual({
-				images: null,
-				trueColor: false,
-				hyperlinks: false,
-			});
-			expect(getOverrides({ images: "kitty", trueColor: true, hyperlinks: true })).toEqual({
-				images: "kitty",
-				trueColor: true,
-				hyperlinks: true,
-			});
-			expect(getOverrides({ images: "auto", trueColor: "auto", hyperlinks: "auto" })).toEqual({});
+			expect(getOverrides({ trueColor: false })).toEqual({ trueColor: false });
+			expect(getOverrides({ trueColor: true })).toEqual({ trueColor: true });
+			expect(getOverrides({ trueColor: "auto" })).toEqual({});
 		});
 	});
 
