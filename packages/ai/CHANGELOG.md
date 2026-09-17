@@ -24,6 +24,7 @@
 - Fixed Mistral-hosted GLM-5.2 reasoning requests to use `reasoning_effort` instead of the ignored `prompt_mode` ([#9375](https://github.com/earendil-works/pi/issues/9375)).
 - Fixed OpenAI-compatible Responses errors to identify the actual provider instead of always labeling them as OpenAI errors ([#9298](https://github.com/earendil-works/pi/issues/9298)).
 - Fixed Baseten requests to send session-affinity headers from `sessionId` for automatic prompt-cache routing ([#9629](https://github.com/earendil-works/pi/issues/9629)).
+- Fixed retry classification for Cloudflare 520 responses ([#9627](https://github.com/earendil-works/pi/issues/9627)).
 
 ## [0.85.1] - 2026-09-05
 
