@@ -21,6 +21,9 @@
 			"@punch-bot/agent/harness/session/testing": [
 				"./packages/agent/src/harness/session/testing/index.ts"
 			],
+			"@punch-bot/agent/experimental/pico3": [
+				"./packages/agent/src/harness/pico3/index.ts"
+			],
 			"@punch-bot/agent/node": ["./packages/agent/src/node.ts"],
 			"@punch-bot/agent/*": [
 				"./packages/agent/src/*.ts",
