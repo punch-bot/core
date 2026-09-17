@@ -629,13 +629,18 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
 		startupLease = undefined;
 		await workers.discover(coordinator.peerIds);
 		await backend.refreshSessions();
-		relay = new RadiusRelayHost({
-			serverId,
-			server: backend.server,
-			auth: new RadiusRelayAuthResolver(options.relayAuth),
-			onStatus: options.onRelayStatus,
-		});
-		relay.start();
+		// Radius relay connections carry no principal, so they cannot satisfy
+		// access-controlled backends. Only relay for servers without session access control.
+		relay =
+			options.sessionAccess === undefined
+				? new RadiusRelayHost({
+						serverId,
+						server: backend.server,
+						auth: new RadiusRelayAuthResolver(options.relayAuth),
+						onStatus: options.onRelayStatus,
+					})
+				: undefined;
+		relay?.start();
 
 		const activeBackend = backend;
 		const activeCoordinator = coordinator;
@@ -645,7 +650,7 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
 			.then(async () => {
 				lifetime.stop();
 				activeWorkers.detach();
-				await activeRelay.close();
+				await activeRelay?.close();
 				await activeBackend.close();
 			})
 			.finally(() => activeCoordinator.close())
@@ -657,12 +662,12 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
 			socketPath,
 			server: activeBackend.server,
 			workerPids: activeWorkers.workerPids,
-			closed: activeBackend.closed.finally(() => activeRelay.close()),
+			closed: activeBackend.closed.finally(() => activeRelay?.close()),
 			close() {
 				lifetime.stop();
 				closePromise ??= (async () => {
 					try {
-						await activeRelay.close();
+						await activeRelay?.close();
 						await activeBackend.close();
 					} finally {
 						try {
