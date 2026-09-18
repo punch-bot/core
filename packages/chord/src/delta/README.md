@@ -219,8 +219,8 @@ redundant snapshot even when their combined result restores the prior value.
 Sparse arrays are unsupported. Writing beyond the next index throws. Increasing
 `length` creates explicit `null` elements; decreasing it removes elements.
 
-`fill()` and `copyWithin()` keep normal JavaScript reference semantics. Do not use
-them to place one mutable object at multiple live paths.
+`fill()` and `copyWithin()` keep normal JavaScript reference semantics; an object
+they place at several indices is published at each.
 
 ### Large mutation windows
 
@@ -297,42 +297,42 @@ array position or explicit empty value must remain present.
 
 ## State ownership
 
-The object passed to `track()` becomes tracker-owned. The same applies to objects
-later assigned into state or inserted into arrays.
-
-After insertion, a retained reference may be read but must not be mutated or
-inserted at another live location. The tracker relies on this ownership rule; it
-does not recursively validate values or detect aliases:
+The object passed to `track()` becomes tracker-owned, as does any object later
+assigned into state or inserted into an array. Mutate through `tracker.state`:
 
 ```ts
 const item = { status: "new" };
 tracker.state.item = item;
 
-tracker.state.item.status = "ready"; // supported: tracked mutation
-item.status = "broken"; // unsupported: bypasses tracking
-tracker.state.other = item; // unsupported: one object at two live paths
+tracker.state.item.status = "ready"; // tracked
+item.status = "broken"; // NOT tracked: silently diverges from the replica
 ```
 
-The same restriction applies across separate array calls:
+A reference retained from `tracker.state` stays correct across operations that
+renumber it, and across the removal of the element it points at:
 
 ```ts
-tracker.state.items.push(item);
-tracker.state.items.push(item); // unsupported alias
+const held = tracker.state.items[2];
+tracker.state.items.unshift(other);
+held.name = "edited"; // publishes items[3].name
+
+tracker.state.items.splice(3, 1);
+held.name = "gone"; // element is no longer in the tree: mutated, nothing published
 ```
 
-Use distinct objects when values must appear at multiple paths. Perform
-mutations through `tracker.state`; do not put a proxy read from `tracker.state`
-back into tracked state.
+One object may occupy several paths. Each live path is published:
+
+```ts
+tracker.state.a = tracker.state.items[0];
+tracker.state.items[0].k = 1; // publishes both a.k and items[0].k
+```
 
 Tracked state must be a mutable JSON tree:
 
 - strings, booleans, finite numbers, `null`, arrays, and plain objects;
-- no cycles or one mutable object stored at multiple locations;
+- no cycles;
 - no sparse arrays, accessors, frozen objects, symbols, classes, functions,
   `Map`, or `Set`.
-
-Do not keep a child proxy across an array operation that changes indices. Read
-the child again from its new index.
 
 ## Tracker lifecycle
 
@@ -370,8 +370,8 @@ changed the replica.
 - Delta assumes one authoritative writer and ordered delivery. Sequence numbers,
   gap detection, retries, and persistence policy belong to the surrounding
   protocol or storage format.
-- Object identity is not replicated. Tracked mutable state must be a tree;
-  immutable inputs may share references, but replicas need not preserve them.
+- Object identity is not replicated. One object at several paths publishes each
+  path separately, and a replica holds a distinct value at each.
 - Object key insertion order is not replicated. Do not compare or hash replicas
   using serialized key order.
 - Array operations that change indices may publish a wider array region, as
