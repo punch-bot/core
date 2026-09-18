@@ -197,6 +197,18 @@ describe("SettingsManager", () => {
 			expect(manager.getTheme()).toBe("dark");
 			expect(manager.drainErrors()).toMatchObject([{ scope: "global", path: settingsPath }]);
 		});
+
+		it("preserves runtime overrides when settings reload", async () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ theme: "dark" }));
+			const manager = SettingsManager.create(projectDir, agentDir);
+			manager.applyOverrides({ theme: "runtime" });
+
+			writeFileSync(settingsPath, JSON.stringify({ theme: "light" }));
+			await manager.reload();
+
+			expect(manager.getTheme()).toBe("runtime");
+		});
 	});
 
 	describe("theme setting", () => {

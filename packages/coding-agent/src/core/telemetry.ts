@@ -1,6 +1,5 @@
 import { getChangelogPath } from "../config.ts";
 import { getNewEntries, parseChangelog } from "../utils/changelog.ts";
-import { getPiUserAgent } from "../utils/pi-user-agent.ts";
 import type { SettingsManager } from "./settings-manager.ts";
 
 function isTruthyEnvFlag(value: string | undefined): boolean {
@@ -23,13 +22,11 @@ export function recordInstallTelemetry(settingsManager: SettingsManager, version
 		if (getNewEntries(entries, lastVersion).length === 0) return;
 	}
 
+	if (isTruthyEnvFlag(process.env.PI_OFFLINE)) return;
 	settingsManager.setLastChangelogVersion(version);
-	if (isTruthyEnvFlag(process.env.PI_OFFLINE) || !isInstallTelemetryEnabled(settingsManager)) return;
+	if (!isInstallTelemetryEnabled(settingsManager)) return;
 
 	void fetch(`https://pi.dev/api/report-install?version=${encodeURIComponent(version)}`, {
-		headers: {
-			"User-Agent": getPiUserAgent(version),
-		},
 		signal: AbortSignal.timeout(5000),
 	})
 		.then(() => undefined)

@@ -16,7 +16,7 @@ Send a slash command as a prompt over RPC or in print mode. Extensions can regis
 | [`/llama`](llama-cpp.md) | Download, load, and unload llama.cpp router models |
 | `/model` | Switch models |
 | `/thinking` | Switch thinking level |
-| `/scoped-models` | Enable or disable models for scoped cycling |
+| `/scoped-models` | Choose the models available to this session |
 | `/settings` | Theme, message delivery, transport, and other preferences |
 | `/resume` | Pick from previous sessions |
 | `/new` | Start a new session |
@@ -31,7 +31,7 @@ Send a slash command as a prompt over RPC or in print mode. Extensions can regis
 | `/export [file]` | Export session to HTML or JSONL |
 | `/import <file>` | Import and resume a session from a JSONL file |
 | `/share` | Upload as private GitHub gist with shareable HTML link |
-| `/reload` | Reload keybindings, extensions, skills, prompts, themes, and context files |
+| `/reload` | Reload extensions, skills, prompts, themes, and context files |
 | `/changelog` | Display version history |
 
 ## Sessions
@@ -151,7 +151,7 @@ cat README.md | pi -p "Summarize this text"
 | `--model <pattern>` | Model pattern or ID; supports `provider/id` and optional `:<thinking>` |
 | `--api-key <key>` | API key, overriding environment variables |
 | `--thinking <level>` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
-| `--models <patterns>` | Comma-separated patterns for Ctrl+P cycling |
+| `--models <patterns>` | Comma-separated model patterns available to the session |
 | `--list-models [search]` | List available models |
 
 ### Session Options
@@ -248,7 +248,7 @@ pi --model openai/gpt-4o "Help me refactor"
 # Model with thinking level shorthand
 pi --model sonnet:high "Solve this complex problem"
 
-# Limit model cycling
+# Limit the models available to the session
 pi --models "claude-*,gpt-4o"
 
 # Read-only mode

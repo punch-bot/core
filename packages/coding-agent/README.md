@@ -154,7 +154,7 @@ Send a slash command as a prompt over RPC or in print mode. [Extensions](#extens
 | [`/llama`](docs/llama-cpp.md) | Download, load, and unload llama.cpp router models |
 | `/model` | Switch models |
 | `/thinking` | Switch thinking level |
-| `/scoped-models` | Enable or disable models for scoped cycling |
+| `/scoped-models` | Choose the models available to this session |
 | `/settings` | Theme, message delivery, transport, and other preferences |
 | `/resume` | Continue a previous session |
 | `/new` | Start a new session |
@@ -500,7 +500,7 @@ cat README.md | pi -p "Summarize this text"
 | `--model <pattern>` | Model pattern or ID (supports `provider/id` and optional `:<thinking>`) |
 | `--api-key <key>` | API key (overrides env vars) |
 | `--thinking <level>` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
-| `--models <patterns>` | Comma-separated patterns for Ctrl+P cycling |
+| `--models <patterns>` | Comma-separated model patterns available to the session |
 | `--list-models [search]` | List available models |
 
 ### Session Options
@@ -593,7 +593,7 @@ pi --model openai/gpt-4o "Help me refactor"
 # Model with thinking level shorthand
 pi --model sonnet:high "Solve this complex problem"
 
-# Limit model cycling
+# Limit the models available to the session
 pi --models "claude-*,gpt-4o"
 
 # Read-only mode

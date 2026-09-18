@@ -289,11 +289,11 @@ An empty array starts with no built-in tools while preserving extension and SDK 
 
 When multiple sources specify a session directory, precedence is `--session-dir`, `PI_CODING_AGENT_SESSION_DIR`, then `sessionDir` in settings.json.
 
-### Model Cycling
+### Model scope
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `enabledModels` | string[] | - | Model patterns for Ctrl+P cycling (same format as `--models` CLI flag) |
+| `enabledModels` | string[] | - | Model patterns available to the session (same format as `--models` CLI flag) |
 
 ```json
 {

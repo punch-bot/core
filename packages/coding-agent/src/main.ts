@@ -494,7 +494,7 @@ function buildSessionOptions(
 		options.thinkingLevel = parsed.thinking;
 	}
 
-	// Scoped models for Ctrl+P cycling
+	// Models available to the session
 	// Keep thinking level undefined when not explicitly set in the model pattern.
 	// Undefined means "inherit current session thinking level" during cycling.
 	if (scopedModels.length > 0) {
