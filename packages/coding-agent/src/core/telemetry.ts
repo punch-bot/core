@@ -1,6 +1,7 @@
 import * as undici from "undici";
 import { getChangelogPath } from "../config.ts";
 import { getNewEntries, parseChangelog } from "../utils/changelog.ts";
+import { createHttpDispatcher } from "./http-dispatcher.ts";
 import type { SettingsManager } from "./settings-manager.ts";
 
 const TELEMETRY_TIMEOUT_MS = 5000;
@@ -8,20 +9,17 @@ const TELEMETRY_TIMEOUT_MS = 5000;
 /**
  * Send the one-time install ping without keeping the process alive.
  *
- * Uses the same env-proxy agent Pi installs for its managed HTTP clients, so a
- * configured `httpProxy` is honored. The dispatcher is dedicated to this request
- * and destroyed once the ping settles, which bounds teardown instead of leaving
- * a connecting socket behind on one-shot commands.
+ * Reuses Pi's env-proxy dispatcher setup, so a configured `httpProxy` is honored
+ * and undici client errors cannot crash the CLI. The dispatcher is dedicated to
+ * this request and destroyed once the ping settles, which bounds teardown
+ * instead of leaving a connecting socket behind on one-shot commands.
  */
 function sendInstallPing(url: string): void {
-	let dispatcher: undici.EnvHttpProxyAgent;
+	let dispatcher: undici.Dispatcher;
 	try {
-		dispatcher = new undici.EnvHttpProxyAgent({
-			allowH2: false,
-			proxyTunnel: true,
-			connect: { timeout: TELEMETRY_TIMEOUT_MS },
-			headersTimeout: TELEMETRY_TIMEOUT_MS,
-			bodyTimeout: TELEMETRY_TIMEOUT_MS,
+		dispatcher = createHttpDispatcher({
+			timeoutMs: TELEMETRY_TIMEOUT_MS,
+			connectTimeoutMs: TELEMETRY_TIMEOUT_MS,
 		});
 	} catch {
 		return;

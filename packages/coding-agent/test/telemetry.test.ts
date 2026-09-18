@@ -7,12 +7,16 @@ const mocks = vi.hoisted(() => ({
 	destroy: vi.fn(),
 	request: vi.fn(),
 	envProxyAgent: vi.fn(),
+	instances: [] as Array<{ listenerCount(event: string): number }>,
 }));
 
-vi.mock("undici", () => {
-	class EnvHttpProxyAgent {
+vi.mock("undici", async () => {
+	const { EventEmitter } = await import("node:events");
+	class EnvHttpProxyAgent extends EventEmitter {
 		destroy = mocks.destroy;
 		constructor(options: unknown) {
+			super();
+			mocks.instances.push(this);
 			mocks.envProxyAgent(options);
 		}
 	}
@@ -26,6 +30,7 @@ beforeEach(() => {
 afterEach(() => {
 	vi.unstubAllEnvs();
 	vi.clearAllMocks();
+	mocks.instances.length = 0;
 });
 
 describe("install telemetry", () => {
@@ -59,8 +64,15 @@ describe("install telemetry", () => {
 
 		expect(settingsManager.getLastChangelogVersion()).toBe("1.2.3-beta+test");
 		expect(mocks.envProxyAgent).toHaveBeenCalledWith(
-			expect.objectContaining({ proxyTunnel: true, connect: { timeout: 5000 } }),
+			expect.objectContaining({
+				proxyTunnel: true,
+				connect: expect.objectContaining({ timeout: 5000 }),
+				clientFactory: expect.any(Function),
+				factory: expect.any(Function),
+			}),
 		);
+		const dispatcher = mocks.instances[0];
+		expect(dispatcher.listenerCount("error")).toBeGreaterThan(0);
 		expect(mocks.request).toHaveBeenCalledWith(
 			"https://pi.dev/api/report-install?version=1.2.3-beta%2Btest",
 			expect.objectContaining({
