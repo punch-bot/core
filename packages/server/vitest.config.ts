@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
-import { defineConfig } from "vitest/config";
+import { defineConfig, mergeConfig } from "vitest/config";
+import baseConfig from "../../vitest.base.ts";
 
 const src = (path: string): string => fileURLToPath(new URL(path, import.meta.url));
 
@@ -7,7 +8,7 @@ const src = (path: string): string => fileURLToPath(new URL(path, import.meta.ur
  * Exact matches for bare specifiers, plus one rule per package for subpath exports such as
  * `@punch-bot/ai/utils/uuid`. A prefix alias would rewrite those onto `index.ts/utils/uuid`.
  */
-export default defineConfig({
+export default mergeConfig(baseConfig, defineConfig({
 	test: {
 		globals: true,
 		environment: "node",
@@ -25,4 +26,4 @@ export default defineConfig({
 		],
 	},
 	ssr: { resolve: { conditions: ["source"] } },
-});
+}));

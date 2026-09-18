@@ -70,3 +70,9 @@ const routes = await discoverUnixServers({ directory: "/run/user/1000/pi" });
 Malformed entries, non-sockets, stale or unresponsive endpoints, and server-ID mismatches are ignored. Discovery is read-only and probes at most 16 sockets concurrently. Unexpected filesystem and socket errors reject discovery. Pass `timeoutMs` to override the default probe timeout.
 
 `ClientOptions.maxFrameLength` bounds protocol payloads. `maxPendingBytes` bounds queued Unix transport output. Configure matching limits on both peers.
+
+## WebSocket
+
+Node consumers can import `createWebSocketTransportFactory` from `@punch-bot/client/websocket`. Pass `url` and an asynchronous `getAccessToken()` callback. The callback runs on every connection attempt and supplies the bearer token for the HTTP upgrade. Use WSS for remote connections.
+
+The transport carries framed CBOR bytes unchanged, rejects text, disables compression and redirects, and limits incoming message size and pending output bytes. `maxFrameLength`, `maxPendingBytes` and `handshakeTimeoutMs` are configurable. Reconnection follows the same explicit attach/subscription restoration rules as other transports. Native Android clients implement the same wire contract using their platform WebSocket library.

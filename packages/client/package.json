@@ -15,6 +15,10 @@
 			"import": "./dist/unix.js"
 		},
 		"./package.json": "./package.json"
+		,"./websocket": {
+			"types": "./dist/websocket.d.ts",
+			"import": "./dist/websocket.js"
+		}
 	},
 	"sideEffects": false,
 	"files": [
@@ -48,9 +52,11 @@
 	},
 	"dependencies": {
 		"@punch-bot/chord": "^0.85.1",
-		"@punch-bot/protocol": "^0.85.1"
+		"@punch-bot/protocol": "^0.85.1",
+		"ws": "8.21.0"
 	},
 	"devDependencies": {
+		"@types/ws": "8.18.1",
 		"shx": "0.4.0",
 		"vitest": "5.0.0"
 	}
