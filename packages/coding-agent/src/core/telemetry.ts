@@ -1,7 +1,38 @@
-import { get as httpsGet } from "node:https";
+import * as undici from "undici";
 import { getChangelogPath } from "../config.ts";
 import { getNewEntries, parseChangelog } from "../utils/changelog.ts";
 import type { SettingsManager } from "./settings-manager.ts";
+
+const TELEMETRY_TIMEOUT_MS = 5000;
+
+/**
+ * Send the one-time install ping without keeping the process alive.
+ *
+ * Uses the same env-proxy agent Pi installs for its managed HTTP clients, so a
+ * configured `httpProxy` is honored. The dispatcher is dedicated to this request
+ * and destroyed once the ping settles, which bounds teardown instead of leaving
+ * a connecting socket behind on one-shot commands.
+ */
+function sendInstallPing(url: string): void {
+	let dispatcher: undici.EnvHttpProxyAgent;
+	try {
+		dispatcher = new undici.EnvHttpProxyAgent({
+			allowH2: false,
+			proxyTunnel: true,
+			connect: { timeout: TELEMETRY_TIMEOUT_MS },
+			headersTimeout: TELEMETRY_TIMEOUT_MS,
+			bodyTimeout: TELEMETRY_TIMEOUT_MS,
+		});
+	} catch {
+		return;
+	}
+
+	void undici
+		.request(url, { dispatcher, signal: AbortSignal.timeout(TELEMETRY_TIMEOUT_MS) })
+		.then((response) => response.body.dump())
+		.catch(() => {})
+		.finally(() => dispatcher.destroy());
+}
 
 function isTruthyEnvFlag(value: string | undefined): boolean {
 	if (!value) return false;
@@ -27,13 +58,5 @@ export function recordInstallTelemetry(settingsManager: SettingsManager, version
 	settingsManager.setLastChangelogVersion(version);
 	if (!isInstallTelemetryEnabled(settingsManager)) return;
 
-	const request = httpsGet(`https://pi.dev/api/report-install?version=${encodeURIComponent(version)}`, (response) => {
-		response.on("error", () => {});
-		response.resume();
-	});
-	request.once("socket", (socket) => socket.unref());
-	request.once("error", () => {});
-	const timeout = setTimeout(() => request.destroy(), 5000);
-	timeout.unref();
-	request.once("close", () => clearTimeout(timeout));
+	sendInstallPing(`https://pi.dev/api/report-install?version=${encodeURIComponent(version)}`);
 }

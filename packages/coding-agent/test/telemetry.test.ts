@@ -1,22 +1,31 @@
-import { EventEmitter } from "node:events";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import { recordInstallTelemetry } from "../src/core/telemetry.ts";
 import { getNewEntries } from "../src/utils/changelog.ts";
 
-const httpsGetMock = vi.hoisted(() => vi.fn());
-vi.mock("node:https", () => ({ get: httpsGetMock }));
+const mocks = vi.hoisted(() => ({
+	destroy: vi.fn(),
+	request: vi.fn(),
+	envProxyAgent: vi.fn(),
+}));
 
-function mockRequest() {
-	const request = Object.assign(new EventEmitter(), { destroy: vi.fn() });
-	httpsGetMock.mockReturnValue(request);
-	return request;
-}
+vi.mock("undici", () => {
+	class EnvHttpProxyAgent {
+		destroy = mocks.destroy;
+		constructor(options: unknown) {
+			mocks.envProxyAgent(options);
+		}
+	}
+	return { EnvHttpProxyAgent, request: mocks.request };
+});
+
+beforeEach(() => {
+	mocks.request.mockResolvedValue({ body: { dump: vi.fn().mockResolvedValue(undefined) } });
+});
 
 afterEach(() => {
 	vi.unstubAllEnvs();
 	vi.clearAllMocks();
-	vi.useRealTimers();
 });
 
 describe("install telemetry", () => {
@@ -27,7 +36,7 @@ describe("install telemetry", () => {
 		recordInstallTelemetry(settingsManager, "1.2.3");
 
 		expect(settingsManager.getLastChangelogVersion()).toBeUndefined();
-		expect(httpsGetMock).not.toHaveBeenCalled();
+		expect(mocks.request).not.toHaveBeenCalled();
 	});
 
 	it("advances the marker without sending when telemetry is disabled", () => {
@@ -38,29 +47,28 @@ describe("install telemetry", () => {
 		recordInstallTelemetry(settingsManager, "1.2.3");
 
 		expect(settingsManager.getLastChangelogVersion()).toBe("1.2.3");
-		expect(httpsGetMock).not.toHaveBeenCalled();
+		expect(mocks.request).not.toHaveBeenCalled();
 	});
 
-	it("sends only the version payload without keeping the process alive", () => {
-		vi.useFakeTimers();
+	it("sends only the version through the env-proxy dispatcher and tears it down", async () => {
 		vi.stubEnv("PI_OFFLINE", undefined);
 		vi.stubEnv("PI_TELEMETRY", undefined);
-		const request = mockRequest();
 		const settingsManager = SettingsManager.inMemory();
 
 		recordInstallTelemetry(settingsManager, "1.2.3-beta+test");
 
 		expect(settingsManager.getLastChangelogVersion()).toBe("1.2.3-beta+test");
-		expect(httpsGetMock).toHaveBeenCalledWith(
-			"https://pi.dev/api/report-install?version=1.2.3-beta%2Btest",
-			expect.any(Function),
+		expect(mocks.envProxyAgent).toHaveBeenCalledWith(
+			expect.objectContaining({ proxyTunnel: true, connect: { timeout: 5000 } }),
 		);
-		const socket = { unref: vi.fn() };
-		request.emit("socket", socket);
-		expect(socket.unref).toHaveBeenCalledOnce();
-
-		vi.advanceTimersByTime(5000);
-		expect(request.destroy).toHaveBeenCalledOnce();
+		expect(mocks.request).toHaveBeenCalledWith(
+			"https://pi.dev/api/report-install?version=1.2.3-beta%2Btest",
+			expect.objectContaining({
+				dispatcher: expect.objectContaining({ destroy: mocks.destroy }),
+				signal: expect.any(AbortSignal),
+			}),
+		);
+		await vi.waitFor(() => expect(mocks.destroy).toHaveBeenCalledOnce());
 	});
 
 	it("compares prerelease markers by their changelog version", () => {
