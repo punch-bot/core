@@ -136,8 +136,8 @@ The application owns the open Session. Acquire state **before** synchronous
 `setup`; `env.provide` cannot run in `onActivate`. Install one provider per
 Session host. Chord may reload presentation facets independently, but v1 does
 not use facet reload to replace Session-side task or hook implementations. A
-host plugin code change closes and reopens the Harness with the new definition
-set.
+host extension code change closes and reopens the Harness with the new
+definition set.
 
 Remote clients supply a `RemoteServiceTransport` connected to the host's `services`
 provider; Chord prescribes no socket protocol. `CanvasConsumer` also works unchanged
@@ -349,7 +349,8 @@ dynamic service should then withdraw its instance rather than expose stale data.
 ```text
 addStroke -> hold Session mutation line -> await tx.doc -> mutate tracked draft
 callback succeeds -> tracker flush: incremental ops + candidate value
-atomic storage commit: all document and record writes; checkpoint predicate selects ops or base
+Session checkpoint predicate selects a base or delta exactly once
+atomic storage commit: persist selected document and record writes
 storage succeeds -> materialize immutable published value + enqueue value/ops, still on line
 release line -> deliver committed source ops -> adapter -> local/remote Chord consumers
 late subscriber -> atomically capture committed value + adapter sequence + subscription
@@ -365,8 +366,9 @@ nothing and poisons the open Session; close and reopen it instead of continuing.
   Never mutate inserted aliases or insert one mutable object at multiple paths.
 - Async commit holds the line through storage settlement and baseline adoption.
   Await document access there, not models, processes, network calls, or humans.
-- Normal `snapshot`, `documentSource`, and `watchDoc` reads are get-or-create.
-  Family `initial` is first-creation input, not an update.
+- Normal `snapshot`, `documentSource`, and `watchDoc` reads are get-or-create and
+  lazily migrate through the supplied token. Harness open does not scan ordinary
+  documents. Family `initial` is first-creation input, not an update.
 - Initialize from the fixed `watch.value` before `start()`. Slow or unstarted
   delivery may coalesce an undelivered suffix into a root replacement when its
   operation count exceeds the limit, omitting intermediate states. Queue
