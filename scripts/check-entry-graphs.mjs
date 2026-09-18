@@ -21,6 +21,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const WORKSPACE = {
 	"@punch-bot/chord": "packages/chord/src",
 	"@punch-bot/ai": "packages/ai/src",
+	"@punch-bot/durable": "packages/durable/src",
 	"@punch-bot/agent": "packages/agent/src",
 	"@punch-bot/telemetry": "packages/telemetry/src",
 };

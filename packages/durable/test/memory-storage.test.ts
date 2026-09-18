@@ -1,7 +1,7 @@
 import type { JsonValue } from "@punch-bot/chord";
 import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
 import { describe, expect, it } from "vitest";
-import { MemoryStorage } from "../../src/pico/memory-storage.ts";
+import { MemoryStorage } from "../src/memory-storage.ts";
 import {
 	type EntryRecord,
 	type Id,
@@ -9,7 +9,7 @@ import {
 	ROOT_CONVERSATION_ID,
 	type StorageWrite,
 	type TaskRecord,
-} from "../../src/pico/types.ts";
+} from "../src/types.ts";
 
 const context = BACKGROUND_CONTEXT;
 type StoredTask = TaskRecord<JsonValue, JsonValue, JsonValue>;

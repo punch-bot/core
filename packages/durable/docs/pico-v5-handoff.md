@@ -1,6 +1,6 @@
 # Pico5 implementation handoff
 
-`packages/agent/docs/pico-v5.md` is normative. Implement this list in order.
+`packages/durable/docs/pico-v5.md` is normative. Implement this list in order.
 After every package: run its tests, run `npm run check`, and stop for user review.
 Do not redesign later packages while implementing the current one.
 
