@@ -68,13 +68,16 @@ export async function createExperimentalServerServices(options: {
 
 	const refreshNow = async (context: Context): Promise<void> => {
 		revision += 1;
-		for (const directory of directories.values()) {
-			directory.state.state.sessions = await list(directory.context);
-			directory.state.state.revision = revision;
-			directory.state.publish(context);
-		}
+		await Promise.allSettled(
+			[...directories.values()].map(async (directory) => {
+				directory.state.state.sessions = await list(directory.context);
+				directory.state.state.revision = revision;
+				directory.state.publish(context);
+			}),
+		);
 	};
 	const serialize = <T>(operation: () => Promise<T>): Promise<T> => {
+		if (disposed) return Promise.reject(new Error("Server services are disposed"));
 		const result = mutationTail.catch(() => {}).then(operation);
 		mutationTail = result.then(
 			() => undefined,

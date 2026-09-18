@@ -7,6 +7,18 @@ import { createOidcAuthenticator } from "../src/experimental/gateway/auth.ts";
 
 afterEach(() => vi.unstubAllGlobals());
 
+test("rejects blank required OIDC scopes", () => {
+	expect(() =>
+		createOidcAuthenticator({
+			issuer: "https://identity.test",
+			audience: "punch",
+			jwksUrl: "https://identity.test/jwks",
+			requiredScopes: [" "],
+			resolvePrincipal: async () => ({ userId: "alice", workspaceId: "team", permissions: [] }),
+		}),
+	).toThrow("OIDC requires HTTPS JWKS, issuer, audience and required scopes");
+});
+
 test("validates OIDC signature, issuer, audience, expiry, lifetime and scopes before mapping identity", async () => {
 	const { publicKey, privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 	const jwk = publicKey.export({ format: "jwk" });

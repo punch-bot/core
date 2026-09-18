@@ -314,10 +314,12 @@ class DiscordRenderer {
 					: [],
 			);
 			let activeId: string | undefined;
+			const operationId = snapshot.operation?.id ?? snapshot.lastResult?.operationId;
+			const operationKey = operationId ? `${sessionId}:${operationId}` : undefined;
 			if (this.#streaming && snapshot.operation?.streamingMessage) {
 				const message = snapshot.operation.streamingMessage;
-				const id = `${sessionId}:stream:${snapshot.operation.id}:${message.timestamp}`;
-				this.#streamIds.set(`${sessionId}:${message.timestamp}`, id);
+				const id = `${sessionId}:stream:${snapshot.operation.id}`;
+				this.#streamIds.set(`${sessionId}:${snapshot.operation.id}`, id);
 				messages.push({ id, message });
 				activeId = id;
 			}
@@ -334,7 +336,7 @@ class DiscordRenderer {
 						let end = Math.min(offset + 2000, text.length);
 						if (end < text.length && /[\uD800-\uDBFF]/.test(text[end - 1]!)) end--;
 						const outputId = `${id}:${part}`;
-						const streamId = this.#streamIds.get(`${sessionId}:${message.timestamp}`);
+						const streamId = operationKey ? this.#streamIds.get(operationKey) : undefined;
 						const messageId =
 							this.#gateway.store.message(this.#principal, this.#key, outputId) ??
 							(streamId
@@ -374,6 +376,7 @@ class DiscordRenderer {
 				}
 				this.#seen.set(id, text);
 			}
+			if (!snapshot.operation && operationKey) this.#streamIds.delete(operationKey);
 			this.#lastWrite = Date.now();
 		}
 	}

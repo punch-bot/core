@@ -16,7 +16,7 @@ import {
 import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
 import { Client } from "@punch-bot/client";
 import { createWebSocketTransportFactory } from "@punch-bot/client/websocket";
-import { type Principal, Server, withPrincipal } from "@punch-bot/server";
+import { getPrincipal, type Principal, Server, withPrincipal } from "@punch-bot/server";
 import { createWebSocketListener } from "@punch-bot/server/websocket";
 import { afterEach, expect, test, vi } from "vitest";
 import { DiscordAdapter } from "../src/experimental/gateway/discord.ts";
@@ -42,10 +42,16 @@ afterEach(async () => {
 	cleanup.length = 0;
 });
 
-async function fixture() {
+async function fixture(options: { deferPromptCompletionSnapshot?: boolean } = {}) {
 	const directory = await mkdtemp(join(tmpdir(), "punch-gateway-"));
 	cleanup.push(() => rm(directory, { recursive: true, force: true }));
 	const store = new GatewayStore(join(directory, "gateway.db"));
+	let storeClosed = false;
+	const closeStore = (): void => {
+		if (storeClosed) return;
+		storeClosed = true;
+		store.close();
+	};
 	const repo = new MemorySessionRepo();
 	const serverId = randomUUID();
 	const services = await createExperimentalServerServices({
@@ -95,6 +101,24 @@ async function fixture() {
 		refresh: { status: "idle" },
 	});
 	let finish: (() => void) | undefined;
+	let publishPromptCompletion: (() => void) | undefined;
+	let markPromptReturned!: () => void;
+	const promptReturned = new Promise<void>((resolve) => {
+		markPromptReturned = resolve;
+	});
+	const completePrompt = (): void => {
+		transcript.state.snapshot!.operation = null;
+		transcript.state.snapshot!.lastResult = {
+			operationId: "turn",
+			kind: "run",
+			status: "completed",
+			fromTipId: null,
+			tipId: "final",
+			startedAt: 1,
+			endedAt: 2,
+		};
+		transcript.publish(BACKGROUND_CONTEXT);
+	};
 	const prompt = vi.fn(async () => {
 		transcript.state.snapshot!.operation = {
 			id: "turn",
@@ -108,8 +132,9 @@ async function fixture() {
 		await new Promise<void>((resolve) => {
 			finish = resolve;
 		});
-		transcript.state.snapshot!.operation = null;
-		transcript.publish(BACKGROUND_CONTEXT);
+		if (options.deferPromptCompletionSnapshot) publishPromptCompletion = completePrompt;
+		else completePrompt();
+		markPromptReturned();
 		return { accepted: true as const, operationId: "turn", error: null };
 	});
 	const unsupported = async (): Promise<never> => {
@@ -198,7 +223,7 @@ async function fixture() {
 		await server.close();
 		await services.dispose();
 		await repo.close(BACKGROUND_CONTEXT);
-		store.close();
+		closeStore();
 		await new Promise<void>((resolve) => http.close(() => resolve()));
 	});
 	const connect = async (token: string) => {
@@ -215,7 +240,18 @@ async function fixture() {
 		cleanup.push(() => binding.dispose(BACKGROUND_CONTEXT));
 		return { client, management: binding.use(SessionManagement), directory: binding.use(SessionDirectory) };
 	};
-	return { gateway, store, directory, prompt, transcript, connect };
+	return {
+		gateway,
+		store,
+		services,
+		directory,
+		prompt,
+		promptReturned,
+		publishPromptCompletion: () => publishPromptCompletion?.(),
+		transcript,
+		connect,
+		closeStore,
+	};
 }
 
 test("isolates directory snapshots and blocks cross-workspace attach and removal", async () => {
@@ -242,6 +278,20 @@ test("isolates directory snapshots and blocks cross-workspace attach and removal
 	await expect.poll(() => a.directory.state.value?.sessions).toEqual([]);
 });
 
+test("isolates failed directory projections after a committed mutation", async () => {
+	const runtime = await fixture();
+	const a = await runtime.connect("alice");
+	const b = await runtime.connect("bob");
+	const canAccess = runtime.store.canAccess.bind(runtime.store);
+	vi.spyOn(runtime.store, "canAccess").mockImplementation(async (permission, sessionId, context) => {
+		if (getPrincipal(context)?.userId === "bob") throw new Error("projection failed");
+		return canAccess(permission, sessionId, context);
+	});
+	await expect(a.management.create({}, BACKGROUND_CONTEXT)).resolves.toMatchObject({ sessionId: expect.any(String) });
+	await expect.poll(() => a.directory.state.value?.sessions.length).toBe(1);
+	expect(b.directory.state.value?.sessions).toEqual([]);
+});
+
 test("Android and a platform presentation control the same session, including abort during a prompt", async () => {
 	const runtime = await fixture();
 	const android = await runtime.connect("alice");
@@ -261,10 +311,42 @@ test("Android and a platform presentation control the same session, including ab
 	expect(android.client.attachment?.sessionId).toBe(session.sessionId);
 });
 
+test("waits for the final transcript snapshot before completing a prompt", async () => {
+	const runtime = await fixture({ deferPromptCompletionSnapshot: true });
+	const snapshots: LaneTranscriptSnapshot[] = [];
+	const presentation = await runtime.gateway.open({
+		principal: alice,
+		conversation,
+		async send(event) {
+			snapshots.push(event.snapshot);
+		},
+	});
+	await presentation.execute("new", { type: "new" });
+	const running = presentation.execute("prompt", { type: "prompt", text: "hello" });
+	await expect.poll(() => runtime.prompt.mock.calls.length).toBe(1);
+	await presentation.execute("abort-final-snapshot", { type: "abort" });
+	await runtime.promptReturned;
+	let settled = false;
+	void running.then(
+		() => {
+			settled = true;
+		},
+		() => {
+			settled = true;
+		},
+	);
+	await new Promise<void>((resolve) => setImmediate(resolve));
+	expect(settled).toBe(false);
+	runtime.publishPromptCompletion();
+	await expect(running).resolves.toMatchObject({ accepted: true, operationId: "turn" });
+	expect(snapshots.at(-1)?.lastResult?.operationId).toBe("turn");
+});
+
 test("persists conversation bindings and uncertain event claims across restarts", async () => {
 	const runtime = await fixture();
 	runtime.store.bind(alice, conversation, "session");
 	expect(runtime.store.claim(alice, conversation, "event")).toBeUndefined();
+	runtime.closeStore();
 	const second = new GatewayStore(join(runtime.directory, "gateway.db"));
 	try {
 		expect(second.conversation(alice, conversation)).toBe("session");
@@ -276,6 +358,50 @@ test("persists conversation bindings and uncertain event claims across restarts"
 	} finally {
 		second.close();
 	}
+});
+
+test("disposal rejects late service invocations while draining admitted work", async () => {
+	const runtime = await fixture();
+	const context = withPrincipal(alice, BACKGROUND_CONTEXT);
+	const attachment = await runtime.services.host.attachClient(
+		{
+			attachSession: async () => {},
+			detachSession: async () => {},
+			prepareSessionRemoval: async () => {},
+		},
+		context,
+	);
+	let release!: () => void;
+	let entered!: () => void;
+	const gate = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	const started = new Promise<void>((resolve) => {
+		entered = resolve;
+	});
+	const authorize = runtime.store.authorize.bind(runtime.store);
+	vi.spyOn(runtime.store, "authorize").mockImplementationOnce(async (...args) => {
+		entered();
+		await gate;
+		return authorize(...args);
+	});
+	const invokeCreate = () =>
+		attachment.invokeService(
+			{ serviceId: SessionManagement.id, member: "create", args: [{}] },
+			async () => {},
+			context,
+		);
+	const admitted = invokeCreate();
+	await started;
+	const disposing = runtime.services.dispose();
+	const late = invokeCreate();
+	try {
+		await expect(late).rejects.toThrow("Server services are disposed");
+	} finally {
+		release();
+	}
+	await expect(admitted).resolves.toMatchObject({ sessionId: expect.any(String) });
+	await disposing;
 });
 
 test("shutdown waits for status commands as well as serialized mutations", async () => {
@@ -434,7 +560,7 @@ test("streams Discord edits, reuses the final message and splits long replies wi
 		id: "final",
 		parentId: null,
 		seq: 1,
-		timestamp: 123,
+		timestamp: 456,
 		message: { ...message, content: [{ type: "text", text }] },
 	});
 	runtime.transcript.publish(BACKGROUND_CONTEXT);

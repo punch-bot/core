@@ -17,7 +17,13 @@ export function createOidcAuthenticator(
 	options: OidcAuthenticatorOptions,
 ): (request: IncomingMessage, signal: AbortSignal) => Promise<WebSocketIdentity> {
 	const url = new URL(options.jwksUrl);
-	if (url.protocol !== "https:" || !options.issuer || !options.audience || options.requiredScopes.length === 0) {
+	if (
+		url.protocol !== "https:" ||
+		!options.issuer ||
+		!options.audience ||
+		options.requiredScopes.length === 0 ||
+		options.requiredScopes.some((scope) => typeof scope !== "string" || !scope.trim())
+	) {
 		throw new TypeError("OIDC requires HTTPS JWKS, issuer, audience and required scopes");
 	}
 	const keys = createRemoteJWKSet(url, { timeoutDuration: 5_000 });

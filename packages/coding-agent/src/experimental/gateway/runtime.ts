@@ -116,6 +116,7 @@ export class Gateway {
 		const models = services.use(Models);
 		const transcript = services.use(Transcript);
 		let disposed = false;
+		const completionController = new AbortController();
 		let output: { sessionId: string; snapshot: LaneTranscriptSnapshot } | undefined;
 		let sending: Promise<void> | undefined;
 		const flush = (): Promise<void> => {
@@ -143,10 +144,33 @@ export class Gateway {
 				void flush();
 			}
 		});
+		const waitForTranscriptCompletion = async (operationId: string): Promise<void> => {
+			if (transcript.state.value?.snapshot?.lastResult?.operationId === operationId) return;
+			await new Promise<void>((resolve, reject) => {
+				let settled = false;
+				let unsubscribeCompletion: (() => void) | undefined;
+				const finish = (error?: Error): void => {
+					if (settled) return;
+					settled = true;
+					completionController.signal.removeEventListener("abort", onAbort);
+					unsubscribeCompletion?.();
+					if (error) reject(error);
+					else resolve();
+				};
+				const onAbort = (): void => finish(new Error("Gateway presentation closed before transcript completion"));
+				if (completionController.signal.aborted) return onAbort();
+				completionController.signal.addEventListener("abort", onAbort, { once: true });
+				unsubscribeCompletion = transcript.state.subscribe((state) => {
+					if (state.snapshot?.lastResult?.operationId === operationId) finish();
+				});
+				if (settled) unsubscribeCompletion();
+			});
+		};
 		let disposing: Promise<void> | undefined;
 		const dispose = (): Promise<void> => {
 			if (disposing) return disposing;
 			disposed = true;
+			completionController.abort();
 			unsubscribe();
 			disposing = (async () => {
 				try {
@@ -197,7 +221,15 @@ export class Gateway {
 								this.store.bind(principal, key, sessionId);
 							}
 							await attach(sessionId);
-							const result = await executeCommand(command, sessionId, agent, models, transcript, context);
+							const result = await executeCommand(
+								command,
+								sessionId,
+								agent,
+								models,
+								transcript,
+								waitForTranscriptCompletion,
+								context,
+							);
 							await flush();
 							this.store.complete(principal, key, eventId, "completed", result);
 							return result;
@@ -262,11 +294,13 @@ async function executeCommand(
 	agent: AgentController,
 	models: Models,
 	transcript: Transcript,
+	waitForTranscriptCompletion: (operationId: string) => Promise<void>,
 	context: Context,
 ): Promise<JsonValue> {
 	switch (command.type) {
 		case "prompt": {
 			const result = await agent.prompt({ message: command.text, images: null }, context);
+			if (result.accepted) await waitForTranscriptCompletion(result.operationId);
 			return { sessionId, ...result, error: result.error ? { ...result.error } : null };
 		}
 		case "abort": {
