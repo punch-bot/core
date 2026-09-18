@@ -42,7 +42,9 @@ afterEach(async () => {
 	cleanup.length = 0;
 });
 
-async function fixture(options: { deferPromptCompletionSnapshot?: boolean } = {}) {
+async function fixture(
+	options: { deferPromptCompletionSnapshot?: boolean; omitPromptCompletionResult?: boolean } = {},
+) {
 	const directory = await mkdtemp(join(tmpdir(), "punch-gateway-"));
 	cleanup.push(() => rm(directory, { recursive: true, force: true }));
 	const store = new GatewayStore(join(directory, "gateway.db"));
@@ -108,15 +110,17 @@ async function fixture(options: { deferPromptCompletionSnapshot?: boolean } = {}
 	});
 	const completePrompt = (): void => {
 		transcript.state.snapshot!.operation = null;
-		transcript.state.snapshot!.lastResult = {
-			operationId: "turn",
-			kind: "run",
-			status: "completed",
-			fromTipId: null,
-			tipId: "final",
-			startedAt: 1,
-			endedAt: 2,
-		};
+		if (!options.omitPromptCompletionResult) {
+			transcript.state.snapshot!.lastResult = {
+				operationId: "turn",
+				kind: "run",
+				status: "completed",
+				fromTipId: null,
+				tipId: "final",
+				startedAt: 1,
+				endedAt: 2,
+			};
+		}
 		transcript.publish(BACKGROUND_CONTEXT);
 	};
 	const prompt = vi.fn(async () => {
@@ -340,6 +344,19 @@ test("waits for the final transcript snapshot before completing a prompt", async
 	runtime.publishPromptCompletion();
 	await expect(running).resolves.toMatchObject({ accepted: true, operationId: "turn" });
 	expect(snapshots.at(-1)?.lastResult?.operationId).toBe("turn");
+});
+
+test("releases the command queue when an operation clears without a completion snapshot", async () => {
+	const runtime = await fixture({ omitPromptCompletionResult: true });
+	const presentation = await runtime.gateway.open({ principal: alice, conversation, async send() {} });
+	await presentation.execute("new", { type: "new" });
+	const running = presentation.execute("prompt", { type: "prompt", text: "hello" });
+	await expect.poll(() => runtime.prompt.mock.calls.length).toBe(1);
+	await presentation.execute("abort-missing-result", { type: "abort" });
+	await expect(running).rejects.toThrow("ended without a completion snapshot");
+	await expect(presentation.execute("new-after-missing-result", { type: "new" })).resolves.toMatchObject({
+		sessionId: expect.any(String),
+	});
 });
 
 test("persists conversation bindings and uncertain event claims across restarts", async () => {

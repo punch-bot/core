@@ -22,7 +22,7 @@ export function createOidcAuthenticator(
 		!options.issuer ||
 		!options.audience ||
 		options.requiredScopes.length === 0 ||
-		options.requiredScopes.some((scope) => typeof scope !== "string" || !scope.trim())
+		options.requiredScopes.some((scope) => typeof scope !== "string" || !scope || /\s/.test(scope))
 	) {
 		throw new TypeError("OIDC requires HTTPS JWKS, issuer, audience and required scopes");
 	}

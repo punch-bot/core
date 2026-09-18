@@ -10,6 +10,8 @@ import { SessionManagement } from "../services/sessions.ts";
 import { Transcript } from "../services/transcript.ts";
 import { type ConversationKey, conversationKey, type GatewayStore } from "./store.ts";
 
+const TRANSCRIPT_COMPLETION_TIMEOUT_MS = 10_000;
+
 export type GatewayCommand =
 	| { type: "prompt"; text: string }
 	| { type: "abort" }
@@ -117,6 +119,7 @@ export class Gateway {
 		const transcript = services.use(Transcript);
 		let disposed = false;
 		const completionController = new AbortController();
+		let lastObservedOperationId: string | undefined;
 		let output: { sessionId: string; snapshot: LaneTranscriptSnapshot } | undefined;
 		let sending: Promise<void> | undefined;
 		const flush = (): Promise<void> => {
@@ -139,29 +142,57 @@ export class Gateway {
 			return sending;
 		};
 		const unsubscribe = transcript.state.subscribe((state) => {
+			if (state.snapshot?.operation) lastObservedOperationId = state.snapshot.operation.id;
 			if (state?.snapshot && client.attachment) {
 				output = { sessionId: client.attachment.sessionId, snapshot: state.snapshot };
 				void flush();
 			}
 		});
 		const waitForTranscriptCompletion = async (operationId: string): Promise<void> => {
-			if (transcript.state.value?.snapshot?.lastResult?.operationId === operationId) return;
+			const inspect = (snapshot: LaneTranscriptSnapshot | null | undefined): true | Error | undefined => {
+				if (!snapshot) return;
+				if (snapshot.lastResult?.operationId === operationId) return true;
+				if (snapshot.faulted) return new Error(`Session faulted before transcript completed ${operationId}`);
+				if (snapshot.operation?.id === operationId) {
+					lastObservedOperationId = operationId;
+					return snapshot.operation.deferred ? true : undefined;
+				}
+				if (snapshot.operation)
+					return new Error(`Operation ${operationId} was replaced before transcript completion`);
+				if (lastObservedOperationId === operationId) {
+					return new Error(`Operation ${operationId} ended without a completion snapshot`);
+				}
+			};
+			const initial = inspect(transcript.state.value?.snapshot);
+			if (initial === true) return;
+			if (initial) throw initial;
 			await new Promise<void>((resolve, reject) => {
 				let settled = false;
 				let unsubscribeCompletion: (() => void) | undefined;
+				const timeoutSignal = AbortSignal.timeout(TRANSCRIPT_COMPLETION_TIMEOUT_MS);
+				const signal = AbortSignal.any([completionController.signal, timeoutSignal]);
 				const finish = (error?: Error): void => {
 					if (settled) return;
 					settled = true;
-					completionController.signal.removeEventListener("abort", onAbort);
+					signal.removeEventListener("abort", onAbort);
 					unsubscribeCompletion?.();
 					if (error) reject(error);
 					else resolve();
 				};
-				const onAbort = (): void => finish(new Error("Gateway presentation closed before transcript completion"));
-				if (completionController.signal.aborted) return onAbort();
-				completionController.signal.addEventListener("abort", onAbort, { once: true });
+				const onAbort = (): void =>
+					finish(
+						new Error(
+							completionController.signal.aborted
+								? "Gateway presentation closed before transcript completion"
+								: `Timed out waiting for transcript completion ${operationId}`,
+						),
+					);
+				if (signal.aborted) return onAbort();
+				signal.addEventListener("abort", onAbort, { once: true });
 				unsubscribeCompletion = transcript.state.subscribe((state) => {
-					if (state.snapshot?.lastResult?.operationId === operationId) finish();
+					const result = inspect(state.snapshot);
+					if (result === true) finish();
+					else if (result) finish(result);
 				});
 				if (settled) unsubscribeCompletion();
 			});
