@@ -7,11 +7,11 @@ import {
 	decoder,
 	encoder,
 	isBase,
-	UnsafePathError,
 	type JsonValue,
 	type Op,
 	overlap,
 	track,
+	UnsafePathError,
 	type WireOp,
 } from "../src/delta/index.ts";
 
@@ -1311,8 +1311,18 @@ describe("references held across structural mutation", () => {
 		["splice remove two", (a) => a.splice(1, 2)],
 		["sort", (a) => a.sort((x, y) => (x.k < y.k ? 1 : -1))],
 		["reverse", (a) => a.reverse()],
-		["length truncate", (a) => { a.length = 3; }],
-		["length grow", (a) => { a.length = 7; }],
+		[
+			"length truncate",
+			(a) => {
+				a.length = 3;
+			},
+		],
+		[
+			"length grow",
+			(a) => {
+				a.length = 7;
+			},
+		],
 	];
 	for (const [name, mutate] of mutators) {
 		for (const hold of [0, 2, 4]) {
@@ -1328,7 +1338,12 @@ describe("references held across structural mutation", () => {
 	}
 
 	it("renumbers a held nested object and array", () => {
-		const initial = { xs: [{ k: "a", obj: { deep: 1 }, arr: [1] }, { k: "b", obj: { deep: 2 }, arr: [2] }] };
+		const initial = {
+			xs: [
+				{ k: "a", obj: { deep: 1 }, arr: [1] },
+				{ k: "b", obj: { deep: 2 }, arr: [2] },
+			],
+		};
 		const { live, replica } = roundTrip(initial, (s) => {
 			const obj = s.xs[1].obj;
 			const arr = s.xs[1].arr;
@@ -1343,7 +1358,7 @@ describe("references held across structural mutation", () => {
 		const { live, replica } = roundTrip(xs(), (s) => {
 			const held = s.xs[2];
 			s.xs.splice(2, 1);
-			held.k = "EDITED";              // no position: mutates the object, records nothing
+			held.k = "EDITED"; // no position: mutates the object, records nothing
 		});
 		expect(replica).toEqual(live);
 	});
@@ -1406,11 +1421,13 @@ describe("one object at several positions", () => {
 
 	it("still blocks a reserved key reached after a safe alias", () => {
 		const raw = JSON.parse('{"safe":null,"holder":{"__proto__":{"x":1}}}');
+		// biome-ignore lint/complexity/useLiteralKeys: Preserve the reserved key spelling this test exercises.
 		raw.safe = raw.holder["__proto__"];
 		const t = track(raw);
 		t.flush();
-		expect(t.state.safe).toBeDefined();                       // warm the unblocked wrapper
+		expect(t.state.safe).toBeDefined(); // warm the unblocked wrapper
 		expect(() => {
+			// biome-ignore lint/complexity/useLiteralKeys: Preserve the reserved key spelling this test exercises.
 			t.state.holder["__proto__"].x = 9;
 		}).toThrow(UnsafePathError);
 	});

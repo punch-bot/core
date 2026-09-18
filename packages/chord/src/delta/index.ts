@@ -791,7 +791,10 @@ export function track<T extends object>(root: T, options: TrackerOptions = {}): 
 	// One wrapper per target. A tracked object can occupy several positions in the
 	// document tree; each position is a cell, and a write emits one op per live
 	// cell, which is what a baseline diff produces for the same shape.
-	const wrappers = new WeakMap<object, { proxy: object; target: object; cells: Set<Cell>; blocked: Seg | undefined }>();
+	const wrappers = new WeakMap<
+		object,
+		{ proxy: object; target: object; cells: Set<Cell>; blocked: Seg | undefined }
+	>();
 	// Almost no document ever puts one object at two positions. Until one does,
 	// every write has exactly one path, so the per-write cell walk is skipped.
 	let aliased = false;
@@ -860,24 +863,35 @@ export function track<T extends object>(root: T, options: TrackerOptions = {}): 
 			spliceRemove: number,
 			spliceInsert: number,
 		): void => {
-			shape++;                                           // invalidate cached paths
-			if (key === "push") return;                        // an append shifts nothing
+			shape++; // invalidate cached paths
+			if (key === "push") return; // an append shifts nothing
 			if (!Array.isArray(object)) return;
-			if (childCells.size === 0) return;                 // nobody took a reference
+			if (childCells.size === 0) return; // nobody took a reference
 			let index: number;
 			let remove = 0;
 			let insert = 0;
-			if (key === "pop") { index = before - 1; remove = before > 0 ? 1 : 0; }
-			else if (key === "shift") { index = 0; remove = before > 0 ? 1 : 0; }
-			else if (key === "unshift") { index = 0; insert = after - before; }
-			else if (key === "splice") { index = spliceAt; remove = spliceRemove; insert = spliceInsert; }
-			else {
+			if (key === "pop") {
+				index = before - 1;
+				remove = before > 0 ? 1 : 0;
+			} else if (key === "shift") {
+				index = 0;
+				remove = before > 0 ? 1 : 0;
+			} else if (key === "unshift") {
+				index = 0;
+				insert = after - before;
+			} else if (key === "splice") {
+				index = spliceAt;
+				remove = spliceRemove;
+				insert = spliceInsert;
+			} else {
 				// sort/reverse/fill/copyWithin permute rather than shift: locate each
 				// held child by identity. Held children are few and these are rare.
 				for (const entry of [...childCells]) {
 					const at = (object as unknown as unknown[]).indexOf(entry.target);
-					if (at < 0) { entry.cell.dead = true; childCells.delete(entry); }
-					else entry.cell.seg = at;
+					if (at < 0) {
+						entry.cell.dead = true;
+						childCells.delete(entry);
+					} else entry.cell.seg = at;
 				}
 				childProxies.clear();
 				return;
@@ -886,10 +900,12 @@ export function track<T extends object>(root: T, options: TrackerOptions = {}): 
 			for (const entry of [...childCells]) {
 				const at = entry.cell.seg;
 				if (typeof at !== "number") continue;
-				if (at >= index && at < index + remove) { entry.cell.dead = true; childCells.delete(entry); }
-				else if (at >= index + remove) entry.cell.seg = at + delta;
+				if (at >= index && at < index + remove) {
+					entry.cell.dead = true;
+					childCells.delete(entry);
+				} else if (at >= index + remove) entry.cell.seg = at + delta;
 			}
-			childProxies.clear();      // the cache is keyed by index; rebuild it lazily
+			childProxies.clear(); // the cache is keyed by index; rebuild it lazily
 		};
 
 		const proxy = new Proxy(object, {
@@ -897,7 +913,8 @@ export function track<T extends object>(root: T, options: TrackerOptions = {}): 
 				if (Array.isArray(target) && typeof key === "string" && MUTATORS.has(key)) {
 					return (...args: unknown[]) => {
 						if (blockedSegment !== undefined) throw new UnsafePathError(blockedSegment);
-						if (aliased ? liveCells().length === 0 : isDetached(cell)) return Reflect.apply(Array.prototype[key as "push"], target, args);
+						if (aliased ? liveCells().length === 0 : isDetached(cell))
+							return Reflect.apply(Array.prototype[key as "push"], target, args);
 						const before = target.length;
 						let spliceAt = -1;
 						let spliceRemove = 0;
@@ -944,7 +961,8 @@ export function track<T extends object>(root: T, options: TrackerOptions = {}): 
 									// a splice that clears the whole array is a replacement of it
 									if (index === 0 && remove === before) {
 										if (pathNow().length === 0) emit(["r", cloneJson(items as JsonValue)]);
-										else emit(["s", [...pathNow()] as unknown as NonEmptyPath, cloneJson(items as JsonValue)]);
+										else
+											emit(["s", [...pathNow()] as unknown as NonEmptyPath, cloneJson(items as JsonValue)]);
 									} else emit(["p", [...pathNow()], index, remove, cloneJson(items)]);
 								}
 								result = spliceItems(target, index, remove, items);
@@ -1118,7 +1136,7 @@ export function track<T extends object>(root: T, options: TrackerOptions = {}): 
 		const entry = { proxy, target: object, cells, blocked: blockedSegment };
 		if (existing === undefined) {
 			wrappers.set(object, entry);
-			wrappers.set(proxy, entry);   // so an assigned proxy resolves to the same entry
+			wrappers.set(proxy, entry); // so an assigned proxy resolves to the same entry
 		}
 		return proxy as V;
 	};
