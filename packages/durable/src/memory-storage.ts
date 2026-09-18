@@ -20,7 +20,8 @@ type TableName = "conversation" | "entry" | "task" | "input";
 type State = {
 	conversations: Map<Id, ConversationRecord>;
 	entries: Map<Id, EntryRecord>;
-	entryCommits: Map<Id, Seq>;
+	entryIds: Map<Id, Id[]>;
+	entryCommitSeqs: Map<Id, Seq>;
 	tasks: Map<Id, StoredTask>;
 	inputs: Map<Id, Input>;
 };
@@ -69,7 +70,8 @@ export class MemoryStorage implements Storage {
 	private readonly state: State = {
 		conversations: new Map(),
 		entries: new Map(),
-		entryCommits: new Map(),
+		entryIds: new Map(),
+		entryCommitSeqs: new Map(),
 		tasks: new Map(),
 		inputs: new Map(),
 	};
@@ -88,10 +90,24 @@ export class MemoryStorage implements Storage {
 				case "conversation":
 					this.state.conversations.set(write.value.id, write.value);
 					break;
-				case "entry":
+				case "entry": {
 					this.state.entries.set(write.value.id, write.value);
-					this.state.entryCommits.set(write.value.id, seq);
+					this.state.entryCommitSeqs.set(write.value.id, seq);
+					let ids = this.state.entryIds.get(write.value.conversationId);
+					if (ids === undefined) {
+						ids = [];
+						this.state.entryIds.set(write.value.conversationId, ids);
+					}
+					let low = 0;
+					let high = ids.length;
+					while (low < high) {
+						const middle = (low + high) >>> 1;
+						if (ids[middle] < write.value.id) low = middle + 1;
+						else high = middle;
+					}
+					ids.splice(low, 0, write.value.id);
 					break;
+				}
 				case "task":
 					this.state.tasks.set(write.value.id, write.value);
 					break;
@@ -130,14 +146,26 @@ export class MemoryStorage implements Storage {
 		return page(values, limit);
 	}
 
-	async entries(ids: readonly Id[], _context: Context): Promise<ReadonlyMap<Id, EntryRecord>> {
+	async entry(
+		id: Id,
+		_context: Context,
+	): Promise<{ readonly entry: EntryRecord; readonly commitSeq: Seq } | undefined> {
 		this.assertOpen();
-		const result = new Map<Id, EntryRecord>();
-		for (const id of ids) {
-			const value = this.state.entries.get(id);
-			if (value !== undefined) result.set(id, clone(value));
+		const entry = this.state.entries.get(id);
+		if (entry === undefined) return undefined;
+		return { entry: clone(entry), commitSeq: this.state.entryCommitSeqs.get(id)! };
+	}
+
+	async findLatestHeadMarker(
+		conversationId: Id,
+		atOrBeforeEntryId: Id | undefined,
+		_context: Context,
+	): Promise<(EntryRecord & { readonly head: Id }) | undefined> {
+		this.assertOpen();
+		for (const entry of this.visibleEntries(conversationId, undefined, atOrBeforeEntryId)) {
+			if (entry.head !== undefined) return clone({ ...entry, head: entry.head });
 		}
-		return result;
+		return undefined;
 	}
 
 	async scanEntries(
@@ -147,37 +175,15 @@ export class MemoryStorage implements Storage {
 		_context: Context,
 	): Promise<Page<EntryRecord, Cursor>> {
 		this.assertOpen();
-		if (!this.state.conversations.has(query.conversationId)) {
-			throw new Error(`Unknown conversation: ${query.conversationId}`);
-		}
-		const beforeCursor = cursorId(cursor);
+		const after = cursorId(cursor);
+		const maxEntryId =
+			after === undefined ? query.maxEntryId : Math.min(query.maxEntryId ?? Number.POSITIVE_INFINITY, after - 1);
 		const visible: EntryRecord[] = [];
-		let currentId = query.conversationId;
-		let upperEntryId = Number.POSITIVE_INFINITY;
-		const visited = new Set<Id>();
-		while (true) {
-			if (visited.has(currentId)) throw new Error("Conversation parent cycle");
-			visited.add(currentId);
-			for (const entry of this.state.entries.values()) {
-				if (entry.conversationId !== currentId || entry.id > upperEntryId) continue;
-				if (query.before !== undefined && entry.id >= query.before) continue;
-				if (beforeCursor !== undefined && entry.id >= beforeCursor) continue;
-				if (query.kind !== undefined && entry.kind !== query.kind) continue;
-				if (query.withHead === true && entry.head === undefined) continue;
-				visible.push(entry);
-			}
-			const conversation = this.state.conversations.get(currentId)!;
-			if (conversation.parent === undefined) break;
-			upperEntryId = Math.min(upperEntryId, conversation.parent.at);
-			currentId = conversation.parent.conversationId;
+		for (const entry of this.visibleEntries(query.conversationId, query.minEntryId, maxEntryId)) {
+			visible.push(entry);
+			if (visible.length > limit) break;
 		}
-		visible.sort((left, right) => right.id - left.id);
 		return page(visible, limit);
-	}
-
-	async entryCommit(id: Id, _context: Context): Promise<Seq | undefined> {
-		this.assertOpen();
-		return this.state.entryCommits.get(id);
 	}
 
 	async task(id: Id, _context: Context): Promise<StoredTask | undefined> {
@@ -221,6 +227,41 @@ export class MemoryStorage implements Storage {
 
 	async close(_context: Context): Promise<void> {
 		this.closed = true;
+	}
+
+	private *visibleEntries(
+		conversationId: Id,
+		minEntryId = Number.NEGATIVE_INFINITY,
+		maxEntryId = Number.POSITIVE_INFINITY,
+	): Generator<EntryRecord> {
+		if (!this.state.conversations.has(conversationId)) {
+			throw new Error(`Unknown conversation: ${conversationId}`);
+		}
+		let currentId = conversationId;
+		let upperEntryId = maxEntryId;
+		const visited = new Set<Id>();
+		while (true) {
+			if (visited.has(currentId)) throw new Error("Conversation parent cycle");
+			visited.add(currentId);
+			const ids = this.state.entryIds.get(currentId) ?? [];
+			let low = 0;
+			let high = ids.length;
+			while (low < high) {
+				const middle = (low + high) >>> 1;
+				if (ids[middle] <= upperEntryId) low = middle + 1;
+				else high = middle;
+			}
+			for (let index = low - 1; index >= 0; index--) {
+				const id = ids[index];
+				if (id < minEntryId) break;
+				yield this.state.entries.get(id)!;
+			}
+			const conversation = this.state.conversations.get(currentId)!;
+			if (conversation.parent === undefined) break;
+			upperEntryId = Math.min(upperEntryId, conversation.parent.at);
+			if (upperEntryId < minEntryId) break;
+			currentId = conversation.parent.conversationId;
+		}
 	}
 
 	private checkImmutableIds(writes: readonly StorageWrite[]): void {

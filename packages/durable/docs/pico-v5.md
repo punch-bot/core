@@ -103,9 +103,10 @@ order yields the effective prompt and tool set.
 ```ts
 type ContextEdit = {
   readonly target: Id;
-  readonly action: "omit" | "replace";
-  readonly messages?: readonly Message[];
-};
+} & (
+  | { readonly action: "omit"; readonly messages?: never }
+  | { readonly action: "replace"; readonly messages: readonly Message[] }
+);
 
 type EntryRecord = {
   readonly id: Id;
@@ -265,7 +266,7 @@ interface InputHandle {
 }
 
 type SettledTask<R> = TaskRecord<JsonValue, JsonValue, R> & {
-  readonly state: TerminalTask<R>;
+  readonly state: Extract<TaskState<JsonValue, R>, { status: "terminal" }>;
 };
 
 type ConversationWatch = WatchHandle<ConversationView>;
@@ -531,7 +532,7 @@ type DocumentSemantics =
   | { readonly scope: "task" };
 
 type CommonDocDefinition<T extends JsonObject> = {
-  readonly id: string;
+  readonly kind: string;
   readonly version: number;
   initial(): T;
   migrate?(value: JsonObject, fromVersion: number): T;
@@ -588,7 +589,7 @@ type AnyDocToken = DocToken<JsonObject> | DocFamilyToken<JsonObject, JsonValue>;
 
 Validation rules:
 
-- Definition IDs are unique among loaded definitions.
+- Document kinds are unique among loaded definitions.
 - Versions are positive integers.
 - Session documents are current-only and belong to the Session. Closing and
   reopening the Session does not retire them.
@@ -605,16 +606,17 @@ Concrete built-in document grouping and semantics are declared when the built-in
 definitions are implemented. The generic document mechanism does not special
 case model, tool, inbox, or presentation state.
 
-### 3.2 Identity
+### 3.2 Records and lifetimes
 
-A persisted document instance has:
+A persisted document instance has one lifecycle record:
 
 ```ts
-type DocumentIdentity = {
-  readonly id: Id;                 // unique incarnation
-  readonly definitionId: string;
-  readonly definitionVersion: number;
-  readonly instanceId?: string;    // families only
+type DocumentRecord = {
+  readonly id: Id;              // unique incarnation
+  readonly kind: string;        // registered definition kind
+  readonly key?: string;        // families only
+  readonly createdAt: Seq;      // stamped by the committing storage
+  readonly retiredAt?: Seq;
 } & (
   | { readonly scope: { readonly kind: "session" } }
   | ({ readonly scope: { readonly kind: "conversation"; readonly conversationId: Id } } & (
@@ -627,19 +629,23 @@ type DocumentIdentity = {
   | { readonly scope: { readonly kind: "task"; readonly taskId: Id } }
 );
 
-type DocumentMetadata = DocumentIdentity & {
-  readonly createdAt: Seq;         // stamped by the committing storage
-  readonly retiredAt?: Seq;
-};
+type DocumentCreate = DocumentRecord extends infer Record
+  ? Record extends DocumentRecord
+    ? Omit<Record, "createdAt" | "retiredAt">
+    : never
+  : never;
 ```
 
-`id` is never reused. Retiring and recreating the same logical definition,
-scope, and instance ID creates a new incarnation.
+`id` is never reused. Retiring and recreating the same logical kind, scope, and
+family key creates a new incarnation.
 
-A singleton is identified logically by definition and scope. A family is
-identified logically by definition, scope, and `instanceId`. Persisted metadata
-records the scope and conversation history/fork semantics so absent plugin code
-does not make existing data disappear.
+A singleton is identified logically by kind and scope. A family is identified
+logically by kind, scope, and `key`. The record preserves scope and conversation
+history/fork semantics so absent plugin code does not make existing data
+disappear. Definition versions belong to stored bases and deltas because one
+incarnation may contain records written by multiple definition versions.
+`DocumentCreate` is not another persisted record; it is the same scoped union
+without storage-assigned lifetime fields.
 
 ### 3.3 Access and creation
 
@@ -721,14 +727,14 @@ type DocTarget =
   | { readonly scope: "conversation"; readonly conversationId: Id }
   | { readonly scope: "task"; readonly taskId: Id };
 
-type FamilyKey = DocTarget & { readonly instanceId: string };
+type FamilyKey = DocTarget & { readonly key: string };
 
 type FamilyTarget<I> = FamilyKey & { readonly initial: I };
 
 type HistoricalFamilyTarget = {
   readonly scope: "conversation";
   readonly conversationId: Id;
-  readonly instanceId: string;
+  readonly key: string;
 };
 ```
 
@@ -941,11 +947,6 @@ Storage ownership:
 ### 5.1 Definition
 
 ```ts
-type LiveTask<S> = {
-  readonly status: "pending" | "running";
-  readonly checkpoint: S;
-};
-
 type TaskOutcome<R> =
   | { readonly status: "completed"; readonly result: R }
   | { readonly status: "failed"; readonly error: StoredError; readonly result?: R }
@@ -953,10 +954,10 @@ type TaskOutcome<R> =
   | { readonly status: "orphaned"; readonly reason: string }
   | { readonly status: "faulted"; readonly error: StoredError };
 
-type TerminalTask<R> = {
-  readonly status: "terminal";
-  readonly outcome: TaskOutcome<R>;
-};
+type TaskState<S, R> =
+  | { readonly status: "pending"; readonly checkpoint: S }
+  | { readonly status: "running"; readonly checkpoint: S }
+  | { readonly status: "terminal"; readonly outcome: TaskOutcome<R> };
 
 type TaskRecord<I, S, R> = {
   readonly id: Id;
@@ -964,15 +965,22 @@ type TaskRecord<I, S, R> = {
   readonly kind: string;
   readonly version: number;
   readonly input: I;
-  readonly state: LiveTask<S> | TerminalTask<R>;
   readonly after: readonly Id[];
   readonly background: boolean;
   readonly abortRequested: boolean;
-  readonly memos?: Readonly<Record<string, JsonValue>>; // live tasks only
-};
+} & (
+  | {
+      readonly state: Extract<TaskState<S, R>, { status: "pending" | "running" }>;
+      readonly memos?: Readonly<Record<string, JsonValue>>;
+    }
+  | {
+      readonly state: Extract<TaskState<S, R>, { status: "terminal" }>;
+      readonly memos?: never;
+    }
+);
 
 type RunningTask<I, S, R> = TaskRecord<I, S, R> & {
-  readonly state: LiveTask<S> & { readonly status: "running" };
+  readonly state: Extract<TaskState<S, R>, { status: "running" }>;
 };
 
 interface HookRunner<H extends object> {
@@ -1782,9 +1790,8 @@ type Cursor = Readonly<Record<string, JsonValue>>;
 
 type EntryQuery = {
   readonly conversationId: Id;
-  readonly before?: Id;       // strict semantic cutoff, independent of page cursor
-  readonly kind?: string;
-  readonly withHead?: boolean;
+  readonly minEntryId?: Id; // inclusive
+  readonly maxEntryId?: Id; // inclusive
 };
 
 type TaskQuery = {
@@ -1796,9 +1803,9 @@ type TaskQuery = {
 };
 
 type DocumentQuery = {
-  readonly definitionId?: string;
-  readonly scope?: DocumentIdentity["scope"];
-  readonly instanceId?: string;
+  readonly kind?: string;
+  readonly scope?: DocumentRecord["scope"];
+  readonly key?: string;
   readonly at?: Seq | "current";
   readonly includeRetired?: boolean;
 };
@@ -1808,7 +1815,7 @@ type StoredDocumentRecord =
   | { readonly seq: Seq; readonly version: number; readonly kind: "delta"; readonly ops: readonly Op[] };
 
 type StoredDocument = {
-  readonly metadata: DocumentMetadata;
+  readonly record: DocumentRecord;
   readonly records: readonly [
     Extract<StoredDocumentRecord, { kind: "base" }>,
     ...Extract<StoredDocumentRecord, { kind: "delta" }>[],
@@ -1822,12 +1829,13 @@ type StorageWrite =
   | { readonly type: "input"; readonly value: Input }
   | {
       readonly type: "document.create";
-      readonly identity: DocumentIdentity;
+      readonly record: DocumentCreate;
+      readonly version: number;
       readonly value: JsonObject; // always a base; storage stamps createdAt
     }
   | {
       readonly type: "document.change";
-      readonly metadata: DocumentMetadata;
+      readonly record: DocumentRecord;
       readonly definition: AnyDocToken;
       readonly ops: readonly Op[];
       readonly value: JsonObject;
@@ -1843,9 +1851,9 @@ interface Storage {
   conversation(id: Id, context: Context): Promise<ConversationRecord | undefined>;
   scanConversations(cursor: Cursor | undefined, limit: number, context: Context): Promise<Page<ConversationRecord, Cursor>>;
 
-  entries(ids: readonly Id[], context: Context): Promise<ReadonlyMap<Id, EntryRecord>>;
+  entry(id: Id, context: Context): Promise<{ readonly entry: EntryRecord; readonly commitSeq: Seq } | undefined>;
+  findLatestHeadMarker(conversationId: Id, atOrBeforeEntryId: Id | undefined, context: Context): Promise<(EntryRecord & { readonly head: Id }) | undefined>;
   scanEntries(query: EntryQuery, cursor: Cursor | undefined, limit: number, context: Context): Promise<Page<EntryRecord, Cursor>>;
-  entryCommit(id: Id, context: Context): Promise<Seq | undefined>;
 
   task(id: Id, context: Context): Promise<TaskRecord<JsonValue, JsonValue, JsonValue> | undefined>;
   scanTasks(query: TaskQuery, cursor: Cursor | undefined, limit: number, context: Context): Promise<Page<TaskRecord<JsonValue, JsonValue, JsonValue>, Cursor>>;
@@ -1854,7 +1862,7 @@ interface Storage {
   inputByRequest(conversationId: Id, requestId: string, context: Context): Promise<Input | undefined>;
 
   document(id: Id, at: Seq | "current", context: Context): Promise<StoredDocument | undefined>;
-  scanDocuments(query: DocumentQuery, cursor: Cursor | undefined, limit: number, context: Context): Promise<Page<DocumentMetadata, Cursor>>;
+  scanDocuments(query: DocumentQuery, cursor: Cursor | undefined, limit: number, context: Context): Promise<Page<DocumentRecord, Cursor>>;
 
   close(context: Context): Promise<void>;
 }
@@ -1865,9 +1873,17 @@ scan on the same storage; cross-storage or cross-query use is unsupported. The
 Session owns the mutation line, so storage implementations do not add a second
 caller-facing commit mutex. Each backend still makes one admitted batch atomic.
 
-`EntryQuery` supports conversation ancestry, a strict `before` entry cursor,
-kind filtering, and `withHead`. Document queries support definition, scope,
-instance, current/as-of membership, and retired membership. Task queries support
+`findLatestHeadMarker()` returns the newest visible entry carrying `head` at or
+below its optional inclusive cutoff. The returned entry is the marker; its
+`head` value is the actual lower bound for context. `scanEntries()` pages the
+inclusive ID range in newest-first order while applying every conversation
+ancestry cap. With no bounds it pages complete visible history. To read context
+through entry `E`, find the marker at or before `E`, then scan from
+`marker?.head` through `E`. For current context the upper bound is omitted.
+`entry()` combines exact global lookup with the commit sequence required by
+historical document reads. `limit` is always the maximum page size.
+Document queries support kind, scope, family key, current/as-of membership, and
+retired membership. Task queries support
 conversation, kind, live/terminal
 status, abort mark, and background status.
 
@@ -1889,7 +1905,7 @@ only after a committed base or retirement.
 One SQL transaction is one Session commit. SQLite stores:
 
 - conversation, entry, task, and input records;
-- document metadata;
+- document lifecycle records;
 - indexed document bases/deltas by document and commit sequence.
 
 Live task transitions replace one row. Terminal tasks remain as small records.
@@ -1959,8 +1975,8 @@ These are contracts, not invitations to add defensive machinery:
   live.
 - **Wrong fork setting:** `current`, `initial`, and `asOf` are product semantics,
   not optimizations. Changing one changes child conversation behavior.
-- **Schema stability:** definition IDs, mounted document IDs, and visible paths
-  are persisted/public protocol. Value migration cannot rename an ID; an ID
+- **Schema stability:** document kinds and visible mount paths are
+  persisted/public protocol. Value migration cannot rename a kind; a kind
   change requires explicit copy and retirement.
 - **Watch activation:** `watch.value` is the immutable acquisition snapshot.
   Initialize the consumer from it before `start()`; queued operations are based

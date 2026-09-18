@@ -19,7 +19,7 @@ async function createRoot(storage: MemoryStorage): Promise<Id> {
 	return ROOT_CONVERSATION_ID;
 }
 
-function pendingTask(id: Id, conversationId: Id, phase = "ready"): StoredTask {
+function pendingTask(id: Id, conversationId: Id, phase = "ready") {
 	return {
 		id,
 		conversationId,
@@ -30,7 +30,7 @@ function pendingTask(id: Id, conversationId: Id, phase = "ready"): StoredTask {
 		after: [],
 		background: false,
 		abortRequested: false,
-	};
+	} satisfies StoredTask;
 }
 
 function entry(id: Id, conversationId: Id, kind = "message", extra: Partial<EntryRecord> = {}): EntryRecord {
@@ -71,9 +71,10 @@ describe("Pico MemoryStorage", () => {
 			context,
 		);
 
-		expect(await storage.entries([entryId], context)).toEqual(
-			new Map([[entryId, entry(entryId, rootId, "user", { data: { text: "hello" } })]]),
-		);
+		expect(await storage.entry(entryId, context)).toEqual({
+			entry: entry(entryId, rootId, "user", { data: { text: "hello" } }),
+			commitSeq: initialSeq,
+		});
 		expect(await storage.task(taskId, context)).toEqual(task);
 		expect(await storage.input(inputId, context)).toEqual(input);
 
@@ -97,8 +98,7 @@ describe("Pico MemoryStorage", () => {
 
 		expect(await storage.task(taskId, context)).toEqual(task);
 		expect(await storage.input(inputId, context)).toEqual(input);
-		expect(await storage.entries([transientEntryId], context)).toEqual(new Map());
-		expect(await storage.entryCommit(transientEntryId, context)).toBeUndefined();
+		expect(await storage.entry(transientEntryId, context)).toBeUndefined();
 		expect(
 			await storage.commit([{ type: "entry", value: entry(storage.mintId(), rootId, "after-rollback") }], context),
 		).toBe(initialSeq + 1);
@@ -137,14 +137,14 @@ describe("Pico MemoryStorage", () => {
 		entryData.nested.push(3);
 		checkpoint.nested.count = 2;
 		detail.codes.push("mutated");
-		expect((await storage.entries([entryId], context)).get(entryId)?.data).toEqual({ nested: [1, 2] });
+		expect((await storage.entry(entryId, context))?.entry.data).toEqual({ nested: [1, 2] });
 		expect((await storage.task(taskId, context))?.state).toEqual({
 			status: "pending",
 			checkpoint: { phase: "ready", nested: { count: 1 } },
 		});
 		expect((await storage.input(inputId, context))?.detail).toEqual({ codes: ["initial"] });
 
-		const readEntry = (await storage.entries([entryId], context)).get(entryId)!;
+		const readEntry = (await storage.entry(entryId, context))!.entry;
 		(readEntry.data as { nested: number[] }).nested.push(9);
 		const readTask = (await storage.task(taskId, context))!;
 		if (readTask.state.status !== "terminal") {
@@ -153,7 +153,7 @@ describe("Pico MemoryStorage", () => {
 		const readInput = (await storage.input(inputId, context))!;
 		(readInput.detail as { codes: string[] }).codes.push("read mutation");
 
-		expect((await storage.entries([entryId], context)).get(entryId)?.data).toEqual({ nested: [1, 2] });
+		expect((await storage.entry(entryId, context))?.entry.data).toEqual({ nested: [1, 2] });
 		expect((await storage.task(taskId, context))?.state).toEqual({
 			status: "pending",
 			checkpoint: { phase: "ready", nested: { count: 1 } },
@@ -253,27 +253,54 @@ describe("Pico MemoryStorage", () => {
 		expect(third.items.map(({ id }) => id)).toEqual([rootFirst]);
 		expect(third.next).toBeUndefined();
 
+		const currentMarker = await storage.findLatestHeadMarker(grandchildId, undefined, context);
+		expect(currentMarker?.id).toBe(grandchildHead);
+		expect(currentMarker?.head).toBe(grandchildHead);
+		const historicalMarker = await storage.findLatestHeadMarker(grandchildId, childForkPoint, context);
+		expect(historicalMarker?.id).toBe(rootForkPoint);
+		expect(historicalMarker?.head).toBe(rootFirst);
+		expect(await storage.findLatestHeadMarker(grandchildId, rootFirst, context)).toBeUndefined();
+
+		const activeFirst = await storage.scanEntries(
+			{ conversationId: grandchildId, minEntryId: currentMarker?.head },
+			undefined,
+			1,
+			context,
+		);
+		expect(activeFirst.items.map(({ id }) => id)).toEqual([grandchildTail]);
+		expect(activeFirst.next).toBeDefined();
+		const activeSecond = await storage.scanEntries(
+			{ conversationId: grandchildId, minEntryId: currentMarker?.head },
+			activeFirst.next,
+			1,
+			context,
+		);
+		expect(activeSecond.items.map(({ id }) => id)).toEqual([grandchildHead]);
+		expect(activeSecond.next).toBeUndefined();
+
 		expect(
 			(
-				await storage.scanEntries({ conversationId: grandchildId, before: grandchildHead }, undefined, 10, context)
+				await storage.scanEntries(
+					{
+						conversationId: grandchildId,
+						minEntryId: historicalMarker?.head,
+						maxEntryId: childForkPoint,
+					},
+					undefined,
+					10,
+					context,
+				)
 			).items.map(({ id }) => id),
 		).toEqual([childForkPoint, rootForkPoint, rootFirst]);
-		expect(
-			(
-				await storage.scanEntries({ conversationId: grandchildId, kind: "marker" }, undefined, 10, context)
-			).items.map(({ id }) => id),
-		).toEqual([grandchildHead, rootForkPoint]);
-		expect(
-			(
-				await storage.scanEntries({ conversationId: grandchildId, withHead: true }, undefined, 10, context)
-			).items.map(({ id }) => id),
-		).toEqual([grandchildHead, rootForkPoint]);
 
-		expect(await storage.entryCommit(rootFirst, context)).toBe(rootEntriesSeq);
-		expect(await storage.entryCommit(rootForkPoint, context)).toBe(rootEntriesSeq);
-		expect(await storage.entryCommit(grandchildHead, context)).toBe(grandchildEntriesSeq);
-		expect(await storage.entryCommit(grandchildTail, context)).toBe(grandchildEntriesSeq);
-		expect(await storage.entryCommit(999_999, context)).toBeUndefined();
+		expect(await storage.entry(rootFirst, context)).toEqual({
+			entry: entry(rootFirst, rootId),
+			commitSeq: rootEntriesSeq,
+		});
+		expect((await storage.entry(rootForkPoint, context))?.commitSeq).toBe(rootEntriesSeq);
+		expect((await storage.entry(grandchildHead, context))?.commitSeq).toBe(grandchildEntriesSeq);
+		expect((await storage.entry(grandchildTail, context))?.commitSeq).toBe(grandchildEntriesSeq);
+		expect(await storage.entry(999_999, context)).toBeUndefined();
 		await expect(storage.scanEntries({ conversationId: 999_999 }, undefined, 10, context)).rejects.toThrow(
 			"Unknown conversation",
 		);

@@ -17,7 +17,7 @@ facades, membranes, document routing, view projection, events, or clone chains.
 
 Implement IDs, sequences, reserved root conversation ID `1`,
 `ConversationRecord`, `EntryRecord`, tagged inputs, live/terminal `TaskRecord`
-values, document metadata, storage writes, backend-opaque JSON cursors, and
+values, document lifecycle records, storage writes, backend-opaque JSON cursors, and
 detached `MemoryStorage` tables.
 Reserve `Conversation` for the public conversation object, `Entry` for the typed
 entry definition, and `Task` for the typed executable definition returned by
@@ -77,8 +77,8 @@ unload/reload.
 
 ## 7. Document definitions and access
 
-Implement `defineDoc`, `defineDocFamily`, identity validation, the three direct
-scopes, and get-or-create `tx.doc`, `snapshot`, and `documentSource` acquisition.
+Implement `defineDoc`, `defineDocFamily`, document kind/key validation, the three
+direct scopes, and get-or-create `tx.doc`, `snapshot`, and `documentSource` acquisition.
 
 Test concurrent initialization once, initial bases, detached snapshots, family
 initializer use only on first creation, scope/target mismatch, terminal-task
