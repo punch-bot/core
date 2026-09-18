@@ -78,7 +78,7 @@ export ANTHROPIC_API_KEY=sk-ant-...
 pi -p "Say hello"
 ```
 
-For process integration, use RPC (`pi --mode rpc` or `rpc-entry`). Send slash commands such as `/login` as prompts; the host answers `ctx.ui` dialogs. See [docs/rpc.md](docs/rpc.md).
+For process integration, use RPC (`pi --mode rpc` or `rpc-entry`). Extension commands, skill commands, and prompt templates can be sent as prompts, and the host answers `ctx.ui` dialogs. Built-in actions use dedicated RPC commands. See [docs/rpc.md](docs/rpc.md).
 
 To embed pi in your own app, use the SDK (`createAgentSession`). See [Programmatic Usage](#programmatic-usage).
 
@@ -90,7 +90,7 @@ By default, pi gives the model four tools: `read`, `write`, `edit`, and `bash`. 
 
 ## Providers & Models
 
-For each built-in provider, pi maintains a list of tool-capable models. Configured provider catalogs refresh automatically; run `pi update --models` to force an immediate refresh. Authenticate via subscription (`/login` over RPC) or API key, then select any model from that provider via `/model`.
+For each built-in provider, pi maintains a list of tool-capable models. Configured provider catalogs refresh automatically; run `pi update --models` to force an immediate refresh. Authenticate with an API key or preconfigured subscription credentials, then select a model with `--provider` and `--model`, the RPC `set_model` command, or the SDK.
 
 **Subscriptions:**
 - Anthropic Claude Pro/Max
@@ -130,7 +130,7 @@ For each built-in provider, pi maintains a list of tool-capable models. Configur
 - Xiaomi MiMo Token Plan (Amsterdam)
 - Xiaomi MiMo Token Plan (Singapore)
 
-Pi also supports the llama.cpp router server. Configure it with `/login llama.cpp`, manage downloads and loaded models with `/llama`, then select a loaded model with `/model`. See [docs/llama-cpp.md](docs/llama-cpp.md) for setup and usage.
+Pi also supports the llama.cpp router server. Configure it with environment variables, manage downloads and loaded models with the `/llama` extension command, then select a loaded model through CLI, RPC, or SDK model selection. See [docs/llama-cpp.md](docs/llama-cpp.md) for setup and usage.
 
 See [docs/providers.md](docs/providers.md) for other provider setup instructions.
 
@@ -142,35 +142,11 @@ See [docs/providers.md](docs/providers.md) for other provider setup instructions
 
 Interactive TUI mode has been removed. Use print (`-p`), JSON (`--mode json`), RPC (`--mode rpc` / `rpc-entry`), or the SDK.
 
-Slash commands and extension UI dialogs still work over RPC via `ctx.ui`.
+Extension commands, skill commands, prompt templates, and extension UI dialogs work over RPC. Built-in actions use dedicated RPC commands.
 
 ### Commands
 
-Send a slash command as a prompt over RPC or in print mode. [Extensions](#extensions) can register custom commands, [skills](#skills) are available as `/skill:name`, and [prompt templates](#prompt-templates) expand via `/templatename`.
-
-| Command | Description |
-|---------|-------------|
-| `/login`, `/logout` | Manage provider credentials |
-| [`/llama`](docs/llama-cpp.md) | Download, load, and unload llama.cpp router models |
-| `/model` | Switch models |
-| `/thinking` | Switch thinking level |
-| `/scoped-models` | Choose the models available to this session |
-| `/settings` | Theme, message delivery, transport, and other preferences |
-| `/resume` | Continue a previous session |
-| `/new` | Start a new session |
-| `/name <name>` | Set session display name |
-| `/session` | Show session info (file, ID, messages, tokens, cost) |
-| `/tree` | Jump to any point in the session and continue from there |
-| `/trust` | Save project trust decision for future sessions (restart required) |
-| `/fork` | Create a new session from a previous user message |
-| `/clone` | Duplicate the current active branch into a new session |
-| `/compact [prompt]` | Manually compact context, optional custom instructions |
-| `/copy` | Copy last assistant message to clipboard |
-| `/export [file]` | Export session to HTML or JSONL file |
-| `/import <file>` | Import and resume a session from a JSONL file |
-| `/share` | Upload as private GitHub gist with shareable HTML link |
-| `/reload` | Reload extensions, skills, prompts, themes, and context files |
-| `/changelog` | Display version history |
+Send extension commands as prompts over RPC or in print mode. [Skills](#skills) are available as `/skill:name`, and [prompt templates](#prompt-templates) expand via `/templatename`. Built-in TUI slash commands are not handled in headless modes. RPC exposes model, session, compaction, export, and other operations as JSON commands; see [RPC mode](docs/rpc.md).
 
 ---
 
@@ -191,22 +167,11 @@ pi --session <path|id> # Use specific session file or ID
 pi --fork <path|id>    # Fork specific session file or ID into a new session
 ```
 
-Use `/session` over RPC to see the current session ID before reusing it with `--session <id>` or `--fork <id>`.
+Use the RPC `get_state` command to read the current session ID before reusing it with `--session <id>` or `--fork <id>`.
 
 ### Branching
 
-**`/tree`** - Navigate the session tree in-place. Select any previous point, continue from there, and switch between branches. All history preserved in a single file. Selecting a point while the model is responding cancels that response. Navigation cannot proceed while compaction or another tree navigation is still running; wait for it to finish and retry.
-
-<p align="center"><img src="docs/images/tree-view.png" alt="Tree View" width="600"></p>
-
-- Search by typing, fold/unfold and jump between branches with Ctrl+←/Ctrl+→ or Alt+←/Alt+→, page with ←/→
-- Filter modes (Ctrl+O): default → no-tools → user-only → labeled-only → all
-- Press Ctrl+X to copy the selected message
-- Press Shift+L to label entries as bookmarks and Shift+T to toggle label timestamps
-
-**`/fork`** - Create a new session file from a previous user message on the active branch. Opens a selector, copies the active path up to that point, and places the selected prompt in the editor for modification.
-
-**`/clone`** - Duplicate the current active branch into a new session file at the current position. The new session keeps the full active-path history and opens with an empty editor.
+RPC clients can inspect the append-only session tree with `get_tree`. Use `fork` with a selected entry ID to create a session from an earlier user message, or `clone` to duplicate the active branch at its current position.
 
 **`--fork <path|id>`** - Fork an existing session file or partial session UUID directly from the CLI. This copies the full source session into a new session file in the current project.
 
@@ -214,17 +179,17 @@ Use `/session` over RPC to see the current session ID before reusing it with `--
 
 Long sessions can exhaust context windows. Compaction summarizes older messages while keeping recent ones.
 
-**Manual:** `/compact` or `/compact <custom instructions>`
+**Manual:** Send the RPC `compact` command, optionally with `customInstructions`, or call `session.compact()` through the SDK.
 
-**Automatic:** Enabled by default. Triggers on context overflow (recovers and retries) or when approaching the limit (proactive). Configure via `/settings` or `settings.json`.
+**Automatic:** Enabled by default. Triggers on context overflow (recovers and retries) or when approaching the limit (proactive). Configure it in `settings.json` or with the RPC `set_auto_compaction` command.
 
-Compaction is lossy. The full history remains in the JSONL file; use `/tree` to revisit. Customize compaction behavior via [extensions](#extensions). See [docs/compaction.md](docs/compaction.md) for internals.
+Compaction is lossy. The full history remains in the JSONL file and is available through RPC tree and entry commands. Customize compaction behavior via [extensions](#extensions). See [docs/compaction.md](docs/compaction.md) for internals.
 
 ---
 
 ## Settings
 
-Use `/settings` to modify common options, or edit JSON files directly:
+Edit settings files directly:
 
 | Location | Scope |
 |----------|-------|
@@ -235,7 +200,7 @@ See [docs/settings.md](docs/settings.md) for all options.
 
 ### Project Trust
 
-Headless modes do not prompt for project trust. Trusting a project allows pi to load `.pi/settings.json` and `.pi` resources, install missing project packages, and execute project extensions.
+Trusting a project allows pi to load `.pi/settings.json` and `.pi` resources, install missing project packages, and execute project extensions.
 
 Before the trust decision, pi loads only context files, user/global extensions, and CLI `-e` extensions so they can handle the `project_trust` event. Project-local extensions, project package-managed extensions, and project settings are loaded only after the project is trusted. This split also applies when switching to a session from a different cwd whose trust has not been resolved in the current process.
 
@@ -244,8 +209,6 @@ Non-interactive modes (`-p`, `--mode json`, and `--mode rpc`) do not show a trus
 If no extension or saved decision applies, `defaultProjectTrust` controls the fallback behavior. Set it to `"ask"`, `"always"`, or `"never"` in `~/.pi/agent/settings.json`.
 
 `pi config` and package commands use the same project trust flow, except `pi update` never prompts. Pass `--approve` to trust project-local settings for one command or `--no-approve` to ignore them.
-
-Use `/trust` over RPC to save a project trust decision for future sessions, including trust for the immediate parent folder. It writes `~/.pi/agent/trust.json` only; the current session is not reloaded, so restart pi for changes to take effect.
 
 ### Telemetry and update checks
 
@@ -281,7 +244,7 @@ Replace the default system prompt with `.pi/SYSTEM.md` (project) or `~/.pi/agent
 
 ### Prompt Templates
 
-Reusable prompts as Markdown files. Type `/name` to expand.
+Reusable prompts as Markdown files. Send `/name` as a prompt to expand one.
 
 ```markdown
 <!-- ~/.pi/agent/prompts/review.md -->
@@ -311,7 +274,7 @@ Place in `~/.pi/agent/skills/`, `~/.agents/skills/`, `.pi/skills/`, or `.agents/
 
 <p align="center"><img src="docs/images/doom-extension.png" alt="Doom Extension" width="600"></p>
 
-TypeScript modules that extend pi with custom tools, commands, keyboard shortcuts, event handlers, and UI components.
+TypeScript modules that extend pi with custom tools, commands, event handlers, dialogs, and provider integrations.
 
 ```typescript
 export default function (pi: ExtensionAPI) {
@@ -328,13 +291,10 @@ The default export can also be `async`. pi waits for async extension factories b
 - Sub-agents and plan mode
 - Custom compaction and summarization
 - Permission gates and path protection
-- Custom editors and UI components
-- Status lines, headers, footers
+- RPC-backed dialogs and notifications
 - Git checkpointing and auto-commit
 - SSH and sandbox execution
 - MCP server integration
-- Make pi look like Claude Code
-- Games while waiting (yes, Doom runs)
 - ...anything you can dream up
 
 Place in `~/.pi/agent/extensions/`, `.pi/extensions/`, or a [pi package](#pi-packages) to share with others. See [docs/extensions.md](docs/extensions.md) and [examples/extensions/](examples/extensions/).

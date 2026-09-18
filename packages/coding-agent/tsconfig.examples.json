@@ -1,15 +1,4 @@
 {
-	"extends": "../../tsconfig.base.json",
-	"compilerOptions": {
-		"noEmit": true,
-		"paths": {
-			"@punch-bot/cli": ["./src/index.ts"],
-			"@punch-bot/cli/hooks": ["./src/core/hooks/index.ts"],
-			"@punch-bot/ai": ["../ai/src/index.ts"],
-			"typebox": ["../../node_modules/typebox"]
-		},
-		"skipLibCheck": true
-	},
-	"include": ["examples/**/*.ts"],
-	"exclude": ["node_modules", "dist"]
+	"extends": "../../tsconfig.json",
+	"include": ["examples/**/*.ts"]
 }

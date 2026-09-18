@@ -1,3 +1,4 @@
+import { get as httpsGet } from "node:https";
 import { getChangelogPath } from "../config.ts";
 import { getNewEntries, parseChangelog } from "../utils/changelog.ts";
 import type { SettingsManager } from "./settings-manager.ts";
@@ -26,9 +27,13 @@ export function recordInstallTelemetry(settingsManager: SettingsManager, version
 	settingsManager.setLastChangelogVersion(version);
 	if (!isInstallTelemetryEnabled(settingsManager)) return;
 
-	void fetch(`https://pi.dev/api/report-install?version=${encodeURIComponent(version)}`, {
-		signal: AbortSignal.timeout(5000),
-	})
-		.then(() => undefined)
-		.catch(() => undefined);
+	const request = httpsGet(`https://pi.dev/api/report-install?version=${encodeURIComponent(version)}`, (response) => {
+		response.on("error", () => {});
+		response.resume();
+	});
+	request.once("socket", (socket) => socket.unref());
+	request.once("error", () => {});
+	const timeout = setTimeout(() => request.destroy(), 5000);
+	timeout.unref();
+	request.once("close", () => clearTimeout(timeout));
 }

@@ -1,5 +1,6 @@
 import path from "node:path";
 import { existsSync, readFileSync } from "fs";
+import { parse as parseSemver } from "semver";
 
 export interface ChangelogEntry {
 	major: number;
@@ -180,8 +181,10 @@ export function compareVersions(v1: ChangelogEntry, v2: ChangelogEntry): number 
  * Get entries newer than lastVersion
  */
 export function getNewEntries(entries: ChangelogEntry[], lastVersion: string): ChangelogEntry[] {
-	// Parse lastVersion
-	const parts = lastVersion.split(".").map(Number);
+	const parsedVersion = parseSemver(lastVersion);
+	const parts = parsedVersion
+		? [parsedVersion.major, parsedVersion.minor, parsedVersion.patch]
+		: lastVersion.split(".").map(Number);
 	const last: ChangelogEntry = {
 		major: parts[0] || 0,
 		minor: parts[1] || 0,

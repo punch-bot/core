@@ -4,35 +4,11 @@ This page collects day-to-day usage details that do not fit on the quickstart pa
 
 ## Headless modes
 
-Interactive TUI mode has been removed. Use print (`-p`), JSON (`--mode json`), RPC (`--mode rpc` / `rpc-entry`), or the SDK. Slash commands and extension UI dialogs still work over RPC via `ctx.ui`. See [rpc.md](rpc.md).
+Interactive TUI mode has been removed. Use print (`-p`), JSON (`--mode json`), RPC (`--mode rpc` / `rpc-entry`), or the SDK. Extension UI dialogs still work over RPC via `ctx.ui`. See [rpc.md](rpc.md).
 
-## Slash Commands
+## Commands
 
-Send a slash command as a prompt over RPC or in print mode. Extensions can register custom commands, skills are available as `/skill:name`, and prompt templates expand via `/templatename`.
-
-| Command | Description |
-|---------|-------------|
-| `/login`, `/logout` | Manage OAuth or API-key credentials |
-| [`/llama`](llama-cpp.md) | Download, load, and unload llama.cpp router models |
-| `/model` | Switch models |
-| `/thinking` | Switch thinking level |
-| `/scoped-models` | Choose the models available to this session |
-| `/settings` | Theme, message delivery, transport, and other preferences |
-| `/resume` | Pick from previous sessions |
-| `/new` | Start a new session |
-| `/name <name>` | Set session display name |
-| `/session` | Show session file, ID, messages, tokens, and cost |
-| `/tree` | Jump to any point in the session and continue from there |
-| `/trust` | Save project trust decision for future sessions |
-| `/fork` | Create a new session from a previous user message |
-| `/clone` | Duplicate the current active branch into a new session |
-| `/compact [prompt]` | Manually compact context, optionally with custom instructions |
-| `/copy` | Copy last assistant message to clipboard |
-| `/export [file]` | Export session to HTML or JSONL |
-| `/import <file>` | Import and resume a session from a JSONL file |
-| `/share` | Upload as private GitHub gist with shareable HTML link |
-| `/reload` | Reload extensions, skills, prompts, themes, and context files |
-| `/changelog` | Display version history |
+Send extension commands as prompts over RPC or in print mode. Skills are available as `/skill:name`, and prompt templates expand via `/templatename`. Built-in TUI slash commands are not handled in headless modes. RPC exposes model, session, compaction, export, and other operations as JSON commands; see [RPC mode](rpc.md).
 
 ## Sessions
 
@@ -47,13 +23,13 @@ pi --session <path|id> # Use a specific session file or session ID
 pi --fork <path|id>    # Fork a session into a new session file
 ```
 
-Useful session commands:
+Useful RPC commands:
 
-- `/session` shows the current session file and ID.
-- `/tree` navigates the in-file session tree and can summarize abandoned branches.
-- `/fork` creates a new session from an earlier user message.
-- `/clone` duplicates the current active branch into a new session file.
-- `/compact` summarizes older messages to free context.
+- `get_state` returns the current session file and ID.
+- `get_tree` returns the in-file session tree.
+- `fork` creates a new session from an earlier user message.
+- `clone` duplicates the current active branch into a new session file.
+- `compact` summarizes older messages to free context.
 
 See [Sessions](sessions.md) and [Compaction](compaction.md) for details.
 
@@ -80,24 +56,19 @@ Append to the default prompt without replacing it with `APPEND_SYSTEM.md` in eit
 
 ### Project Trust
 
-When a UI is available (for example an RPC client that answers `ctx.ui` dialogs), pi asks before trusting a project folder that contains project-local settings, resources, or project `.agents/skills` and has no saved decision for the folder or a parent folder in `~/.pi/agent/trust.json`. Trusting a project allows pi to load `.pi/settings.json` and `.pi` resources, install missing project packages, and execute project extensions.
+Trusting a project allows pi to load `.pi/settings.json` and `.pi` resources, install missing project packages, and execute project extensions.
 
 Before the trust decision, pi loads only context files, user/global extensions, and CLI `-e` extensions so they can handle the `project_trust` event. Project-local extensions, project package-managed extensions, and project settings are loaded only after the project is trusted. This split also applies when switching to a session from a different cwd whose trust has not been resolved in the current process.
 
-Headless modes (`-p`, `--mode json`, and RPC clients without dialog support) do not show a trust prompt. Without an applicable saved trust decision, they use `defaultProjectTrust` from global settings: `ask` (default) and `never` ignore those project resources, while `always` trusts them. Pass `--approve`/`-a` or `--no-approve`/`-na` to override project trust for one run.
+Headless modes (`-p`, `--mode json`, and `--mode rpc`) do not show a trust prompt. Without an applicable saved trust decision, they use `defaultProjectTrust` from global settings: `ask` (default) and `never` ignore those project resources, while `always` trusts them. Pass `--approve`/`-a` or `--no-approve`/`-na` to override project trust for one run.
 
-If no extension or saved decision applies, `defaultProjectTrust` controls the fallback behavior. Set it to `"ask"`, `"always"`, or `"never"` in `~/.pi/agent/settings.json`, or change it with `/settings`.
+If no extension or saved decision applies, `defaultProjectTrust` controls the fallback behavior. Set it to `"ask"`, `"always"`, or `"never"` in `~/.pi/agent/settings.json`.
 
 `pi config` and package commands use the same project trust flow, except `pi update` never prompts. Pass `--approve` to trust project-local settings for one command or `--no-approve` to ignore them.
 
-Use `/trust` to save a project trust decision for future sessions, including trust for the immediate parent folder. It writes `~/.pi/agent/trust.json` only; the current session is not reloaded, so restart pi for changes to take effect.
-
-
 ## Exporting and Sharing Sessions
 
-Use `/export [file]` to write a session to HTML.
-
-Use `/share` to upload a private GitHub gist with a shareable HTML link.
+Use `pi --export <session> [output.html]` or the RPC `export_html` command to write a session to HTML.
 
 If you use pi for open source work and want to publish sessions for model, prompt, tool, and evaluation research, see [`badlogic/pi-share-hf`](https://github.com/badlogic/pi-share-hf). It publishes sessions to Hugging Face datasets.
 
