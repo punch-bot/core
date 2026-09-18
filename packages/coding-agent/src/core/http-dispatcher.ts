@@ -78,12 +78,24 @@ function createUndiciOriginDispatcher(origin: string | URL, options: object): un
 	);
 }
 
-export function configureHttpDispatcher(timeoutMs: number = DEFAULT_HTTP_IDLE_TIMEOUT_MS): void {
-	const normalizedTimeoutMs = parseHttpIdleTimeoutMs(timeoutMs);
+export interface CreateHttpDispatcherOptions {
+	/** Idle/body/header timeout in milliseconds. Defaults to the standard Pi idle timeout. */
+	timeoutMs?: number;
+	/** TCP connect timeout in milliseconds. Defaults to the undici/Node default. */
+	connectTimeoutMs?: number;
+}
+
+/**
+ * Build an env-proxy dispatcher with Pi's error-listener plumbing attached to
+ * the dispatcher and its clients. Callers own the dispatcher and should destroy
+ * it when they are done with a short-lived request.
+ */
+export function createHttpDispatcher(options: CreateHttpDispatcherOptions = {}): undici.Dispatcher {
+	const normalizedTimeoutMs = parseHttpIdleTimeoutMs(options.timeoutMs ?? DEFAULT_HTTP_IDLE_TIMEOUT_MS);
 	if (normalizedTimeoutMs === undefined) {
-		throw new Error(`Invalid HTTP idle timeout: ${String(timeoutMs)}`);
+		throw new Error(`Invalid HTTP idle timeout: ${String(options.timeoutMs)}`);
 	}
-	const dispatcher = withUndiciErrorListener(
+	return withUndiciErrorListener(
 		new undici.EnvHttpProxyAgent({
 			allowH2: false,
 			// Keep HTTP origins on CONNECT tunnels as they were before Undici 8.7.
@@ -91,12 +103,17 @@ export function configureHttpDispatcher(timeoutMs: number = DEFAULT_HTTP_IDLE_TI
 			bodyTimeout: normalizedTimeoutMs,
 			connect: {
 				autoSelectFamilyAttemptTimeout: DEFAULT_AUTO_SELECT_FAMILY_ATTEMPT_TIMEOUT_MS,
+				...(options.connectTimeoutMs === undefined ? {} : { timeout: options.connectTimeoutMs }),
 			},
 			headersTimeout: normalizedTimeoutMs,
 			clientFactory: createUndiciClient,
 			factory: createUndiciOriginDispatcher,
 		}),
 	);
+}
+
+export function configureHttpDispatcher(timeoutMs: number = DEFAULT_HTTP_IDLE_TIMEOUT_MS): void {
+	const dispatcher = createHttpDispatcher({ timeoutMs });
 	undici.setGlobalDispatcher(dispatcher);
 	// Keep fetch and the dispatcher on the same undici implementation. Node 26.0's
 	// bundled fetch can otherwise consume compressed responses through npm undici's

@@ -9,13 +9,11 @@ Directory names did not change with the npm rename. `@punch-bot/cli` lives in `p
 | `@punch-bot/cli` | `packages/coding-agent` |
 | `@punch-bot/agent` | `packages/agent` |
 | `@punch-bot/ai` | `packages/ai` |
-| `@punch-bot/tui` | `packages/tui` |
 | `@punch-bot/telemetry` | `packages/telemetry` |
 | `@punch-bot/protocol` | `packages/protocol` |
 | `@punch-bot/client` | `packages/client` |
 | `@punch-bot/server` | `packages/server` |
 | `@punch-bot/sqlite-node` | `packages/session-backends/sqlite-node` |
-| `@punch-bot/evals` | `packages/evals` |
 
 # Development Rules
 
@@ -42,7 +40,7 @@ Directory names did not change with the npm rename. `@punch-bot/cli` lives in `p
 - Use only erasable TypeScript syntax (Node strip-only mode) in code checked by the root config (`packages/*/src`, `packages/*/test`, `packages/coding-agent/examples`): no parameter properties, `enum`, `namespace`/`module`, `import =`, `export =`, or other constructs needing JS emit. Use explicit fields with constructor assignments.
 - Always ask before removing functionality or code that appears intentional.
 - Do not preserve backward compatibility unless the user asks for it.
-- Never hardcode key checks (e.g. `matchesKey(keyData, "ctrl+x")`). Add defaults to `DEFAULT_EDITOR_KEYBINDINGS` or `DEFAULT_APP_KEYBINDINGS` so they stay configurable.
+- Never hardcode key checks.
 - Never modify `packages/ai/src/models.generated.ts` directly; update `packages/ai/scripts/generate-models.ts` instead, then regenerate. Including the resulting `models.generated.ts` diff is always OK, even if regeneration includes unrelated upstream model metadata changes.
 
 ## Commands
@@ -51,7 +49,6 @@ Directory names did not change with the npm rename. `@punch-bot/cli` lives in `p
 - Never run `npm run build` or `npm test` unless requested by the user.
 - Never run the full vitest suite directly: it includes e2e tests that activate when endpoint/auth env vars are present. For all non-e2e tests, run `./test.sh` from the repo root. Otherwise run specific tests from the package root:
   - Vitest: `node "$(git rev-parse --show-toplevel)/node_modules/vitest/dist/cli.js" --run test/specific.test.ts`
-  - `packages/tui` (`node:test`): `node --test test/specific.test.ts`
 - If you create or modify a test file, run it and iterate on test or implementation until it passes.
 - For `packages/coding-agent/test/suite/`, use `test/suite/harness.ts` + the faux provider. No real provider APIs, keys, or paid tokens.
 - Put issue-specific regressions under `packages/coding-agent/test/suite/regressions/` named `<issue-number>-<short-slug>.test.ts`.
@@ -77,7 +74,7 @@ Committing:
 - Stage explicit paths (`git add <path1> <path2>`); never `git add -A` / `git add .`.
 - Before committing, run `git status` and verify you are only staging your files.
 - `packages/ai/src/models.generated.ts` may always be included alongside your files.
-- Message format: `{feat,fix,docs}[(ai,tui,agent,coding-agent)]: <commit message> (optionally multiple lines)`. Message is informative and concise.
+- Message format: `{feat,fix,docs}[(ai,agent,coding-agent)]: <commit message> (optionally multiple lines)`. Message is informative and concise.
 
 Never run (destroys other agents' work or bypasses checks):
 
@@ -101,7 +98,7 @@ When reviewing PRs:
 
 When creating issues:
 
-- Add `pkg:*` labels for affected packages (`pkg:agent`, `pkg:ai`, `pkg:coding-agent`, `pkg:tui`); use all that apply.
+- Add `pkg:*` labels for affected packages (`pkg:agent`, `pkg:ai`, `pkg:coding-agent`); use all that apply.
 
 When posting issue/PR comments:
 
@@ -112,19 +109,6 @@ When posting issue/PR comments:
 When closing issues via commit:
 
 - Include `fixes #<number>` or `closes #<number>` in the message so merging auto-closes the issue. For multiple issues, repeat the keyword per issue (`closes #1, closes #2`); a shared keyword (`closes #1, #2`) only closes the first.
-
-## Testing Interactive Mode with tmux
-
-Run the TUI in a controlled terminal (from the repo root):
-
-```bash
-tmux new-session -d -s pi-test -x 80 -y 24
-tmux send-keys -t pi-test "./pi-test.sh" Enter
-sleep 3 && tmux capture-pane -t pi-test -p     # capture after startup
-tmux send-keys -t pi-test "your prompt here" Enter
-tmux send-keys -t pi-test Escape               # special keys (also C-o for ctrl+o, etc.)
-tmux kill-session -t pi-test
-```
 
 ## Changelog
 
@@ -159,16 +143,14 @@ Attribution:
    /tmp/pi-local-release/node/pi --version
    /tmp/pi-local-release/node/pi --list-models
    /tmp/pi-local-release/node/pi -p "Say exactly: ok"
-   /tmp/pi-local-release/node/pi
 
    # Bun binary smoke tests
    /tmp/pi-local-release/bun/pi --help
    /tmp/pi-local-release/bun/pi --version
    /tmp/pi-local-release/bun/pi --list-models
    /tmp/pi-local-release/bun/pi -p "Say exactly: ok"
-   /tmp/pi-local-release/bun/pi
    ```
-   Verify both Node and Bun startup, model/account listing, interactive startup, and at least one real prompt with the intended default provider. The bare commands `/tmp/pi-local-release/node/pi` and `/tmp/pi-local-release/bun/pi` start interactive mode; run each in tmux, submit a prompt, and wait for the model reply before considering the interactive smoke test passed. Failures are release blockers unless the user explicitly accepts the risk.
+   Verify both Node and Bun startup, model/account listing, and at least one print-mode prompt with the intended default provider. Failures are release blockers unless the user explicitly accepts the risk.
 
 3. **Run the release script**:
    ```bash

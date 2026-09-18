@@ -58,6 +58,8 @@ export interface RoutedSessionHandle {
 /** Application capabilities used by server-wide management and Session routing. */
 export interface ServerHost<TMetadata extends SessionMetadata = SessionMetadata> {
 	readonly serverServices: RoutedServerServiceHost;
+	/** Checked on every attachment and invocation, including cached Session handles. */
+	authorizeSession?(sessionId: string, call: ServiceCall | undefined, context: Context): MaybePromise<void>;
 	/** Resolve one durable Session ID or throw a bounded routing error. */
 	resolveSession(sessionId: string, context: Context): Promise<TMetadata>;
 	openSession(metadata: TMetadata, context: Context): Promise<RoutedSessionHandle>;

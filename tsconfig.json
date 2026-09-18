@@ -40,13 +40,13 @@
 			"@punch-bot/protocol/*": ["./packages/protocol/src/*"],
 			"@punch-bot/client": ["./packages/client/src/index.ts"],
 			"@punch-bot/client/unix": ["./packages/client/src/unix.ts"],
+			"@punch-bot/client/websocket": ["./packages/client/src/websocket.ts"],
 			"@punch-bot/client/*": ["./packages/client/src/*"],
 			"@punch-bot/server": ["./packages/server/src/index.ts"],
 			"@punch-bot/server/unix": ["./packages/server/src/transports/unix/index.ts"],
+			"@punch-bot/server/websocket": ["./packages/server/src/websocket.ts"],
 			"@punch-bot/server/*": ["./packages/server/src/*"],
-			"typebox": ["./node_modules/typebox"],
-			"@punch-bot/tui": ["./packages/tui/src/index.ts"],
-			"@punch-bot/tui/*": ["./packages/tui/src/*"]
+			"typebox": ["./node_modules/typebox"]
 		}
 	},
 	"include": ["packages/*/src/**/*", "packages/*/test/**/*", "packages/session-backends/*/src/**/*", "packages/session-backends/*/test/**/*", "packages/coding-agent/examples/**/*"],

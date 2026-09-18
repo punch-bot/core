@@ -1,6 +1,11 @@
 import type { ThinkingLevel } from "@punch-bot/agent";
 import { DEFAULT_MAX_AGENT_RETRY_DELAY_MS, type Model, type Transport } from "@punch-bot/ai";
-import type { TuiMode as RendererTuiMode, ScrollViewScrollbar, TerminalCapabilities } from "@punch-bot/tui";
+export type TuiMode = "regular" | "fullscreen";
+export type ScrollViewScrollbar = "hidden" | "auto" | "always";
+export interface TerminalCapabilities {
+	trueColor?: boolean;
+}
+
 import { randomUUID } from "crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
@@ -46,7 +51,6 @@ export interface RetrySettings {
 	provider?: ProviderRetrySettings;
 }
 
-export type TuiMode = RendererTuiMode;
 export type FullscreenExitOutput = "transcript" | "resume-hint";
 
 export interface TerminalSettings {
@@ -54,8 +58,6 @@ export interface TerminalSettings {
 	imageWidthCells?: number; // default: 60 (preferred inline image width in terminal cells)
 	clearOnShrink?: boolean; // default: false (clear empty rows when content shrinks)
 	showTerminalProgress?: boolean; // default: false (OSC 9;4 terminal progress indicators)
-	hyperlinks?: boolean | "auto";
-	images?: "kitty" | "iterm2" | "auto" | false;
 	trueColor?: boolean | "auto";
 }
 
@@ -312,6 +314,7 @@ export class SettingsManager {
 	private storage: SettingsStorage;
 	private globalSettings: Settings;
 	private projectSettings: Settings;
+	private runtimeOverrides: Settings = {};
 	private settings: Settings;
 	private projectTrusted: boolean;
 	private modifiedFields = new Set<keyof Settings>(); // Track global fields modified during session
@@ -342,7 +345,11 @@ export class SettingsManager {
 		this.projectSettingsLoadError = projectLoadError;
 		this.errors = [...initialErrors];
 		this.settingsPaths = settingsPaths;
-		this.settings = deepMergeSettings(this.globalSettings, this.projectSettings);
+		this.settings = this.mergeSettings();
+	}
+
+	private mergeSettings(): Settings {
+		return deepMergeSettings(deepMergeSettings(this.globalSettings, this.projectSettings), this.runtimeOverrides);
 	}
 
 	/** Create a SettingsManager that loads from files */
@@ -518,7 +525,7 @@ export class SettingsManager {
 		if (!trusted) {
 			this.projectSettings = {};
 			this.projectSettingsLoadError = null;
-			this.settings = deepMergeSettings(this.globalSettings, this.projectSettings);
+			this.settings = this.mergeSettings();
 			return;
 		}
 
@@ -528,7 +535,7 @@ export class SettingsManager {
 		if (projectLoad.error) {
 			this.recordError("project", projectLoad.error);
 		}
-		this.settings = deepMergeSettings(this.globalSettings, this.projectSettings);
+		this.settings = this.mergeSettings();
 	}
 
 	async reload(): Promise<void> {
@@ -556,12 +563,13 @@ export class SettingsManager {
 			this.recordError("project", projectLoad.error);
 		}
 
-		this.settings = deepMergeSettings(this.globalSettings, this.projectSettings);
+		this.settings = this.mergeSettings();
 	}
 
 	/** Apply additional overrides on top of current settings */
 	applyOverrides(overrides: Partial<Settings>): void {
-		this.settings = deepMergeSettings(this.settings, overrides);
+		this.runtimeOverrides = deepMergeSettings(this.runtimeOverrides, overrides);
+		this.settings = this.mergeSettings();
 	}
 
 	/** Mark a global field as modified during this session */
@@ -661,7 +669,7 @@ export class SettingsManager {
 	}
 
 	private save(): void {
-		this.settings = deepMergeSettings(this.globalSettings, this.projectSettings);
+		this.settings = this.mergeSettings();
 
 		if (this.globalSettingsLoadError) {
 			return;
@@ -679,7 +687,7 @@ export class SettingsManager {
 	private saveProjectSettings(settings: Settings): void {
 		this.assertProjectTrustedForWrite();
 		this.projectSettings = structuredClone(settings);
-		this.settings = deepMergeSettings(this.globalSettings, this.projectSettings);
+		this.settings = this.mergeSettings();
 
 		if (this.projectSettingsLoadError) {
 			return;
@@ -1177,11 +1185,8 @@ export class SettingsManager {
 
 	getTerminalCapabilityOverrides(): Partial<TerminalCapabilities> {
 		const terminal = this.settings.terminal;
-		const images = terminal?.images;
 		return {
-			...(images === "kitty" || images === "iterm2" ? { images } : images === false ? { images: null } : {}),
 			...(typeof terminal?.trueColor === "boolean" ? { trueColor: terminal.trueColor } : {}),
-			...(typeof terminal?.hyperlinks === "boolean" ? { hyperlinks: terminal.hyperlinks } : {}),
 		};
 	}
 

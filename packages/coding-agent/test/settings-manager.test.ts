@@ -197,6 +197,18 @@ describe("SettingsManager", () => {
 			expect(manager.getTheme()).toBe("dark");
 			expect(manager.drainErrors()).toMatchObject([{ scope: "global", path: settingsPath }]);
 		});
+
+		it("preserves runtime overrides when settings reload", async () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ theme: "dark" }));
+			const manager = SettingsManager.create(projectDir, agentDir);
+			manager.applyOverrides({ theme: "runtime" });
+
+			writeFileSync(settingsPath, JSON.stringify({ theme: "light" }));
+			await manager.reload();
+
+			expect(manager.getTheme()).toBe("runtime");
+		});
 	});
 
 	describe("theme setting", () => {
@@ -340,17 +352,9 @@ describe("SettingsManager", () => {
 			const getOverrides = (terminal: NonNullable<Settings["terminal"]>) =>
 				SettingsManager.inMemory({ terminal }).getTerminalCapabilityOverrides();
 
-			expect(getOverrides({ images: false, trueColor: false, hyperlinks: false })).toEqual({
-				images: null,
-				trueColor: false,
-				hyperlinks: false,
-			});
-			expect(getOverrides({ images: "kitty", trueColor: true, hyperlinks: true })).toEqual({
-				images: "kitty",
-				trueColor: true,
-				hyperlinks: true,
-			});
-			expect(getOverrides({ images: "auto", trueColor: "auto", hyperlinks: "auto" })).toEqual({});
+			expect(getOverrides({ trueColor: false })).toEqual({ trueColor: false });
+			expect(getOverrides({ trueColor: true })).toEqual({ trueColor: true });
+			expect(getOverrides({ trueColor: "auto" })).toEqual({});
 		});
 	});
 

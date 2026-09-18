@@ -159,6 +159,7 @@ export class SessionRouter<TMetadata extends SessionMetadata = SessionMetadata> 
 
 	private async attachClientNow(client: object, sessionId: string, context: Context): Promise<void> {
 		if (this.options.isClosing() || this.disconnectedClients.has(client)) throw new ServerDrainingError();
+		await this.options.host.authorizeSession?.(sessionId, undefined, context);
 		const current = this.attachmentsByClient.get(client);
 		if (current?.session.id === sessionId) return;
 		const hosted = await this.acquire(sessionId, context);
@@ -204,6 +205,12 @@ export class SessionRouter<TMetadata extends SessionMetadata = SessionMetadata> 
 		context: Context,
 	): Promise<{ result: Promise<JsonValue | undefined> }> {
 		const attachment = this.requireAttachment(client, target);
+		const authorization = Promise.resolve().then(() =>
+			this.options.host.authorizeSession?.(attachment.session.id, call, context),
+		);
+		this.trackOperation(attachment, authorization);
+		await authorization;
+		if (attachment.releasing !== undefined) throw new SessionNotAttachedError();
 		const result = attachment.lease!.invokeService(
 			call,
 			(subscriptionId, update, updateContext) => publish(subscriptionId, update, updateContext),
@@ -225,7 +232,12 @@ export class SessionRouter<TMetadata extends SessionMetadata = SessionMetadata> 
 		if (this.options.isClosing() || this.disconnectedClients.has(client)) throw new ServerDrainingError();
 		if (!("sessionId" in target)) throw new SessionNotAttachedError();
 		const attachment = this.attachmentsByClient.get(client);
-		if (!attachment || attachment.session.id !== target.sessionId || attachment.id !== target.attachmentId) {
+		if (
+			!attachment ||
+			attachment.releasing !== undefined ||
+			attachment.session.id !== target.sessionId ||
+			attachment.id !== target.attachmentId
+		) {
 			throw new SessionNotAttachedError();
 		}
 		return attachment;

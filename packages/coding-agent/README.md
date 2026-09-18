@@ -16,7 +16,7 @@ Pi is a minimal terminal coding harness. Adapt pi to your workflows, not the oth
 
 Pi ships with powerful defaults but skips features like sub agents and plan mode. Instead, you can ask pi to build what you want or install a third party pi package that matches your workflow.
 
-Pi runs in four modes: interactive, print or JSON, RPC for process integration, and an SDK for embedding in your own apps.
+Pi runs in print or JSON, RPC for process integration, and an SDK for embedding in your own apps. Interactive TUI mode has been removed.
 
 ## Share your OSS coding agent sessions
 
@@ -38,11 +38,8 @@ I regularly publish my own `pi-mono` work sessions here:
 
 - [Quick Start](#quick-start)
 - [Providers & Models](#providers--models)
-- [Interactive Mode](#interactive-mode)
-  - [Editor](#editor)
+- [Headless modes](#headless-modes)
   - [Commands](#commands)
-  - [Keyboard Shortcuts](#keyboard-shortcuts)
-  - [Message Queue](#message-queue)
 - [Sessions](#sessions)
   - [Branching](#branching)
   - [Compaction](#compaction)
@@ -74,21 +71,18 @@ Installer alternative:
 curl -fsSL https://pi.dev/install.sh | sh
 ```
 
-Authenticate with an API key:
+Authenticate with an API key, then run in print mode:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-pi
+pi -p "Say hello"
 ```
 
-Or use your existing subscription:
+For process integration, use RPC (`pi --mode rpc` or `rpc-entry`). Extension commands, skill commands, and prompt templates can be sent as prompts, and the host answers `ctx.ui` dialogs. Built-in actions use dedicated RPC commands. See [docs/rpc.md](docs/rpc.md).
 
-```bash
-pi
-/login  # Then select provider
-```
+To embed pi in your own app, use the SDK (`createAgentSession`). See [Programmatic Usage](#programmatic-usage).
 
-Then just talk to pi. By default, pi gives the model four tools: `read`, `write`, `edit`, and `bash`. The model uses these to fulfill your requests. Add capabilities via [skills](#skills), [prompt templates](#prompt-templates), [extensions](#extensions), or [pi packages](#pi-packages).
+By default, pi gives the model four tools: `read`, `write`, `edit`, and `bash`. The model uses these to fulfill your requests. Add capabilities via [skills](#skills), [prompt templates](#prompt-templates), [extensions](#extensions), or [pi packages](#pi-packages).
 
 **Platform notes:** [Windows](docs/windows.md) | [Termux (Android)](docs/termux.md) | [tmux](docs/tmux.md) | [Terminal setup](docs/terminal-setup.md) | [Shell aliases](docs/shell-aliases.md)
 
@@ -96,7 +90,7 @@ Then just talk to pi. By default, pi gives the model four tools: `read`, `write`
 
 ## Providers & Models
 
-For each built-in provider, pi maintains a list of tool-capable models. Configured provider catalogs refresh automatically; run `pi update --models` to force an immediate refresh. Authenticate via subscription (`/login`) or API key, then select any model from that provider via `/model` (or Ctrl+L). Press Ctrl+S in the model picker to save the highlighted model as the startup default.
+For each built-in provider, pi maintains a list of tool-capable models. Configured provider catalogs refresh automatically; run `pi update --models` to force an immediate refresh. Authenticate with an API key or preconfigured subscription credentials, then select a model with `--provider` and `--model`, the RPC `set_model` command, or the SDK.
 
 **Subscriptions:**
 - Anthropic Claude Pro/Max
@@ -136,7 +130,7 @@ For each built-in provider, pi maintains a list of tool-capable models. Configur
 - Xiaomi MiMo Token Plan (Amsterdam)
 - Xiaomi MiMo Token Plan (Singapore)
 
-Pi also supports the llama.cpp router server. Configure it with `/login llama.cpp`, manage downloads and loaded models with `/llama`, then select a loaded model with `/model`. See [docs/llama-cpp.md](docs/llama-cpp.md) for setup and usage.
+Pi also supports the llama.cpp router server. Configure it with environment variables, manage downloads and loaded models with the `/llama` extension command, then select a loaded model through CLI, RPC, or SDK model selection. See [docs/llama-cpp.md](docs/llama-cpp.md) for setup and usage.
 
 See [docs/providers.md](docs/providers.md) for other provider setup instructions.
 
@@ -144,93 +138,15 @@ See [docs/providers.md](docs/providers.md) for other provider setup instructions
 
 ---
 
-## Interactive Mode
+## Headless modes
 
-<p align="center"><img src="docs/images/interactive-mode.png" alt="Interactive Mode" width="600"></p>
+Interactive TUI mode has been removed. Use print (`-p`), JSON (`--mode json`), RPC (`--mode rpc` / `rpc-entry`), or the SDK.
 
-The interface from top to bottom:
-
-- **Startup header** - Shows shortcuts (`/hotkeys` for all), loaded AGENTS.md files, prompt templates, skills, and extensions
-- **Messages** - Your messages, assistant responses, tool calls and results, notifications, errors, and extension UI
-- **Editor** - Where you type; border color indicates thinking level and the border shows the streaming working indicator
-- **Footer** - Working directory, session name, total token/cache usage (`↑` input, `↓` output, `R` cache read, `W` cache write, `CH` latest cache hit rate), cost, context usage, current model. Totals include assistant responses, usage reported by tools, and summary generation.
-
-The editor can be temporarily replaced by other UI, like built-in `/settings` or custom UI from extensions (e.g., a Q&A tool that lets the user answer model questions in a structured format). [Extensions](#extensions) can also replace the editor, add widgets above/below it, a status line, custom footer, or overlays.
-
-### Editor
-
-| Feature | How |
-|---------|-----|
-| File reference | Type `@` to fuzzy-search project files |
-| Path completion | Tab to complete paths |
-| Multi-line | Shift+Enter (or Ctrl+Enter on Windows Terminal) |
-| External editor | Ctrl+G opens `externalEditor`, `$VISUAL`, `$EDITOR`, Notepad on Windows, or `nano` elsewhere |
-| Clipboard | Ctrl+V to paste an image or text (Alt+V on Windows), or drag images onto terminal |
-| Bash commands | `!command` runs and sends output to LLM, `!!command` runs without sending |
-
-Standard editing keybindings for delete word, undo, etc. See [docs/keybindings.md](docs/keybindings.md).
+Extension commands, skill commands, prompt templates, and extension UI dialogs work over RPC. Built-in actions use dedicated RPC commands.
 
 ### Commands
 
-Type `/` in the editor to trigger commands. [Extensions](#extensions) can register custom commands, [skills](#skills) are available as `/skill:name`, and [prompt templates](#prompt-templates) expand via `/templatename`.
-
-| Command | Description |
-|---------|-------------|
-| `/login`, `/logout` | Manage provider credentials |
-| [`/llama`](docs/llama-cpp.md) | Download, load, and unload llama.cpp router models |
-| `/model` | Switch models; Ctrl+S in the picker saves the startup default |
-| `/thinking` | Switch thinking level; Ctrl+S in the picker saves the startup default |
-| `/scoped-models` | Enable/disable models for Ctrl+P cycling |
-| `/settings` | Theme, message delivery, transport, and other preferences |
-| `/resume` | Pick from previous sessions |
-| `/new` | Start a new session |
-| `/name <name>` | Set session display name |
-| `/session` | Show session info (file, ID, messages, tokens, cost) |
-| `/tree` | Jump to any point in the session and continue from there |
-| `/trust` | Save project trust decision for future sessions (restart required) |
-| `/fork` | Create a new session from a previous user message |
-| `/clone` | Duplicate the current active branch into a new session |
-| `/compact [prompt]` | Manually compact context, optional custom instructions |
-| `/copy` | Copy last assistant message to clipboard |
-| `/export [file]` | Export session to HTML or JSONL file |
-| `/import <file>` | Import and resume a session from a JSONL file |
-| `/share` | Upload as private GitHub gist with shareable HTML link |
-| `/reload` | Reload keybindings, extensions, skills, prompts, themes, and context files |
-| `/hotkeys` | Show all keyboard shortcuts |
-| `/changelog` | Display version history |
-| `/quit` | Quit pi |
-
-### Keyboard Shortcuts
-
-See `/hotkeys` for the full list. Customize via `~/.pi/agent/keybindings.json`. See [docs/keybindings.md](docs/keybindings.md).
-
-**Commonly used:**
-
-| Key | Action |
-|-----|--------|
-| Ctrl+C | Clear editor |
-| Ctrl+C twice | Quit |
-| Escape | Cancel/abort |
-| Escape twice | Open `/tree` |
-| Ctrl+L | Open model selector |
-| Ctrl+P / Shift+Ctrl+P | Cycle scoped models forward/backward |
-| Shift+Tab | Cycle thinking level |
-| Ctrl+O | Collapse/expand tool output |
-| Ctrl+T | Collapse/expand thinking blocks |
-| Ctrl+X | Copy the last assistant message; with fullscreen copy-on-select disabled, copy the active text selection |
-
-### Message Queue
-
-Submit messages while the agent is working:
-
-- **Enter** queues a *steering* message, delivered after the current assistant turn finishes executing its tool calls
-- **Alt+Enter** queues a *follow-up* message, delivered only after the agent finishes all work
-- **Escape** aborts and restores queued messages to editor
-- **Alt+Up** retrieves queued messages back to editor
-
-On Windows Terminal, `Alt+Enter` is fullscreen by default. Remap it in [docs/terminal-setup.md](docs/terminal-setup.md) so pi can receive the follow-up shortcut.
-
-Configure delivery in [settings](docs/settings.md): `steeringMode` and `followUpMode` can be `"one-at-a-time"` (default, waits for response) or `"all"` (delivers all queued at once). `transport` selects provider transport preference (`"sse"`, `"websocket"`, or `"auto"`) for providers that support multiple transports.
+Send extension commands as prompts over RPC or in print mode. [Skills](#skills) are available as `/skill:name`, and [prompt templates](#prompt-templates) expand via `/templatename`. Built-in TUI slash commands are not handled in headless modes. RPC exposes model, session, compaction, export, and other operations as JSON commands; see [RPC mode](docs/rpc.md).
 
 ---
 
@@ -244,29 +160,18 @@ Sessions auto-save to `~/.pi/agent/sessions/` organized by working directory.
 
 ```bash
 pi -c                  # Continue most recent session
-pi -r                  # Browse and select from past sessions
+pi -r                  # Continue most recent session
 pi --no-session        # Ephemeral mode (don't save)
 pi --name "my task"    # Set session display name at startup
 pi --session <path|id> # Use specific session file or ID
 pi --fork <path|id>    # Fork specific session file or ID into a new session
 ```
 
-Use `/session` in interactive mode to see the current session ID before reusing it with `--session <id>` or `--fork <id>`.
+Use the RPC `get_state` command to read the current session ID before reusing it with `--session <id>` or `--fork <id>`.
 
 ### Branching
 
-**`/tree`** - Navigate the session tree in-place. Select any previous point, continue from there, and switch between branches. All history preserved in a single file. Selecting a point while the model is responding cancels that response. Navigation cannot proceed while compaction or another tree navigation is still running; wait for it to finish and retry.
-
-<p align="center"><img src="docs/images/tree-view.png" alt="Tree View" width="600"></p>
-
-- Search by typing, fold/unfold and jump between branches with Ctrl+←/Ctrl+→ or Alt+←/Alt+→, page with ←/→
-- Filter modes (Ctrl+O): default → no-tools → user-only → labeled-only → all
-- Press Ctrl+X to copy the selected message
-- Press Shift+L to label entries as bookmarks and Shift+T to toggle label timestamps
-
-**`/fork`** - Create a new session file from a previous user message on the active branch. Opens a selector, copies the active path up to that point, and places the selected prompt in the editor for modification.
-
-**`/clone`** - Duplicate the current active branch into a new session file at the current position. The new session keeps the full active-path history and opens with an empty editor.
+RPC clients can inspect the append-only session tree with `get_tree`. Use `fork` with a selected entry ID to create a session from an earlier user message, or `clone` to duplicate the active branch at its current position.
 
 **`--fork <path|id>`** - Fork an existing session file or partial session UUID directly from the CLI. This copies the full source session into a new session file in the current project.
 
@@ -274,17 +179,17 @@ Use `/session` in interactive mode to see the current session ID before reusing 
 
 Long sessions can exhaust context windows. Compaction summarizes older messages while keeping recent ones.
 
-**Manual:** `/compact` or `/compact <custom instructions>`
+**Manual:** Send the RPC `compact` command, optionally with `customInstructions`, or call `session.compact()` through the SDK.
 
-**Automatic:** Enabled by default. Triggers on context overflow (recovers and retries) or when approaching the limit (proactive). Configure via `/settings` or `settings.json`.
+**Automatic:** Enabled by default. Triggers on context overflow (recovers and retries) or when approaching the limit (proactive). Configure it in `settings.json` or with the RPC `set_auto_compaction` command.
 
-Compaction is lossy. The full history remains in the JSONL file; use `/tree` to revisit. Customize compaction behavior via [extensions](#extensions). See [docs/compaction.md](docs/compaction.md) for internals.
+Compaction is lossy. The full history remains in the JSONL file and is available through RPC tree and entry commands. Customize compaction behavior via [extensions](#extensions). See [docs/compaction.md](docs/compaction.md) for internals.
 
 ---
 
 ## Settings
 
-Use `/settings` to modify common options, or edit JSON files directly:
+Edit settings files directly:
 
 | Location | Scope |
 |----------|-------|
@@ -295,17 +200,15 @@ See [docs/settings.md](docs/settings.md) for all options.
 
 ### Project Trust
 
-On interactive startup, pi asks before trusting a project folder that contains project-local settings, resources, or project `.agents/skills` and has no saved decision for the folder or a parent folder in `~/.pi/agent/trust.json`. Trusting a project allows pi to load `.pi/settings.json` and `.pi` resources, install missing project packages, and execute project extensions.
+Trusting a project allows pi to load `.pi/settings.json` and `.pi` resources, install missing project packages, and execute project extensions.
 
 Before the trust decision, pi loads only context files, user/global extensions, and CLI `-e` extensions so they can handle the `project_trust` event. Project-local extensions, project package-managed extensions, and project settings are loaded only after the project is trusted. This split also applies when switching to a session from a different cwd whose trust has not been resolved in the current process.
 
 Non-interactive modes (`-p`, `--mode json`, and `--mode rpc`) do not show a trust prompt. Without an applicable saved trust decision, they use `defaultProjectTrust` from global settings: `ask` (default) and `never` ignore those project resources, while `always` trusts them. Pass `--approve`/`-a` or `--no-approve`/`-na` to override project trust for one run.
 
-If no extension or saved decision applies, `defaultProjectTrust` controls the fallback behavior. Set it to `"ask"`, `"always"`, or `"never"` in `~/.pi/agent/settings.json`, or change it with `/settings`.
+If no extension or saved decision applies, `defaultProjectTrust` controls the fallback behavior. Set it to `"ask"`, `"always"`, or `"never"` in `~/.pi/agent/settings.json`.
 
 `pi config` and package commands use the same project trust flow, except `pi update` never prompts. Pass `--approve` to trust project-local settings for one command or `--no-approve` to ignore them.
-
-Use `/trust` in interactive mode to save a project trust decision for future sessions, including trust for the immediate parent folder. It writes `~/.pi/agent/trust.json` only; the current session is not reloaded, so restart pi for changes to take effect.
 
 ### Telemetry and update checks
 
@@ -341,7 +244,7 @@ Replace the default system prompt with `.pi/SYSTEM.md` (project) or `~/.pi/agent
 
 ### Prompt Templates
 
-Reusable prompts as Markdown files. Type `/name` to expand.
+Reusable prompts as Markdown files. Send `/name` as a prompt to expand one.
 
 ```markdown
 <!-- ~/.pi/agent/prompts/review.md -->
@@ -371,7 +274,7 @@ Place in `~/.pi/agent/skills/`, `~/.agents/skills/`, `.pi/skills/`, or `.agents/
 
 <p align="center"><img src="docs/images/doom-extension.png" alt="Doom Extension" width="600"></p>
 
-TypeScript modules that extend pi with custom tools, commands, keyboard shortcuts, event handlers, and UI components.
+TypeScript modules that extend pi with custom tools, commands, event handlers, dialogs, and provider integrations.
 
 ```typescript
 export default function (pi: ExtensionAPI) {
@@ -388,13 +291,10 @@ The default export can also be `async`. pi waits for async extension factories b
 - Sub-agents and plan mode
 - Custom compaction and summarization
 - Permission gates and path protection
-- Custom editors and UI components
-- Status lines, headers, footers
+- RPC-backed dialogs and notifications
 - Git checkpointing and auto-commit
 - SSH and sandbox execution
 - MCP server integration
-- Make pi look like Claude Code
-- Games while waiting (yes, Doom runs)
 - ...anything you can dream up
 
 Place in `~/.pi/agent/extensions/`, `.pi/extensions/`, or a [pi package](#pi-packages) to share with others. See [docs/extensions.md](docs/extensions.md) and [examples/extensions/](examples/extensions/).
@@ -541,8 +441,7 @@ pi config                    # Enable/disable package resources
 
 | Flag | Description |
 |------|-------------|
-| (default) | Interactive mode |
-| `-p`, `--print` | Print response and exit |
+| (default) / `-p`, `--print` | Print response and exit |
 | `--mode json` | Output all events as JSON lines (see [docs/json.md](docs/json.md)) |
 | `--mode rpc` | RPC mode for process integration (see [docs/rpc.md](docs/rpc.md)) |
 | `--export <in> [out]` | Export session to HTML |
@@ -561,7 +460,7 @@ cat README.md | pi -p "Summarize this text"
 | `--model <pattern>` | Model pattern or ID (supports `provider/id` and optional `:<thinking>`) |
 | `--api-key <key>` | API key (overrides env vars) |
 | `--thinking <level>` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
-| `--models <patterns>` | Comma-separated patterns for Ctrl+P cycling |
+| `--models <patterns>` | Comma-separated model patterns available to the session |
 | `--list-models [search]` | List available models |
 
 ### Session Options
@@ -569,7 +468,7 @@ cat README.md | pi -p "Summarize this text"
 | Option | Description |
 |--------|-------------|
 | `-c`, `--continue` | Continue most recent session |
-| `-r`, `--resume` | Browse and select session |
+| `-r`, `--resume` | Continue most recent session |
 | `--session <path\|id>` | Use specific session file or partial UUID |
 | `--fork <path\|id>` | Fork specific session file or partial UUID into a new session |
 | `--session-dir <dir>` | Custom session storage directory |
@@ -609,8 +508,7 @@ Combine `--no-*` with explicit flags to load exactly what you need, ignoring set
 |--------|-------------|
 | `--system-prompt <text>` | Replace default prompt (context files and skills still appended) |
 | `--append-system-prompt <text>` | Append to system prompt |
-| `--tui-mode <mode>` | TUI mode: `regular` (default) or experimental `fullscreen` |
-| `--use-theme <name[/name]>` | Set the initial interactive theme for this run without changing settings |
+| `--use-theme <name[/name]>` | Set the theme for this run without changing settings |
 | `--verbose` | Force verbose startup |
 | `-a`, `--approve` | Trust project-local files for this run |
 | `-na`, `--no-approve` | Ignore project-local files for this run |
@@ -631,10 +529,10 @@ pi @code.ts @test.ts "Review these files"
 ### Examples
 
 ```bash
-# Interactive with initial prompt
-pi "List all .ts files in src/"
+# Print mode
+pi -p "List all .ts files in src/"
 
-# Non-interactive
+# Print mode
 pi -p "Summarize this codebase"
 
 # Prompt beginning with a dash
@@ -655,7 +553,7 @@ pi --model openai/gpt-4o "Help me refactor"
 # Model with thinking level shorthand
 pi --model sonnet:high "Solve this complex problem"
 
-# Limit model cycling
+# Limit the models available to the session
 pi --models "claude-*,gpt-4o"
 
 # Read-only mode
@@ -709,7 +607,6 @@ MIT
 
 - [@punch-bot/ai](https://www.npmjs.com/package/@punch-bot/ai): Core LLM toolkit
 - [@punch-bot/agent](https://www.npmjs.com/package/@punch-bot/agent): Agent framework
-- [@punch-bot/tui](https://www.npmjs.com/package/@punch-bot/tui): Terminal UI components
 
 <p align="center">
   <a href="https://pi.dev">pi.dev</a> domain graciously donated by

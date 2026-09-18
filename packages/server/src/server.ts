@@ -1,4 +1,4 @@
-import { BACKGROUND_CONTEXT, type SessionMetadata, TODO_CONTEXT, withAbortSignal } from "@punch-bot/agent";
+import { BACKGROUND_CONTEXT, type Context, type SessionMetadata, withAbortSignal } from "@punch-bot/agent";
 import {
 	createServiceStateEncoder,
 	decodeServiceControlCall,
@@ -104,7 +104,7 @@ export class Server<TMetadata extends SessionMetadata = SessionMetadata> {
 		const started: ServerListener[] = [];
 		try {
 			for (const listener of this.listeners) {
-				await listener.start((connection) => this.accept(connection));
+				await listener.start((connection, context) => this.accept(connection, context));
 				started.push(listener);
 			}
 			this.started = true;
@@ -133,7 +133,7 @@ export class Server<TMetadata extends SessionMetadata = SessionMetadata> {
 		}
 	}
 
-	accept(connection: ByteConnection): ByteConnectionHandler {
+	accept(connection: ByteConnection, context: Context = BACKGROUND_CONTEXT): ByteConnectionHandler {
 		if (this.closing) {
 			void this.closeConnection(connection);
 			return {
@@ -153,6 +153,7 @@ export class Server<TMetadata extends SessionMetadata = SessionMetadata> {
 		handshakeTimeout.unref();
 		state = {
 			connection,
+			context,
 			decoder: new ClientMessageDecoder({ maxFrameLength: this.maxFrameLength }),
 			serviceStateEncoders: new Map(),
 			stage: "awaitingHello",
@@ -277,10 +278,10 @@ export class Server<TMetadata extends SessionMetadata = SessionMetadata> {
 				detachSession: (context) => this.sessions.detachClient(state, context),
 				prepareSessionRemoval: (sessionId, context) => this.sessions.removeSession(sessionId, context),
 			},
-			TODO_CONTEXT,
+			state.context,
 		);
 		if (this.closing || state.disconnected || state.stage !== "handshaking" || state.connection.closed) {
-			await services.release(TODO_CONTEXT);
+			await services.release(state.context);
 			return;
 		}
 		state.serverServices = services;
@@ -328,7 +329,7 @@ export class Server<TMetadata extends SessionMetadata = SessionMetadata> {
 		const controller = new AbortController();
 		const active = { controller, target: envelope.target };
 		state.activeRequests.set(envelope.id, active);
-		const context = withAbortSignal(controller.signal, TODO_CONTEXT);
+		const context = withAbortSignal(controller.signal, state.context);
 		const control = decodeServiceControlCall(call);
 		const subscribing = control?.type === "subscribe" ? control : undefined;
 		const pendingUpdates: { readonly update: ServiceProviderUpdate }[] = [];
@@ -428,8 +429,8 @@ export class Server<TMetadata extends SessionMetadata = SessionMetadata> {
 		const serverServices = connection.serverServices;
 		delete connection.serverServices;
 		void Promise.allSettled([
-			this.sessions.disconnect(connection, TODO_CONTEXT),
-			serverServices?.release(TODO_CONTEXT),
+			this.sessions.disconnect(connection, connection.context),
+			serverServices?.release(connection.context),
 		]).then((results) => {
 			for (const result of results) if (result.status === "rejected") this.reportError(result.reason);
 		});

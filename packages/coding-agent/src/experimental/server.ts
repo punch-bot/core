@@ -5,11 +5,13 @@ import { isAbsolute, join } from "node:path";
 import { BACKGROUND_CONTEXT, type JsonlSessionMetadata, JsonlSessionRepo, TODO_CONTEXT } from "@punch-bot/agent";
 import { NodeExecutionEnv } from "@punch-bot/agent/node";
 import type { Context } from "@punch-bot/chord";
+import { decodeServiceControlCall } from "@punch-bot/chord";
 import type { FacetBundleArtifact } from "@punch-bot/chord/node";
 import { Client, ServerError as ClientServerError, DisconnectedError } from "@punch-bot/client";
 import { createUnixTransportFactory, type UnixServerRoute } from "@punch-bot/client/unix";
 import { isServerId, type ServerId } from "@punch-bot/protocol";
 import {
+	getPrincipal,
 	ServerError as RoutedServerError,
 	type Server,
 	type ServerHost,
@@ -39,7 +41,7 @@ import {
 } from "./process.ts";
 import { RadiusRelayAuthResolver } from "./radius-auth.ts";
 import { RadiusRelayHost, type RadiusRelayHostStatus } from "./radius-relay.ts";
-import { createExperimentalServerServices } from "./services/server.ts";
+import { createExperimentalServerServices, type SessionAccess } from "./services/server.ts";
 import type { SessionCreateOptions, SessionSummary } from "./services/sessions.ts";
 import { SessionPluginSelectionConflictError, SessionWorkerManager } from "./session-worker-manager.ts";
 
@@ -326,6 +328,8 @@ export interface RunningServer {
 }
 
 export interface StartServerOptions {
+	/** Required when exposing this backend through an authenticated gateway. */
+	readonly sessionAccess?: SessionAccess;
 	/** Server profile and socket directory. Defaults to PI_SERVER_DIR or ~/.pi/server. */
 	readonly directory?: string;
 	/** Logical service ID. Defaults to PI_SERVER_ID or the directory's default-server-id. */
@@ -352,6 +356,7 @@ interface ResolvedSessionPlugins {
 }
 
 interface StartServerBackendOptions {
+	readonly sessionAccess?: SessionAccess;
 	readonly path: string;
 	readonly serverId: ServerId;
 	readonly sessionDir?: string;
@@ -392,7 +397,11 @@ async function startServerBackend(
 		createOptions: SessionCreateOptions,
 		context: Context,
 	): Promise<JsonlSessionMetadata> => {
-		const session = await repo.create({ ...createOptions, cwd: process.cwd() }, context);
+		// Remote callers cannot select an existing durable ID and claim its ownership.
+		const session = await repo.create(
+			{ ...createOptions, ...(getPrincipal(context) ? { id: randomUUID() } : {}), cwd: process.cwd() },
+			context,
+		);
 		try {
 			return session.metadata;
 		} finally {
@@ -411,6 +420,7 @@ async function startServerBackend(
 		if (errors.length > 1) throw new AggregateError(errors, "Experimental session storage cleanup failed");
 	};
 	const serverServices = await createExperimentalServerServices({
+		access: options.sessionAccess,
 		list: async (context) =>
 			(await listSessions(context))
 				.map(summarize)
@@ -452,6 +462,10 @@ async function startServerBackend(
 	});
 	const host: ServerHost<JsonlSessionMetadata> = {
 		serverServices: serverServices.host,
+		authorizeSession: async (sessionId, call, context) => {
+			const read = call === undefined || decodeServiceControlCall(call) !== undefined;
+			await options.sessionAccess?.authorize(read ? "sessions:read" : "sessions:control", sessionId, context);
+		},
 		resolveSession,
 		openSession: async (metadata, context) => {
 			const selected = await options.resolveSessionPlugins(metadata, undefined, context);
@@ -615,6 +629,7 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
 		backend = await startServerBackend(
 			{
 				path: serverPath,
+				sessionAccess: options.sessionAccess,
 				serverId,
 				sessionDir: options.sessionDir,
 				resolveSessionPlugins,
@@ -629,13 +644,18 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
 		startupLease = undefined;
 		await workers.discover(coordinator.peerIds);
 		await backend.refreshSessions();
-		relay = new RadiusRelayHost({
-			serverId,
-			server: backend.server,
-			auth: new RadiusRelayAuthResolver(options.relayAuth),
-			onStatus: options.onRelayStatus,
-		});
-		relay.start();
+		// Radius relay connections carry no principal, so they cannot satisfy
+		// access-controlled backends. Only relay for servers without session access control.
+		relay =
+			options.sessionAccess === undefined
+				? new RadiusRelayHost({
+						serverId,
+						server: backend.server,
+						auth: new RadiusRelayAuthResolver(options.relayAuth),
+						onStatus: options.onRelayStatus,
+					})
+				: undefined;
+		relay?.start();
 
 		const activeBackend = backend;
 		const activeCoordinator = coordinator;
@@ -645,7 +665,7 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
 			.then(async () => {
 				lifetime.stop();
 				activeWorkers.detach();
-				await activeRelay.close();
+				await activeRelay?.close();
 				await activeBackend.close();
 			})
 			.finally(() => activeCoordinator.close())
@@ -657,12 +677,12 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
 			socketPath,
 			server: activeBackend.server,
 			workerPids: activeWorkers.workerPids,
-			closed: activeBackend.closed.finally(() => activeRelay.close()),
+			closed: activeBackend.closed.finally(() => activeRelay?.close()),
 			close() {
 				lifetime.stop();
 				closePromise ??= (async () => {
 					try {
-						await activeRelay.close();
+						await activeRelay?.close();
 						await activeBackend.close();
 					} finally {
 						try {

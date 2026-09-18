@@ -1,3 +1,4 @@
+import type { Context } from "@punch-bot/agent";
 import type { ServiceStateEncoder } from "@punch-bot/chord";
 import type { ClientMessageDecoder, RpcTarget } from "@punch-bot/protocol";
 
@@ -16,12 +17,14 @@ export interface ByteConnectionHandler {
 	onError(error: Error): void;
 }
 
-export type ByteConnectionAcceptor = (connection: ByteConnection) => ByteConnectionHandler;
+/** Context comes from the trusted listener, never from protocol messages. */
+export type ByteConnectionAcceptor = (connection: ByteConnection, context?: Context) => ByteConnectionHandler;
 
 export type ConnectionStage = "awaitingHello" | "handshaking" | "ready" | "closing" | "closed";
 
 export interface ConnectionState {
 	connection: ByteConnection;
+	readonly context: Context;
 	decoder: ClientMessageDecoder;
 	serviceStateEncoders: Map<string, ServiceStateEncoder>;
 	stage: ConnectionStage;

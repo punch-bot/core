@@ -21,13 +21,31 @@ export const workspaceSourcePaths = {
 	serverIndex: fileURLToPath(new URL("./packages/server/src/index.ts", import.meta.url)),
 	serverUnix: fileURLToPath(new URL("./packages/server/src/transports/unix/index.ts", import.meta.url)),
 	codingAgentIndex: fileURLToPath(new URL("./packages/coding-agent/src/index.ts", import.meta.url)),
-	tuiIndex: fileURLToPath(new URL("./packages/tui/src/index.ts", import.meta.url)),
 	a2aIndex: fileURLToPath(new URL("./packages/a2a/src/index.ts", import.meta.url)),
 } as const;
 
 export default defineConfig({
 	resolve: {
 		alias: [
+			{ find: /^@punch-bot\/chord$/, replacement: workspaceSourcePaths.chordIndex },
+			{ find: /^@punch-bot\/chord\/context$/, replacement: workspaceSourcePaths.chordContext },
+			{ find: /^@punch-bot\/chord\/delta$/, replacement: workspaceSourcePaths.chordDelta },
+			{ find: /^@punch-bot\/chord\/bundler$/, replacement: workspaceSourcePaths.chordBundler },
+			{ find: /^@punch-bot\/chord\/node$/, replacement: workspaceSourcePaths.chordNode },
+			{ find: /^@punch-bot\/telemetry$/, replacement: workspaceSourcePaths.telemetryIndex },
+			{ find: /^@punch-bot\/telemetry\/testing$/, replacement: workspaceSourcePaths.telemetryTesting },
+			{ find: /^@punch-bot\/ai$/, replacement: workspaceSourcePaths.aiIndex },
+			{ find: /^@punch-bot\/ai\/oauth$/, replacement: workspaceSourcePaths.aiOAuth },
+			{ find: /^@punch-bot\/ai\/(.+)$/, replacement: `${fileURLToPath(new URL("./packages/ai/src/", import.meta.url))}$1.ts` },
+			{ find: /^@punch-bot\/agent$/, replacement: workspaceSourcePaths.agentIndex },
+			{ find: /^@punch-bot\/agent\/node$/, replacement: workspaceSourcePaths.agentNode },
+			{ find: /^@punch-bot\/protocol$/, replacement: workspaceSourcePaths.protocolIndex },
+			{ find: /^@punch-bot\/client$/, replacement: workspaceSourcePaths.clientIndex },
+			{ find: /^@punch-bot\/client\/unix$/, replacement: workspaceSourcePaths.clientUnix },
+			{ find: /^@punch-bot\/client\/websocket$/, replacement: fileURLToPath(new URL("./packages/client/src/websocket.ts", import.meta.url)) },
+			{ find: /^@punch-bot\/server$/, replacement: workspaceSourcePaths.serverIndex },
+			{ find: /^@punch-bot\/server\/unix$/, replacement: workspaceSourcePaths.serverUnix },
+			{ find: /^@punch-bot\/server\/websocket$/, replacement: fileURLToPath(new URL("./packages/server/src/websocket.ts", import.meta.url)) },
 			{ find: /^@earendil-works\/chord$/, replacement: workspaceSourcePaths.chordIndex },
 			{ find: /^@earendil-works\/chord\/context$/, replacement: workspaceSourcePaths.chordContext },
 			{ find: /^@earendil-works\/chord\/delta$/, replacement: workspaceSourcePaths.chordDelta },
@@ -49,7 +67,6 @@ export default defineConfig({
 			{ find: /^@earendil-works\/pi-client\/unix$/, replacement: workspaceSourcePaths.clientUnix },
 			{ find: /^@earendil-works\/pi-server$/, replacement: workspaceSourcePaths.serverIndex },
 			{ find: /^@earendil-works\/pi-server\/unix$/, replacement: workspaceSourcePaths.serverUnix },
-			{ find: /^@earendil-works\/pi-tui$/, replacement: workspaceSourcePaths.tuiIndex },
 		],
 	},
 });
