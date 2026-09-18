@@ -298,8 +298,9 @@ export type StorageWrite =
 /**
  * Atomic persistence boundary for Session records.
  *
- * Implementations return detached values, own cursor encoding, and protect global ID
- * uniqueness. The owning Session serializes commits on its mutation line.
+ * Storage trusts the owning Session to supply semantically valid records, references,
+ * ancestry, and transitions. Implementations enforce atomicity, global ID ownership,
+ * immutable conversation/entry creation, and detached values; Session serializes commits.
  */
 export interface Storage {
 	/** Atomically persist one batch and return the sequence assigned to that commit. */

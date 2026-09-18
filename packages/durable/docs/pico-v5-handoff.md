@@ -49,7 +49,9 @@ deleted-page reuse, and representative storage sizes.
 
 Implement table writes in `main.jsonl`, one document sidecar per incarnation,
 one sidecar per live task, and one main marker per commit. Do not add a
-standalone-sidecar protocol.
+standalone-sidecar protocol. Serialization must also provide the storage ownership
+boundary: retained indexes/materializations are detached from write arguments,
+and reads never expose backend-owned cached objects.
 
 Fault-test torn/short sidecar writes, failures between sidecars, every marker
 boundary, unconfirmed tails, missing confirmed data, and poisoned writes.

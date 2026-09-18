@@ -161,6 +161,74 @@ describe("Pico MemoryStorage", () => {
 		expect((await storage.input(inputId, context))?.detail).toEqual({ codes: ["initial"] });
 	});
 
+	it("detaches prototype-like JSON keys without changing object prototypes", async () => {
+		const storage = new MemoryStorage();
+		const rootId = await createRoot(storage);
+		const entryId = storage.mintId();
+		const data = JSON.parse(
+			'{"__proto__":{"polluted":false},"constructor":{"label":"stored"},"toString":"value"}',
+		) as Record<string, JsonValue>;
+		await storage.commit([{ type: "entry", value: entry(entryId, rootId, "note", { data }) }], context);
+
+		(Reflect.get(data, "__proto__") as Record<string, JsonValue>).polluted = true;
+		(Reflect.get(data, "constructor") as Record<string, JsonValue>).label = "mutated";
+		const firstRead = (await storage.entry(entryId, context))!.entry.data as Record<string, JsonValue>;
+		expect(Object.getPrototypeOf(firstRead)).toBe(Object.prototype);
+		expect(Object.hasOwn(firstRead, "__proto__")).toBe(true);
+		expect(Reflect.get(firstRead, "__proto__")).toEqual({ polluted: false });
+		expect(Reflect.get(firstRead, "constructor")).toEqual({ label: "stored" });
+		expect(Reflect.get(firstRead, "toString")).toBe("value");
+		expect(({} as { polluted?: boolean }).polluted).toBeUndefined();
+
+		(Reflect.get(firstRead, "__proto__") as Record<string, JsonValue>).polluted = true;
+		const secondRead = (await storage.entry(entryId, context))!.entry.data as Record<string, JsonValue>;
+		expect(Reflect.get(secondRead, "__proto__")).toEqual({ polluted: false });
+		expect(Reflect.get(secondRead, "constructor")).toEqual({ label: "stored" });
+		expect(Reflect.get(secondRead, "toString")).toBe("value");
+	});
+
+	it("indexes entries committed out of ID order", async () => {
+		const storage = new MemoryStorage();
+		const rootId = await createRoot(storage);
+		await storage.commit(
+			[
+				{ type: "entry", value: entry(30, rootId) },
+				{ type: "entry", value: entry(10, rootId) },
+				{ type: "entry", value: entry(20, rootId, "marker", { head: 10 }) },
+			],
+			context,
+		);
+
+		expect(
+			(await storage.scanEntries({ conversationId: rootId }, undefined, 10, context)).items.map(({ id }) => id),
+		).toEqual([30, 20, 10]);
+		expect((await storage.findLatestHeadMarker(rootId, undefined, context))?.id).toBe(20);
+	});
+
+	it("continues an entry cursor below its last item after a newer commit", async () => {
+		const storage = new MemoryStorage();
+		const rootId = await createRoot(storage);
+		const oldestId = storage.mintId();
+		const middleId = storage.mintId();
+		const newestId = storage.mintId();
+		await storage.commit(
+			[
+				{ type: "entry", value: entry(oldestId, rootId) },
+				{ type: "entry", value: entry(middleId, rootId) },
+				{ type: "entry", value: entry(newestId, rootId) },
+			],
+			context,
+		);
+
+		const first = await storage.scanEntries({ conversationId: rootId }, undefined, 2, context);
+		expect(first.items.map(({ id }) => id)).toEqual([newestId, middleId]);
+		const appendedId = storage.mintId();
+		await storage.commit([{ type: "entry", value: entry(appendedId, rootId) }], context);
+		const second = await storage.scanEntries({ conversationId: rootId }, first.next, 2, context);
+		expect(second.items.map(({ id }) => id)).toEqual([oldestId]);
+		expect(second.next).toBeUndefined();
+	});
+
 	it("paginates conversations by opaque cursor in ascending ID order", async () => {
 		const storage = new MemoryStorage();
 		const rootId = await createRoot(storage);
@@ -168,8 +236,8 @@ describe("Pico MemoryStorage", () => {
 		const thirdId = storage.mintId();
 		await storage.commit(
 			[
-				{ type: "conversation", value: { id: secondId } },
 				{ type: "conversation", value: { id: thirdId } },
+				{ type: "conversation", value: { id: secondId } },
 			],
 			context,
 		);

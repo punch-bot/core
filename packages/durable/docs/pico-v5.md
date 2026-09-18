@@ -1843,8 +1843,12 @@ type StorageWrite =
     }
   | { readonly type: "document.retire"; readonly id: Id };
 
+/**
+ * Trusts the owning Session to supply semantically valid records, references,
+ * ancestry, and transitions. Enforces atomicity, global ID ownership, immutable
+ * conversation/entry creation, and detached values; Session serializes commits.
+ */
 interface Storage {
-  /** The owning Session serializes calls on its mutation line. */
   commit(writes: readonly StorageWrite[], context: Context): Promise<Seq>;
   mintId(): Id;
 
@@ -1897,8 +1901,10 @@ The semantic conformance suite covers memory, SQLite, and JSONL.
 ### 11.1 Memory
 
 Memory storage is the reference semantics. It copies retained write values and
-all read results. It preserves rewindable records and reclaims latest records
-only after a committed base or retirement.
+all read results. This deliberately simulates the ownership boundary naturally
+created by SQLite encoding/decoding and JSONL serialization; it is not defensive
+validation. It preserves rewindable records and reclaims latest records only
+after a committed base or retirement.
 
 ### 11.2 SQLite
 
@@ -1919,7 +1925,11 @@ benchmarks.
 
 ### 11.3 JSONL
 
-JSONL uses reclaimable sidecars without exposing them to the harness:
+JSONL uses reclaimable sidecars without exposing them to the harness. Persistence
+alone does not provide the ownership boundary: any decoded indexes, materialized
+values, or caches retained in memory must be detached from commit arguments and
+must not be exposed directly by reads. A JSONL backend cannot simply add file
+appends around aliasing memory tables.
 
 ```text
 main.jsonl       table writes, lifecycle, and one marker per commit
