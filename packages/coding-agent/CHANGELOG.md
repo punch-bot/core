@@ -30,6 +30,7 @@
 
 ### Changed
 
+- Made `--resume` session results appear progressively, using file modification times to prioritize all-folder loading and cancelling outstanding transcript reads after selection.
 - Replaced the external native clipboard dependency with bundled asynchronous macOS, Windows, and X11 helpers while preserving platform command and OSC 52 fallbacks ([#9163](https://github.com/earendil-works/pi/pull/9163)).
 - Reduced inherited fuzzy search latency for long texts by using native substring search instead of scanning each character in JavaScript ([#9267](https://github.com/earendil-works/pi/issues/9267)).
 - Moved compaction, branch summarization, and retry spinners into the editor border alongside the working indicator. Custom editors use the same embedding opt-in for all status spinners.

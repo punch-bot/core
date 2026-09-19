@@ -251,10 +251,15 @@ async function resolveSessionPath(sessionArg: string, cwd: string, sessionDir?: 
 		return { type: "path", path: resolvePath(sessionArg, cwd) };
 	}
 
-	// Try to match as session ID in current project first
+	// Exact IDs only require reading session headers. Fall back to the full
+	// metadata listing for prefix matches.
+	const exactLocalMatch = findLocalSessionByExactId(sessionArg, cwd, sessionDir);
+	if (exactLocalMatch) {
+		return exactLocalMatch;
+	}
+
 	const localSessions = await SessionManager.list(cwd, sessionDir);
-	const localMatch =
-		localSessions.find((s) => s.id === sessionArg) ?? localSessions.find((s) => s.id.startsWith(sessionArg));
+	const localMatch = localSessions.find((s) => s.id.startsWith(sessionArg));
 
 	if (localMatch) {
 		return { type: "local", path: localMatch.path };
