@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed `/bug` descriptions dropping line breaks from pasted diagnostics.
+
 ## [0.86.0] - 2026-09-19
 
 ### New Features
