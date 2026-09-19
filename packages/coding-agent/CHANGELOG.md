@@ -4,6 +4,7 @@
 
 ### New Features
 
+- **Prompt cache warming** — Keep valuable prompt caches alive during long tool runs and optionally while idle using cost-aware refreshes. See [Cache Warming](docs/settings.md#cache-warming).
 - **Bug reporting** — Report problems with `/bug` using redacted diagnostics, optional transcripts, or exported ZIP archives. See [Reporting Bugs](docs/sessions.md#reporting-bugs).
 - **Transcript-aware prompt and tool updates** — Preserve instruction and tool changes across resume and branch navigation while retaining cached prefixes. See [`before_agent_start`](docs/extensions.md#before_agent_start).
 - **Offline Radius model catalog** — Select Radius models immediately, with cached and live catalogs overlaid when available. See [Radius](docs/providers.md#radius).
@@ -27,10 +28,12 @@
 - Added an unsubscribe function from `pi.on()` so extensions can drop event handlers. Handlers added or removed during a dispatch apply to later dispatches, not the current one ([#8967](https://github.com/earendil-works/pi/issues/8967)).
 - Exported extension hook event and result types that were previously omitted from the package entry points ([#9642](https://github.com/earendil-works/pi/pull/9642)).
 - Added `/bug [description]` to report a bug to the Pi developers. The report bundles environment, model, provider, extension, and settings metadata (secrets redacted), assistant message diagnostics from the session, optionally the session transcript, or a model-written summary of what went wrong instead. It is uploaded to Radius (no login required; attributed when logged in) or exported as a zip archive, and the report id is recorded in the session as a `pi.bug-report` entry. Crashes are recorded in `~/.pi/agent/crashes.json`, announced once on the next start, and attached to the next report; unexplained errors and exhausted retries point at `/bug` once per session.
+- Added cost-aware prompt-cache warming during long tool runs and optionally while idle, with configurable modes, model cache-lifetime metadata, `/session` diagnostics, transcript notices, and the `cache_warming_decision` extension event. See [Cache Warming](docs/settings.md#cache-warming) ([#9668](https://github.com/earendil-works/pi/pull/9668)).
 
 ### Changed
 
 - Made `--resume` session results appear progressively, using file modification times to prioritize all-folder loading and cancelling outstanding transcript reads after selection.
+- Reduced `--continue` startup time by checking candidate session headers in modification-time order and stopping after the newest matching session.
 - Replaced the external native clipboard dependency with bundled asynchronous macOS, Windows, and X11 helpers while preserving platform command and OSC 52 fallbacks ([#9163](https://github.com/earendil-works/pi/pull/9163)).
 - Reduced inherited fuzzy search latency for long texts by using native substring search instead of scanning each character in JavaScript ([#9267](https://github.com/earendil-works/pi/issues/9267)).
 - Moved compaction, branch summarization, and retry spinners into the editor border alongside the working indicator. Custom editors use the same embedding opt-in for all status spinners.
@@ -73,6 +76,11 @@
 - Fixed `before_agent_start` handlers returning `systemPrompt` (and `forceSystemPrompt`) on models with mid-conversation system messages: the forced prompt is now sent as the provider's leading system prompt instead of being appended as a section patch after the original prompt.
 - Fixed loaded llama.cpp models with `enable_thinking` chat templates ignoring Pi's thinking level ([#9528](https://github.com/earendil-works/pi/issues/9528)).
 - Fixed cancellation races that could start automatic compaction, leave stale retry state, or miss cancellation while waiting for summarization authentication ([#9340](https://github.com/earendil-works/pi/issues/9340), [#9777](https://github.com/earendil-works/pi/issues/9777)).
+- Fixed asynchronous Kitty image conversion replacing newer partial tool output images ([#8743](https://github.com/earendil-works/pi/pull/8743) by [@wutongyuonce](https://github.com/wutongyuonce)).
+- Fixed inherited skill slash-command autocomplete ranking the `skill:` prefix instead of the bare skill name ([#9120](https://github.com/earendil-works/pi/pull/9120) by [@yearth](https://github.com/yearth)).
+- Fixed inherited file autocomplete boundaries and path quoting around CJK punctuation ([#9746](https://github.com/earendil-works/pi/pull/9746) by [@haoqixu](https://github.com/haoqixu)).
+- Fixed inherited LaTeX legacy font switches falling back to raw source, centered `cases` layouts around surrounding equations, and vertically laid out unsupported and nested display scripts ([#8827](https://github.com/earendil-works/pi/issues/8827), [#9564](https://github.com/earendil-works/pi/issues/9564), [#7929](https://github.com/earendil-works/pi/issues/7929)).
+- Fixed inherited fullscreen Kitty images being erased by later row clears in WezTerm ([#9169](https://github.com/earendil-works/pi/issues/9169)).
 
 ### Removed
 

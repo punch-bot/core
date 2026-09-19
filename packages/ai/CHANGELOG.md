@@ -13,6 +13,7 @@
 - Added a generated public Radius model catalog for synchronous API lookup, with cached and live gateway catalogs overlaid at runtime.
 - Enabled native deferred tool loading for Fireworks Messages models. Use `ToolSearch` or `tool_search` as the loader name for prompt-prefix deferral ([#9323](https://github.com/earendil-works/pi/issues/9323)).
 - Added `RetryPolicy.maxAgentDelayMs` support to cap shared assistant retry backoff for summarization calls ([#8826](https://github.com/earendil-works/pi/issues/8826)).
+- Added `Model.promptCache` lifetime metadata for short and long retention tiers to support prompt-cache warming decisions ([#9668](https://github.com/earendil-works/pi/pull/9668)).
 
 ### Fixed
 
