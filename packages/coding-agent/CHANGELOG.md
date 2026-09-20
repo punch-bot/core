@@ -5,6 +5,7 @@
 ### Fixed
 
 - Fixed `/bug` descriptions dropping line breaks from pasted diagnostics.
+- Fixed `/bug` hints appearing for user cancellations and retryable provider failures such as service unavailability.
 
 ## [0.86.0] - 2026-09-19
 
