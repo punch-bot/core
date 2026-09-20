@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added Meta provider (Model API key and Muse subscription OAuth) with Muse Spark models ([#9096](https://github.com/earendil-works/pi/pull/9096) by [@xl0](https://github.com/xl0)).
+
 ## [0.86.0] - 2026-09-19
 
 ### Breaking Changes

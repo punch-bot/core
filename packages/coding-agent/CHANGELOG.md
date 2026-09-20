@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### New Features
+
+- **Meta Muse provider** — Sign in with Meta using `/login meta` or use `META_API_KEY` to access Muse Spark models. See [Meta (Muse subscription)](docs/providers.md#meta-muse-subscription).
+
+### Added
+
+- Added Meta (Muse subscription) login via `/login meta` with automatic Model API key refresh, plus `META_API_KEY` support ([#9096](https://github.com/earendil-works/pi/pull/9096) by [@xl0](https://github.com/xl0)).
+
+### Changed
+
+- Enabled Node's persistent compile cache before loading the bundled CLI runtime, reducing repeat launch time.
+
 ### Fixed
 
 - Fixed `/bug` descriptions dropping line breaks from pasted diagnostics.
