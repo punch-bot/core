@@ -19,6 +19,7 @@
 - Fixed `/bug` descriptions dropping line breaks from pasted diagnostics.
 - Fixed `/bug` hints appearing for user cancellations and retryable provider failures such as service unavailability.
 - Fixed clipboard copy failing in containers and WSL without WSLg by restoring the OSC 52 fallback when no display is available, and added a verified Windows clipboard backend for WSL ([#9688](https://github.com/earendil-works/pi/issues/9688)).
+- Fixed inherited z.ai `Prompt too long` errors not being recognized as context overflow ([#9805](https://github.com/earendil-works/pi/issues/9805)).
 
 ## [0.86.0] - 2026-09-19
 
