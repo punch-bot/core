@@ -9,6 +9,7 @@
 ### Fixed
 
 - Fixed idle prompt-cache warming rebuilding expired caches when its timer or an extension decision is delayed.
+- Improved crash diagnostics with hints identifying loaded extensions that appear in the stack trace.
 
 ## [0.86.1] - 2026-09-20
 
