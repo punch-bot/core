@@ -38,6 +38,7 @@
 
 ### Changed
 
+- Enabled Node's persistent compile cache before loading the bundled CLI runtime, reducing repeat launch time.
 - Made `--resume` session results appear progressively, using file modification times to prioritize all-folder loading and cancelling outstanding transcript reads after selection.
 - Reduced `--continue` startup time by checking candidate session headers in modification-time order and stopping after the newest matching session.
 - Replaced the external native clipboard dependency with bundled asynchronous macOS, Windows, and X11 helpers while preserving platform command and OSC 52 fallbacks ([#9163](https://github.com/earendil-works/pi/pull/9163)).
