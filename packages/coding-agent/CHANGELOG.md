@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added per-model image resize profiles through `inputLimits.images.resize` in `models.json`, applied to file attachments, image reads, and tool-result images ([#9631](https://github.com/earendil-works/pi/issues/9631)).
+
 ### Fixed
 
 - Fixed idle prompt-cache warming rebuilding expired caches when its timer or an extension decision is delayed.

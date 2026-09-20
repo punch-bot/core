@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added model image-input limit and cache-safe resize metadata to the generated catalog ([#9631](https://github.com/earendil-works/pi/issues/9631)).
+
 ## [0.86.1] - 2026-09-20
 
 ### Added
