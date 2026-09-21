@@ -67,6 +67,7 @@ export {
 	type CompactionEntryDraft,
 	type ContextEditEntryDraft,
 	type ContextEvent,
+	type ContextWithSystemEvent,
 	type CustomEntryDraft,
 	type CustomMessageEntryDraft,
 	defineTool,
