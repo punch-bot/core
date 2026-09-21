@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed harness reads misclassifying text files beginning with `GIF` as images ([#9755](https://github.com/earendil-works/pi/issues/9755)).
+
 ## [0.86.1] - 2026-09-20
 
 ## [0.86.0] - 2026-09-19
