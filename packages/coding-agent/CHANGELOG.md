@@ -4,6 +4,8 @@
 
 ### New Features
 
+- **Canonical session context and extension boundaries** — Edit model context without rewriting history and add actionable lifecycle hooks. See [ContextEditEntry](docs/session-format.md#contexteditentry) and [extension events](docs/extensions.md#extension-events).
+- **Full-transcript context extensions** — Use `context_with_system` for per-request system-message transformations. See [`context_with_system`](docs/extensions.md#context_with_system).
 - **Per-model image input limits** — Configure cache-safe image resizing per model for attachments, `read`, and tool-result images. See [Image Input Limits](docs/models.md#image-input-limits).
 
 ### Breaking Changes
@@ -29,11 +31,11 @@
 - Fixed edited-context accounting both discarding valid assistant usage captured after the latest context edit and reusing that usage after a later compaction made it stale.
 - Fixed selected error retries and final length/overflow recovery retaining abandoned model attempts in future provider context; post-run recovery omissions are now persisted without hiding raw transcript history or changing queue scheduling.
 - Fixed `context` handlers that filter or slice messages dropping the prompt and tool declarations, which after extension-driven compaction left requests without built-in tools or made Codex emit raw tool-call text. Handlers no longer see system messages; Pi restores the prompt and tool state after they run. See [`context`](docs/extensions.md#context) ([#9789](https://github.com/earendil-works/pi/issues/9789), [#9822](https://github.com/earendil-works/pi/issues/9822)).
-- Fixed `/bug` allowing uploads in offline mode while preserving local zip exports.
+- Fixed `/bug` allowing uploads in offline mode while preserving local zip exports ([#9841](https://github.com/earendil-works/pi/pull/9841) by [@christianklotz](https://github.com/christianklotz)).
 - Fixed idle prompt-cache warming rebuilding expired caches when its timer or an extension decision is delayed.
 - Improved crash diagnostics with hints identifying loaded extensions that appear in the stack trace.
 - Fixed text files beginning with `GIF` being misclassified as images and omitted from `read` and CLI `@file` input ([#9755](https://github.com/earendil-works/pi/issues/9755)).
-- Fixed malformed prompt template frontmatter being silently ignored instead of reported as a resource warning ([#9830](https://github.com/earendil-works/pi/pull/9830)).
+- Fixed malformed prompt template frontmatter being silently ignored instead of reported as a resource warning ([#9830](https://github.com/earendil-works/pi/pull/9830) by [@christianklotz](https://github.com/christianklotz)).
 - Fixed inherited unknown OpenAI-compatible Chat Completions endpoints receiving strict tool schemas unless they explicitly advertise support ([#9816](https://github.com/earendil-works/pi/issues/9816)).
 
 ## [0.86.1] - 2026-09-20
