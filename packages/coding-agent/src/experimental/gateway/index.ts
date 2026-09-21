@@ -1,13 +1,13 @@
 import type { Server as HttpServer } from "node:http";
+import { GatewayStore } from "@punch-bot/server/gateway/store";
 import { createWebSocketListener, type WebSocketListenerOptions } from "@punch-bot/server/websocket";
 import { type StartServerOptions, startServer } from "../server.ts";
 import { Gateway, type PlatformAdapter } from "./runtime.ts";
-import { GatewayStore } from "./store.ts";
 
-export * from "./auth.ts";
-export * from "./discord.ts";
+export * from "@punch-bot/server/gateway/auth";
+export * from "@punch-bot/server/gateway/discord";
+export * from "@punch-bot/server/gateway/store";
 export * from "./runtime.ts";
-export * from "./store.ts";
 
 export interface StartGatewayOptions {
 	readonly backend?: Omit<StartServerOptions, "sessionAccess">;

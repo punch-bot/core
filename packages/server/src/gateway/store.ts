@@ -3,8 +3,7 @@ import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { Context, JsonValue } from "@punch-bot/chord";
 import { RemoteServiceError } from "@punch-bot/chord";
-import { getPrincipal, type Principal } from "@punch-bot/server";
-import type { SessionAccess, SessionPermission } from "../services/server.ts";
+import { getPrincipal, type Principal } from "../principal.ts";
 
 export interface ConversationKey {
 	readonly platform: string;
@@ -18,7 +17,7 @@ export type EventReceipt = { status: "pending" | "completed" | "failed"; result:
 const RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** One gateway database per logical Punch server. SQLite arbitrates competing event claims. */
-export class GatewayStore implements SessionAccess {
+export class GatewayStore {
 	readonly #db: DatabaseSync;
 	readonly #allowLocal: boolean;
 	constructor(path: string, options: { allowLocal?: boolean } = {}) {
@@ -42,7 +41,7 @@ export class GatewayStore implements SessionAccess {
 			);
 		`);
 	}
-	async canAccess(permission: SessionPermission, sessionId: string | undefined, context: Context): Promise<boolean> {
+	async canAccess(permission: string, sessionId: string | undefined, context: Context): Promise<boolean> {
 		const principal = getPrincipal(context);
 		if (!principal) return this.#allowLocal;
 		if (!principal.permissions.includes(permission)) return false;
@@ -50,7 +49,7 @@ export class GatewayStore implements SessionAccess {
 		const row = this.#db.prepare("SELECT workspace_id FROM gateway_sessions WHERE session_id = ?").get(sessionId);
 		return row?.workspace_id === principal.workspaceId;
 	}
-	async authorize(permission: SessionPermission, sessionId: string | undefined, context: Context): Promise<void> {
+	async authorize(permission: string, sessionId: string | undefined, context: Context): Promise<void> {
 		if (!(await this.canAccess(permission, sessionId, context))) {
 			throw new RemoteServiceError("service_not_allowed", "Session access denied");
 		}
@@ -116,6 +115,19 @@ export class GatewayStore implements SessionAccess {
 		this.#db
 			.prepare("UPDATE gateway_events SET status = ?, result = ? WHERE key = ?")
 			.run(status, JSON.stringify(result), id);
+	}
+	/** Persist the runtime lookup key before submission, so an uncertain receipt can be inspected. */
+	recordOperation(
+		principal: Principal,
+		key: ConversationKey,
+		eventId: string,
+		sessionId: string,
+		operationId: string,
+	): void {
+		const id = JSON.stringify([conversationKey(principal, key), eventId]);
+		this.#db
+			.prepare("UPDATE gateway_events SET result=? WHERE key=? AND status='pending'")
+			.run(JSON.stringify({ sessionId, operationId }), id);
 	}
 	message(principal: Principal, key: ConversationKey, outputId: string): string | undefined {
 		const row = this.#db

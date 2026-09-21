@@ -21,10 +21,35 @@
 		"./websocket": {
 			"types": "./dist/websocket.d.ts",
 			"import": "./dist/websocket.js"
+		},
+		"./supervisor/*": {
+			"types": "./dist/supervisor/*.d.ts",
+			"import": "./dist/supervisor/*.js"
+		},
+		"./gateway/*": {
+			"types": "./dist/gateway/*.d.ts",
+			"import": "./dist/gateway/*.js"
+		},
+		"./gateway": {
+			"types": "./dist/gateway/index.d.ts",
+			"import": "./dist/gateway/index.js"
+		},
+		"./supervisor": {
+			"types": "./dist/supervisor/index.d.ts",
+			"import": "./dist/supervisor/index.js"
+		},
+		"./runtime": {
+			"types": "./dist/runtime.d.ts",
+			"import": "./dist/runtime.js"
+		},
+		"./services": {
+			"types": "./dist/services.d.ts",
+			"import": "./dist/services.js"
 		}
 	},
 	"files": [
 		"dist",
+		"deployment",
 		"README.md",
 		"CHANGELOG.md"
 	],
@@ -53,8 +78,11 @@
 	"dependencies": {
 		"@punch-bot/chord": "^0.85.1",
 		"@punch-bot/agent": "^0.85.1",
+		"@punch-bot/ai": "^0.85.1",
+		"@punch-bot/client": "^0.85.1",
 		"@punch-bot/protocol": "^0.85.1",
-		"ws": "8.21.0"
+		"ws": "8.21.0",
+		"jose": "6.2.10"
 	},
 	"devDependencies": {
 		"@types/ws": "8.18.1",

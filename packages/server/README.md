@@ -1,6 +1,8 @@
 # @punch-bot/server
 
-Experimental local server for the new durable Session and Agent Harness interfaces.
+Protocol server for durable sessions and agent execution, with a standalone sandbox gateway and Docker supervisor.
+
+See [sandbox gateway deployment](deployment/README.md) for the Discord/OIDC gateway, private supervisor API, runtime images, and shared WebSocket sessions. Those programs run independently of `coding-agent`.
 
 The current slice supports server- and Session-scoped facet-service routing and multi-presentation attachment. `RoutedServerServiceHost.attachClient()` creates one connection-scoped server service endpoint with narrow attachment-management capabilities. `RoutedSessionHandle.attachClient()` returns a presentation-scoped Session capability. Its `invokeService()` forwards an opaque service/member envelope to the selected Session endpoint; the server validates the attachment route but does not load the facet contract.
 
@@ -78,4 +80,4 @@ Applications supply a required server service host, a bounded Session resolver, 
 
 `@punch-bot/server/websocket` provides `createWebSocketListener()` for a caller-owned HTTP/TLS server. It requires an authentication callback returning a verified `Principal` and token expiry before upgrading the connection. It accepts binary protocol bytes, bounds message and pending-output sizes, and closes connections at expiry. The trusted listener supplies the immutable principal through the connection context. Hosts can implement `authorizeSession()` to check every attachment and invocation, including cached sessions. Directory and management authorization remain application-owned. See the [experimental gateway](../coding-agent/src/experimental/gateway/README.md) for the complete composition.
 
-Server and worker lifecycle is managed outside the public Pi protocol. The replaceable application server converts connection attachments into private demand updates; the worker combines generation-tagged demand with authoritative Harness activity. The experimental coordinator only supplies stable routing and reports generic server-generation connection changes.
+Server and worker lifecycle is managed outside the public Pi protocol. The sandbox supervisor owns container generations and persistent volumes; gateway connections own only presentation attachments. The older experimental coordinator converts local connection attachments into private worker demand updates.

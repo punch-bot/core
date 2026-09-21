@@ -1,0 +1,88 @@
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { BACKGROUND_CONTEXT } from "@punch-bot/agent";
+import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall } from "@punch-bot/ai";
+import { expect, test } from "vitest";
+import { createSandboxRuntime } from "../src/supervisor/runtime.ts";
+
+test("runs outside coding-agent and retains completed operations across runtime replacement", async () => {
+	const directory = await mkdtemp(join(tmpdir(), "punch-runtime-"));
+	const faux = fauxProvider();
+	faux.setResponses([fauxAssistantMessage("sandbox answer")]);
+	const models = createModels();
+	models.setProvider(faux.provider);
+	const errors: unknown[] = [];
+	const options = { directory, models, model: faux.getModel(), onError: (error: unknown) => errors.push(error) };
+	let runtime = await createSandboxRuntime(options);
+	try {
+		await expect(createSandboxRuntime(options)).rejects.toThrow("already has a runtime writer");
+		const metadata = await runtime.create();
+		const session = await runtime.attach(metadata.id);
+		const request = { operationId: "test-operation", text: "question" };
+		expect(await session.operations.accept(request, BACKGROUND_CONTEXT)).toMatchObject({
+			operationId: request.operationId,
+		});
+		await expect
+			.poll(async () => (await session.operations.status(request.operationId, BACKGROUND_CONTEXT)).status)
+			.toBe("completed");
+		const before = await session.lane.findEntries(undefined, BACKGROUND_CONTEXT);
+		await runtime.close();
+		runtime = await createSandboxRuntime(options);
+		const reopened = await runtime.attach(metadata.id);
+		expect(await reopened.operations.accept(request, BACKGROUND_CONTEXT)).toEqual({
+			operationId: request.operationId,
+			status: "completed",
+		});
+		expect(await reopened.lane.findEntries(undefined, BACKGROUND_CONTEXT)).toEqual(before);
+		expect(errors).toEqual([]);
+	} finally {
+		await runtime.close();
+		await rm(directory, { recursive: true, force: true });
+	}
+});
+
+test("runtime tools use separate sandbox working directories and retain files after replacement", async () => {
+	const directory = await mkdtemp(join(tmpdir(), "punch-runtime-files-"));
+	const faux = fauxProvider();
+	faux.setResponses([
+		fauxAssistantMessage(fauxToolCall("write", { path: "answer.txt", content: "sandbox one" }), {
+			stopReason: "toolUse",
+		}),
+		fauxAssistantMessage("written"),
+	]);
+	const models = createModels();
+	models.setProvider(faux.provider);
+	const errors: unknown[] = [];
+	const options = {
+		directory: join(directory, "one"),
+		models,
+		model: faux.getModel(),
+		onError: (error: unknown) => errors.push(error),
+	};
+	let first = await createSandboxRuntime(options);
+	const second = await createSandboxRuntime({ ...options, directory: join(directory, "two") });
+	try {
+		const metadata = await first.create();
+		const session = await first.attach(metadata.id);
+		expect(await first.attach(metadata.id)).toBe(session);
+		await session.operations.accept({ operationId: "write-file", text: "write a file" }, BACKGROUND_CONTEXT);
+		await expect
+			.poll(async () => (await session.operations.status("write-file", BACKGROUND_CONTEXT)).status)
+			.toBe("completed");
+		expect(await readFile(join(directory, "one/work/answer.txt"), "utf8")).toBe("sandbox one");
+		await expect(readFile(join(directory, "two/work/answer.txt"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+		await expect(second.attach(metadata.id)).rejects.toThrow("Session not found");
+		await first.close();
+		first = await createSandboxRuntime(options);
+		expect(await readFile(join(directory, "one/work/answer.txt"), "utf8")).toBe("sandbox one");
+		await first.remove(metadata.id);
+		expect(await first.list()).toEqual([]);
+		expect(await readFile(join(directory, "one/work/answer.txt"), "utf8")).toBe("sandbox one");
+		expect(errors).toEqual([]);
+	} finally {
+		await first.close();
+		await second.close();
+		await rm(directory, { recursive: true, force: true });
+	}
+});

@@ -4,9 +4,9 @@ import { Readable } from "node:stream";
 import { setTimeout as delay } from "node:timers/promises";
 import type { LaneTranscriptSnapshot } from "@punch-bot/agent";
 import type { JsonValue } from "@punch-bot/chord";
-import type { Principal } from "@punch-bot/server";
-import type { Gateway, GatewayCommand, GatewayPresentation, PlatformAdapter } from "./runtime.ts";
+import type { Principal } from "../principal.ts";
 import { type ConversationKey, conversationKey } from "./store.ts";
+import type { GatewayAdapterHost as Gateway, GatewayCommand, GatewayPresentation, PlatformAdapter } from "./types.ts";
 
 export interface DiscordAdapterOptions {
 	readonly applicationId: string;
