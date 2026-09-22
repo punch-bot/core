@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added inherited Claude Opus 5.5 support for Anthropic with adaptive thinking and a 1M context window.
+
 ### Changed
 
 - Changed the default xAI model to Grok 4.7.

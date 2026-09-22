@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added Claude Opus 5.5 to the built-in Anthropic model catalog with adaptive thinking, 1M context, and official pricing metadata.
 - Added Grok 4.7 to the built-in xAI model catalog with long-context pricing metadata.
 
 ### Fixed
