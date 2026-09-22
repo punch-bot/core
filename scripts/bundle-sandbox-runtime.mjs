@@ -1,10 +1,11 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const output = resolve(process.argv[2] ?? "/tmp/opencode/punch-sandbox-image");
+const output = resolve(process.argv[2] ?? join(tmpdir(), "punch-sandbox-image"));
 await mkdir(output, { recursive: true });
 const result = await build({
 	absWorkingDir: root,
@@ -26,7 +27,7 @@ const forbidden = Object.keys(result.metafile.inputs).filter(path => path.includ
 if (forbidden.length) throw new Error(`Server deployment imports coding-agent: ${forbidden.join(", ")}`);
 await writeFile(resolve(output, "metafile.json"), JSON.stringify(result.metafile, null, 2));
 await writeFile(resolve(output, "Dockerfile"), [
-	"ARG NODE_IMAGE",
+	"ARG NODE_IMAGE=node:24-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6",
 	"FROM ${NODE_IMAGE}",
 	"ARG ENTRY=runtime",
 	"WORKDIR /app",

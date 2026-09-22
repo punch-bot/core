@@ -10,25 +10,25 @@ The gateway and supervisor can restart while an admitted runtime operation conti
 
 ## Build artifacts
 
-Use Node 24 or newer for the bundled deployment. From the repository root:
+Use Node 24 or newer and a Linux-container Docker engine. The deployment targets Docker Engine on Linux and Docker Desktop on macOS or Windows. Containers use Linux paths regardless of the host OS. From the repository root:
 
 ```sh
 npm ci --ignore-scripts
 npm run hydrate:model-data
-node scripts/bundle-sandbox-runtime.mjs /tmp/opencode/punch-server-image
+node scripts/build-sandbox-images.mjs .artifacts/punch-server-image
 ```
 
-The script emits `gateway.mjs`, `supervisor.mjs`, `runtime.mjs`, a Dockerfile, and an esbuild dependency manifest. It fails if any entry imports `packages/coding-agent`. The bundles include their JavaScript dependencies and run outside the repository.
+The script bundles `gateway.mjs`, `supervisor.mjs`, and `runtime.mjs`, then builds all three images using a digest-pinned, multi-platform Node 24 Debian base. It writes local image IDs to `images.env` and `images.json` in the output directory. Set `PUNCH_NODE_IMAGE` to override the base with another immutable digest. Docker selects the host's container architecture.
 
-Build each image using an explicitly chosen Node 24 Debian image digest. For example, after setting `NODE_IMAGE` to `node:24-bookworm-slim@sha256:<verified-digest>`:
+To emit only the bundles, Dockerfile, and esbuild dependency manifest:
 
 ```sh
-docker build --build-arg NODE_IMAGE="$NODE_IMAGE" --build-arg ENTRY=runtime -t punch-runtime /tmp/opencode/punch-server-image
-docker build --build-arg NODE_IMAGE="$NODE_IMAGE" --build-arg ENTRY=supervisor -t punch-supervisor /tmp/opencode/punch-server-image
-docker build --build-arg NODE_IMAGE="$NODE_IMAGE" --build-arg ENTRY=gateway -t punch-gateway /tmp/opencode/punch-server-image
+node scripts/bundle-sandbox-runtime.mjs .artifacts/punch-server-image
 ```
 
-Set the three `PUNCH_*_IMAGE` variables in the Compose environment to immutable registry digests or local `sha256:` image IDs. The runtime image must already exist on the supervisor's Docker daemon. The supervisor does not pull images during acquisition.
+Bundling fails if any entry imports `packages/coding-agent`. The bundles include their JavaScript dependencies and run outside the repository.
+
+Use the generated `images.env` with Compose, or set the three `PUNCH_*_IMAGE` variables to immutable registry digests or local `sha256:` image IDs. Build and run against the same Docker context. The runtime image must already exist on the supervisor's Docker daemon. The supervisor does not pull images during acquisition.
 
 ## Configuration
 
@@ -80,10 +80,20 @@ For Discord, also set `PUNCH_DISCORD_APPLICATION_ID`, `PUNCH_DISCORD_PUBLIC_KEY`
 Start with:
 
 ```sh
-docker compose -f packages/server/deployment/compose.yaml up -d
+docker compose --env-file .artifacts/punch-server-image/images.env -f packages/server/deployment/compose.yaml up -d
 ```
 
 Terminate TLS at a reverse proxy forwarding `/punch` WebSocket upgrades and `/discord` requests to `127.0.0.1:8082`. Only the supervisor mounts the Docker socket. The control API on port 8081 and runtime port 8080 have no published host ports.
+
+`PUNCH_DOCKER_SOCKET_SOURCE` defaults to `/var/run/docker.sock` on the Docker daemon host, including Docker Desktop's Linux VM. Override it for a daemon with a different socket location. It is not the Windows named pipe or the macOS client socket. Configuration bind mounts use Compose's long syntax to accept host-native absolute paths.
+
+On an SELinux-enforcing Linux host, add the optional override:
+
+```sh
+docker compose --env-file .artifacts/punch-server-image/images.env -f packages/server/deployment/compose.yaml -f packages/server/deployment/compose.selinux.yaml up -d
+```
+
+That override labels shared configuration mounts and disables SELinux process labeling only for the Docker-administrator supervisor. The base deployment has no SELinux-specific options.
 
 ## Client protocol
 
@@ -115,4 +125,14 @@ Keep the supervisor registry, gateway database, and sandbox volumes together whe
 
 ## Verification status
 
-Offline tests cover runtime persistence, shared Discord/WebSocket sessions, signed interaction deduplication, gateway restart during a turn, workspace isolation, OIDC validation, and supervisor lifecycle behavior with a fake engine. Real Docker integration testing is deferred.
+Offline tests cover runtime persistence, shared Discord/WebSocket sessions, signed interaction deduplication, gateway restart during a turn, workspace isolation, OIDC validation, and supervisor lifecycle behavior with a fake engine.
+
+The opt-in Docker test builds all three images and exercises real OIDC authentication, concurrent acquisition, shared session attachment, workspace isolation, gateway/supervisor restart during a turn, runtime replacement, transcript recovery, durable operation receipts, cross-client abort, file retention, and explicit volume deletion. From `packages/server`, set `PUNCH_DOCKER_TEST=1` in your shell and run:
+
+```sh
+node ../../node_modules/vitest/dist/cli.js --run test/docker-integration.test.ts
+```
+
+The test uses the selected local Docker context, named volumes, and `docker cp`; it requires no host OpenSSL or configuration bind mounts. Its checked-in TLS key is a public test fixture. JWT signing keys are generated per run. SELinux socket access is enabled only when the daemon reports SELinux. Containers, volumes, and the network are removed afterward; built images remain cached.
+
+Real-container validation has run on Linux with SELinux. macOS and Windows Docker Desktop runs remain unverified.

@@ -11,8 +11,13 @@ services:
       PUNCH_WORKSPACE_ENVIRONMENTS: /config/workspaces.json
     volumes:
       - supervisor-state:/state
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ${PUNCH_CONFIG_DIRECTORY:?Set the absolute config directory}:/config:ro
+      - type: bind
+        source: ${PUNCH_DOCKER_SOCKET_SOURCE:-/var/run/docker.sock}
+        target: /var/run/docker.sock
+      - type: bind
+        source: ${PUNCH_CONFIG_DIRECTORY:?Set the absolute config directory}
+        target: /config
+        read_only: true
     networks: [sandboxes]
   gateway:
     image: ${PUNCH_GATEWAY_IMAGE:?Set a digest-pinned gateway image}
@@ -35,7 +40,10 @@ services:
     ports: ["127.0.0.1:8082:8082"]
     volumes:
       - gateway-state:/state
-      - ${PUNCH_CONFIG_DIRECTORY}/memberships.json:/config/memberships.json:ro
+      - type: bind
+        source: ${PUNCH_CONFIG_DIRECTORY}/memberships.json
+        target: /config/memberships.json
+        read_only: true
     networks: [sandboxes]
 networks:
   sandboxes:

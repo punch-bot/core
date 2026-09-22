@@ -7,7 +7,13 @@ import { startSandboxRuntimeServer } from "./runtime-server.ts";
 const models = createModels();
 const provider = required("PUNCH_PROVIDER");
 if (provider === "faux") {
-	const faux = fauxProvider();
+	const tokensPerSecond =
+		process.env.PUNCH_FAUX_TOKENS_PER_SECOND === undefined
+			? undefined
+			: Number(process.env.PUNCH_FAUX_TOKENS_PER_SECOND);
+	if (tokensPerSecond !== undefined && (!Number.isFinite(tokensPerSecond) || tokensPerSecond <= 0))
+		throw new Error("Invalid faux streaming rate");
+	const faux = fauxProvider({ tokensPerSecond });
 	faux.setResponses([fauxAssistantMessage("sandbox smoke answer")]);
 	models.setProvider(faux.provider);
 } else if (provider === "openai") models.setProvider(openaiProvider());
