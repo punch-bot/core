@@ -21,7 +21,7 @@ import type {
 	SubmissionRecord,
 	TaskQuery,
 	TaskRecord,
-} from "./types.ts";
+} from "../types.ts";
 
 type StoredTask = TaskRecord<JsonValue, JsonValue, JsonValue>;
 type TaskStatus = StoredTask["state"]["status"];
@@ -268,7 +268,7 @@ export class MemoryStorage implements Storage {
 		return seq;
 	}
 
-	mintId(): Id {
+	async mintId(): Promise<Id> {
 		this.assertOpen();
 		if (!Number.isSafeInteger(this.nextId)) throw new Error("ID space is exhausted");
 		return this.nextId++;

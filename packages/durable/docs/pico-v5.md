@@ -23,7 +23,7 @@ import type {
 } from "@punch-bot/ai";
 
 type JsonObject = { [key: string]: JsonValue };
-type StoredError = { message: string; detail?: JsonValue };
+type TaskOutcomeError = { message: string; detail?: JsonValue };
 ```
 
 Pico5 targets the transcript `SystemMessage` contract from pi-ai PR
@@ -70,6 +70,7 @@ these contracts.
 
 ```ts
 type Id = number;
+/** Strictly increases between commits; gaps are permitted. */
 type Seq = number;
 const ROOT_CONVERSATION_ID: Id = 1;
 
@@ -804,11 +805,11 @@ interface Tx {
   scanEntries(query: EntryQuery): Promise<readonly EntryRecord[]>;
   scanTasks(query: TaskQuery): Promise<readonly TaskRecord<JsonValue, JsonValue, JsonValue>[]>;
 
-  createConversation(value: Omit<ConversationRecord, "id">): ConversationRecord;
-  appendEntry(conversationId: Id, value: EntryDraft): EntryRecord;
+  createConversation(value: Omit<ConversationRecord, "id">): Promise<ConversationRecord>;
+  appendEntry(conversationId: Id, value: EntryDraft): Promise<EntryRecord>;
   createTask<I, S extends { phase: string }, R, H extends object>(
     task: Task<I, S, R, H>, input: I, options?: TaskOptions,
-  ): TaskRef<R>;
+  ): Promise<TaskRef<R>>;
   setTask(value: TaskRecord<JsonValue, JsonValue, JsonValue>): void;
 
   doc<T extends JsonObject>(token: SessionDocToken<T>): Promise<Draft<T>>;
@@ -827,7 +828,7 @@ interface Tx {
 }
 ```
 
-Only public typed `tx.doc()` is get-or-create. Internal fork copying may create
+ID-creating transaction methods are asynchronous because remote storage may allocate globally unique IDs durably. Only public typed `tx.doc()` is get-or-create. Internal fork copying may create
 new incarnations directly from stored values without a definition. `tx.doc()`
 receives the definition token that supplies
 its static type, initializer, migration, and checkpoint policy. Scope-preserving
@@ -1069,7 +1070,7 @@ await session.commit(async tx => {
   const task = await tx.task(taskId);                // table read
   const live = await tx.doc(LiveDoc, conversationId);
 
-  tx.appendEntry(conversationId, message);           // first table write
+  await tx.appendEntry(conversationId, message);     // first table write
   delete live.message;                               // document mutation remains valid
   tx.setTask(nextTask(task));
 }, context);
@@ -1104,10 +1105,10 @@ Storage ownership:
 ```ts
 type TaskOutcome<R> =
   | { readonly status: "completed"; readonly result: R }
-  | { readonly status: "failed"; readonly error: StoredError; readonly result?: R }
+  | { readonly status: "failed"; readonly error: TaskOutcomeError; readonly result?: R }
   | { readonly status: "aborted"; readonly reason?: string; readonly result?: R }
   | { readonly status: "orphaned"; readonly reason: string }
-  | { readonly status: "faulted"; readonly error: StoredError };
+  | { readonly status: "faulted"; readonly error: TaskOutcomeError };
 
 type TaskState<S, R> =
   | { readonly status: "pending"; readonly checkpoint: S }
@@ -1993,11 +1994,12 @@ type StorageWrite =
  * Trusts the owning Session to supply semantically valid records, references,
  * ancestry, and transitions. Enforces atomicity, global ID ownership, immutable
  * conversation/entry creation, document record consistency, and detached
- * values; Session serializes commits.
+ * values; Session serializes commits. Sequences strictly increase but may have
+ * gaps. Once commit() resolves, later reads through that Storage observe it.
  */
 interface Storage {
   commit(writes: readonly StorageWrite[], context: Context): Promise<Seq>;
-  mintId(): Id;
+  mintId(): Promise<Id>;
 
   conversation(id: Id, context: Context): Promise<ConversationRecord | undefined>;
   scanConversations(cursor: Cursor | undefined, limit: number, context: Context): Promise<Page<ConversationRecord, Cursor>>;
@@ -2042,8 +2044,10 @@ ascending incarnation IDs. There is no ordinary open-time all-document scan.
 Task queries support conversation, kind, live/terminal status, abort mark, and
 background status.
 
-`document(id, at)` internally selects the newest applicable base, applies its
-ordered Chord delta tail, and returns the detached materialized value plus stored
+`document(id, at)` materializes one specific incarnation and never follows a
+replacement at the same logical address. Callers resolve an address with
+`findDocument()` when they do not already hold an incarnation ID. It selects the
+newest applicable base, applies its ordered Chord delta tail, and returns the detached materialized value plus stored
 definition version. Base/delta records are backend-private. The lookup never
 scans unrelated documents. An unknown ID returns `undefined`. At `"current"`, a
 retired incarnation returns `undefined`. A numeric lookup of a rewindable

@@ -11,7 +11,7 @@ facades, membranes, document routing, view projection, events, or clone chains.
 
 - Obsolete `pico` and `pico4` prototypes were removed.
 - `pico3` remains.
-- Packages 1 and 2 are implemented in `packages/durable`; later Pico5 runtime packages remain.
+- Packages 1–3 are implemented in `packages/durable`; later Pico5 runtime packages remain.
 
 ## 1. Records, cursors, and memory tables
 
