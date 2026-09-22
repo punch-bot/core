@@ -2115,9 +2115,14 @@ Publication protocol:
 3. Publish in memory only after the marker write succeeds.
 
 Every commit uses this protocol; there is no standalone-sidecar fast path.
-Without `fsync`, it guarantees ordinary process-crash consistency, not survival
-of power, host, kernel, or filesystem failure. Durable mode flushes sidecars
-before the marker.
+JSONL creation accepts an `fsync` option that defaults to `false`. Without
+`fsync`, it guarantees ordinary process-crash consistency, not survival of
+power, host, kernel, or filesystem failure. With `fsync: true`, the backend
+appends all affected sidecar records, flushes each affected sidecar, and only
+then appends the main marker. It does not explicitly flush `main.jsonl`; an
+acknowledged tail commit may therefore still disappear, but a marker that
+survives should not overtake its sidecar data. A main-only commit has no
+sidecars to flush.
 
 Recovery:
 
