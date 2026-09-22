@@ -61,8 +61,9 @@ Copy, rather than import, the current `ExecutionEnv`, `FileSystem`, `Shell`, Nod
 implementation, and their required utility files from `packages/agent/src/harness`
 into `packages/durable/src/env`. Copy only the environment-related slice, not
 agent skills, prompts, telemetry, or tool definitions. Extend the copied
-filesystem contract with exact-byte file truncation and file flushing. Keep the
-portable environment and JSONL entry points free of Node built-ins; expose Node
+filesystem contract with exact-byte file truncation and file flushing. JSONL
+depends only on `FileSystem`, not the broader `ExecutionEnv`. Keep the portable
+environment and JSONL entry points free of Node built-ins; expose Node
 implementations only from `/env/node` and `/storage/jsonl/node`. Do not use the
 Pico3 implementation as source material.
 

@@ -2096,11 +2096,12 @@ benchmarks.
 
 ### 11.3 JSONL
 
-JSONL uses reclaimable sidecars without exposing them to the harness. Persistence
-alone does not provide the ownership boundary: any decoded indexes, materialized
-values, or caches retained in memory must be detached from commit arguments and
-must not be exposed directly by reads. A JSONL backend cannot simply add file
-appends around aliasing memory tables.
+JSONL depends on the portable `FileSystem` capability, not the broader
+`ExecutionEnv`. It uses reclaimable sidecars without exposing them to the
+harness. Persistence alone does not provide the ownership boundary: any decoded
+indexes, materialized values, or caches retained in memory must be detached from
+commit arguments and must not be exposed directly by reads. A JSONL backend
+cannot simply add file appends around aliasing memory tables.
 
 ```text
 main.jsonl       table writes, document records, and one marker per commit

@@ -3,7 +3,7 @@ import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
 import type { DocumentCreate, Id, Seq, Storage, StorageWrite, TaskRecord } from "../src/types.ts";
 import { ROOT_CONVERSATION_ID } from "../src/types.ts";
 
-export const STORAGE_BENCHMARK_BACKENDS = ["memory", "sqlite"] as const;
+export const STORAGE_BENCHMARK_BACKENDS = ["memory", "sqlite", "jsonl"] as const;
 export type StorageBenchmarkBackend = (typeof STORAGE_BENCHMARK_BACKENDS)[number];
 
 export type StorageBenchmarkScale = {
