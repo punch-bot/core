@@ -11,12 +11,12 @@ export function installShutdown(close: () => Promise<void>, timeoutMs: number): 
 		if (closing) return;
 		closing = true;
 		const deadline = setTimeout(() => process.exit(1), timeoutMs);
-		deadline.unref();
 		void close().then(
 			() => {
 				clearTimeout(deadline);
 			},
 			(error) => {
+				deadline.unref();
 				console.error(error);
 				process.exitCode = 1;
 			},

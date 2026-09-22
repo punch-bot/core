@@ -46,9 +46,9 @@ Set `PUNCH_CONFIG_DIRECTORY` to an absolute directory containing these files. Se
 }
 ```
 
-Supported entrypoint providers are `openai`, `anthropic`, and `faux`. Use a model ID present in the selected provider's catalog. `faux` is for offline smoke tests, with model `faux-1`. Provider credentials stay with the supervisor and the workspace runtime. Changing credentials takes effect on the next runtime generation.
+Supported entrypoint providers are `openai`, `anthropic`, and `faux`. Use a model ID present in the selected provider's catalog. `faux` is for offline smoke tests, with model `faux-1`. Provider credentials stay with the supervisor and the workspace runtime. Changing credentials takes effect on the next runtime generation. The supervisor overrides workspace values for runtime identity, credentials, port 8080, and the `/sandbox` data directory.
 
-`memberships.json` maps verified external identities to local principals:
+`memberships/memberships.json` maps verified external identities to local principals. The gateway mounts this subdirectory so atomic file replacements are visible without exposing `workspaces.json` and its provider credentials:
 
 ```json
 [
@@ -71,15 +71,16 @@ Supported entrypoint providers are `openai`, `anthropic`, and `faux`. Use a mode
 ]
 ```
 
-Each OIDC subject must resolve to exactly one grant. Each Discord grant names an exact thread and user. Membership checks reload the file, including on cached session calls. Reduced permissions require the client to reconnect with a fresh identity.
+Each OIDC subject must resolve to exactly one grant. Each Discord grant names an exact thread and user. Membership checks reload the file, including on cached session calls, and match the original external identity. Reduced permissions require the client to reconnect with a fresh identity.
 
 Set `PUNCH_OIDC_ISSUER`, `PUNCH_OIDC_AUDIENCE`, `PUNCH_OIDC_JWKS_URL`, and `PUNCH_OIDC_SCOPES`. Access tokens must have `sub`, `iat`, and `exp`, a lifetime of at most one hour, the required scopes, and an RS256 or ES256 signature. Android uses Authorization Code with PKCE to obtain those tokens.
 
 For Discord, also set `PUNCH_DISCORD_APPLICATION_ID`, `PUNCH_DISCORD_PUBLIC_KEY`, and `PUNCH_DISCORD_BOT_TOKEN`. Register the `DISCORD_COMMAND` exported by `@punch-bot/server/gateway/discord`. Configure the interaction endpoint as `/discord` on the public gateway URL. The adapter accepts commands only in server threads.
 
-Start with:
+Validate all three image references, then start Compose with the same arguments:
 
 ```sh
+node scripts/validate-sandbox-deployment.mjs --env-file .artifacts/punch-server-image/images.env -f packages/server/deployment/compose.yaml
 docker compose --env-file .artifacts/punch-server-image/images.env -f packages/server/deployment/compose.yaml up -d
 ```
 
@@ -90,6 +91,7 @@ Terminate TLS at a reverse proxy forwarding `/punch` WebSocket upgrades and `/di
 On an SELinux-enforcing Linux host, add the optional override:
 
 ```sh
+node scripts/validate-sandbox-deployment.mjs --env-file .artifacts/punch-server-image/images.env -f packages/server/deployment/compose.yaml -f packages/server/deployment/compose.selinux.yaml
 docker compose --env-file .artifacts/punch-server-image/images.env -f packages/server/deployment/compose.yaml -f packages/server/deployment/compose.selinux.yaml up -d
 ```
 
@@ -101,7 +103,7 @@ Clients use the existing framed CBOR protocol and typed services:
 
 1. Connect to `wss://<gateway>/punch` with `Authorization: Bearer <access-token>` and the configured gateway ID.
 2. Use `GatewaySessions` from `@punch-bot/server/services` at server scope. `create(null)` creates a sandbox and session. `create(sandboxId)` creates another session in an existing authorized sandbox. `list()` returns workspace sessions. `attach(sessionId)` selects one.
-3. At session scope, subscribe to `RuntimeTranscript` and invoke `SandboxOperations.accept({ operationId, text })`, `status(operationId)`, or `abort(operationId)`. Operation IDs contain 1 to 128 ASCII letters, digits, underscores, or hyphens. Retrying the same admitted ID does not submit another prompt.
+3. At session scope, subscribe to `RuntimeTranscript` and invoke `SandboxOperations.accept({ operationId, text })`, `status(operationId)`, `current()`, or `abort(operationId)`. `current()` reads the runtime's current operation directly, without waiting for transcript replication. Operation IDs contain 1 to 128 ASCII letters, digits, underscores, or hyphens. Retrying the same admitted ID does not submit another prompt.
 4. `RuntimeModels.select({ provider, modelId })` changes the session model. The transcript includes the selected model and current operation.
 
 All client contracts are exported from `@punch-bot/server/services`. That entrypoint bundles for browsers without Node, Docker, or runtime implementation imports. The public Node entrypoints are `@punch-bot/server/gateway`, `@punch-bot/server/supervisor`, and `@punch-bot/server/runtime`.
@@ -119,6 +121,8 @@ The private supervisor API is `POST /v1/sandboxes` with the control bearer token
 - Delete with `deleteData: false` removes the container and retains the volume. A later delete with `deleteData: true` deletes that retained volume.
 - Only one supervisor may own a registry, and only one runtime may write a sandbox volume. SQLite ownership locks release on process death.
 - Startup reconciliation adopts live containers and finishes interrupted stop/delete operations. Unrelated containers and volumes fail ownership checks.
+- Per-sandbox reconciliation failures are logged and remain inspectable through the control API. Registry failures prevent startup. Compose waits for authenticated supervisor readiness before starting the gateway.
+- Attaching a session after runtime replacement resumes its persisted open operation without admitting another prompt.
 - Supervisor shutdown drains lifecycle calls without stopping containers. Runtime SIGTERM aborts active work and closes storage, with an eight-second process deadline inside Docker's ten-second stop grace period.
 
 Keep the supervisor registry, gateway database, and sandbox volumes together when backing up an installation. Their IDs and workspace ownership are linked. Session creation can leave an unlisted runtime session if the gateway dies after runtime creation but before catalog persistence; inspect the runtime before retrying an uncertain create.

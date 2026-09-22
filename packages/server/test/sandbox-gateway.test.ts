@@ -17,6 +17,7 @@ test("gateway catalogs persist remote sessions and enforce workspace access", as
 	faux.setResponses([fauxAssistantMessage("routed answer")]);
 	const models = createModels();
 	models.setProvider(faux.provider);
+	const errors: unknown[] = [];
 	const sandboxId = randomUUID(),
 		generation = randomUUID(),
 		token = "s".repeat(32);
@@ -31,7 +32,7 @@ test("gateway catalogs persist remote sessions and enforce workspace access", as
 		hostname: "127.0.0.1",
 		port: 0,
 		onError(error) {
-			throw error;
+			errors.push(error);
 		},
 	});
 	const summary = {
@@ -101,12 +102,14 @@ test("gateway catalogs persist remote sessions and enforce workspace access", as
 				context,
 			);
 			await expect
-				.poll(() =>
-					attachment.invokeService(
-						{ serviceId: SandboxOperations.id, member: "status", args: ["gateway-operation"] },
-						async () => {},
-						context,
-					),
+				.poll(
+					() =>
+						attachment.invokeService(
+							{ serviceId: SandboxOperations.id, member: "status", args: ["gateway-operation"] },
+							async () => {},
+							context,
+						),
+					{ timeout: 5_000 },
 				)
 				.toEqual({ operationId: "gateway-operation", status: "completed" });
 		} finally {
@@ -121,6 +124,7 @@ test("gateway catalogs persist remote sessions and enforce workspace access", as
 			await hidden.invokeService({ serviceId: GatewaySessions.id, member: "list", args: [] }, async () => {}, other),
 		).toEqual([]);
 		await hidden.release(other);
+		expect(errors).toEqual([]);
 	} finally {
 		await gateway.close();
 		await runtime.close();

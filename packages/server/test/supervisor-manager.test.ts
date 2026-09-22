@@ -18,10 +18,11 @@ test("concurrent acquisition converges and restart rotates only after stopping t
 		network: "private",
 		runtimeUrl: () => "http://runtime:8080",
 		async environment() {
-			return {};
+			return { PUNCH_RUNTIME_PORT: "9999", PUNCH_SANDBOX_DIRECTORY: "/tmp/data" };
 		},
 		async ready() {
 			readinessCalls++;
+			// The first acquire and each replacement probe a starting generation; followers reuse the ready one.
 			if (readinessCalls > 1 && readinessCalls <= 5)
 				expect(registry.get(sandbox.id, "workspace")).toMatchObject({ state: "ready", desired: "running" });
 		},
@@ -30,6 +31,7 @@ test("concurrent acquisition converges and restart rotates only after stopping t
 				return container;
 			},
 			async create(spec: SandboxContainerSpec) {
+				expect(spec.environment).toMatchObject({ PUNCH_RUNTIME_PORT: "8080", PUNCH_SANDBOX_DIRECTORY: "/sandbox" });
 				creates++;
 				container = { id: "container", running: false, labels: spec.labels };
 			},

@@ -3,6 +3,11 @@ services:
     image: ${PUNCH_SUPERVISOR_IMAGE:?Set a digest-pinned supervisor image}
     restart: unless-stopped
     stop_grace_period: 125s
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8081/ready', {headers: {authorization: 'Bearer ' + process.env.PUNCH_SUPERVISOR_TOKEN}, signal: AbortSignal.timeout(2000)}).then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      start_period: 120s
     environment:
       PUNCH_SUPERVISOR_DATABASE: /state/supervisor.db
       PUNCH_SUPERVISOR_TOKEN: ${PUNCH_SUPERVISOR_TOKEN:?Set a random control credential}
@@ -23,7 +28,9 @@ services:
     image: ${PUNCH_GATEWAY_IMAGE:?Set a digest-pinned gateway image}
     restart: unless-stopped
     stop_grace_period: 35s
-    depends_on: [supervisor]
+    depends_on:
+      supervisor:
+        condition: service_healthy
     environment:
       PUNCH_GATEWAY_ID: ${PUNCH_GATEWAY_ID:?Set a stable UUID}
       PUNCH_GATEWAY_DATABASE: /state/gateway.db
@@ -41,8 +48,8 @@ services:
     volumes:
       - gateway-state:/state
       - type: bind
-        source: ${PUNCH_CONFIG_DIRECTORY}/memberships.json
-        target: /config/memberships.json
+        source: ${PUNCH_CONFIG_DIRECTORY}/memberships
+        target: /config
         read_only: true
     networks: [sandboxes]
 networks:

@@ -36,6 +36,10 @@ export async function startSupervisorControl(options: {
 			response.writeHead(503).end();
 			return;
 		}
+		if (request.method === "GET" && request.url === "/ready") {
+			response.writeHead(200, { "cache-control": "no-store" }).end();
+			return;
+		}
 		if (request.method !== "POST" || request.url !== "/v1/sandboxes") {
 			response.writeHead(404).end();
 			return;
@@ -103,20 +107,32 @@ export async function startSupervisorControl(options: {
 			} catch {
 				/* Logging cannot interrupt cleanup. */
 			}
-			if (!response.headersSent) response.writeHead(400);
-			response.end();
+			if (!response.headersSent)
+				response.writeHead(400, { "content-type": "application/json", "cache-control": "no-store" });
+			response.end(
+				JSON.stringify({ error: error instanceof Error ? error.message : "Supervisor operation failed" }),
+			);
 		});
 		pending.add(operation);
 		void operation.finally(() => pending.delete(operation));
 	});
 	await new Promise<void>((resolve, reject) => {
 		server.once("error", reject);
-		server.listen(options.port ?? 8081, options.hostname ?? "127.0.0.1", resolve);
+		server.listen(options.port ?? 8081, options.hostname ?? "127.0.0.1", () => {
+			server.off("error", reject);
+			server.on("error", (error) => {
+				try {
+					options.onError(error);
+				} catch {}
+			});
+			resolve();
+		});
 	});
 	const address = server.address();
 	if (!address || typeof address === "string") throw new Error("Supervisor address unavailable");
+	const hostname = options.hostname ?? "127.0.0.1";
 	return {
-		url: `http://${options.hostname ?? "127.0.0.1"}:${address.port}`,
+		url: `http://${hostname.includes(":") ? `[${hostname}]` : hostname}:${address.port}`,
 		async close() {
 			closing = true;
 			await new Promise<void>((resolve) => {
@@ -141,8 +157,12 @@ export function createSupervisorClient(url: string, token: string): SupervisorCl
 			signal: AbortSignal.timeout(120_000),
 		});
 		if (!response.ok) {
-			await response.body?.cancel();
-			throw new Error(`Supervisor request failed (${response.status})`);
+			const body: unknown = await response.json().catch(() => undefined);
+			const detail =
+				body && typeof body === "object" && "error" in body && typeof body.error === "string"
+					? `: ${body.error}`
+					: "";
+			throw new Error(`Supervisor request failed (${response.status})${detail}`);
 		}
 		return (await response.json()) as T;
 	};

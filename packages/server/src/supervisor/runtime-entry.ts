@@ -14,7 +14,11 @@ if (provider === "faux") {
 	if (tokensPerSecond !== undefined && (!Number.isFinite(tokensPerSecond) || tokensPerSecond <= 0))
 		throw new Error("Invalid faux streaming rate");
 	const faux = fauxProvider({ tokensPerSecond });
-	faux.setResponses([fauxAssistantMessage("sandbox smoke answer")]);
+	const respond = () => {
+		faux.appendResponses([respond]);
+		return fauxAssistantMessage("sandbox smoke answer");
+	};
+	faux.setResponses([respond]);
 	models.setProvider(faux.provider);
 } else if (provider === "openai") models.setProvider(openaiProvider());
 else if (provider === "anthropic") models.setProvider(anthropicProvider());

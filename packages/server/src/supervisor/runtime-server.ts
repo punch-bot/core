@@ -82,7 +82,7 @@ export async function startSandboxRuntimeServer(
 			authorize(
 				call === undefined ||
 					decodeServiceControlCall(call) ||
-					(call.serviceId === SandboxOperations.id && call.member === "status")
+					(call.serviceId === SandboxOperations.id && (call.member === "status" || call.member === "current"))
 					? "sessions:read"
 					: "sessions:control",
 				ctx,
@@ -125,7 +125,16 @@ export async function startSandboxRuntimeServer(
 					provider.provide(SandboxOperations, session.operations);
 					provider.provide(RuntimeTranscript, { state });
 					provider.provide(RuntimeModels, {
-						select: (model, context) => session.lane.setModel(model, context),
+						async select(model, context) {
+							if (
+								!model ||
+								typeof model.provider !== "string" ||
+								typeof model.modelId !== "string" ||
+								!options.models.getModel(model.provider, model.modelId)
+							)
+								throw new RemoteServiceError("service_invalid_value", "Model is unavailable");
+							await session.lane.setModel(model, context);
+						},
 					});
 					const endpoint = createRemoteServiceEndpoint(provider);
 					return {
@@ -193,11 +202,20 @@ export async function startSandboxRuntimeServer(
 		await server.start();
 		await new Promise<void>((resolve, reject) => {
 			http.once("error", reject);
-			http.listen(options.port ?? 8080, options.hostname ?? "0.0.0.0", resolve);
+			http.listen(options.port ?? 8080, options.hostname ?? "0.0.0.0", () => {
+				http.off("error", reject);
+				http.on("error", (error) => {
+					try {
+						options.onError(error);
+					} catch {}
+				});
+				resolve();
+			});
 		});
 		const address = http.address();
 		if (!address || typeof address === "string") throw new Error("Runtime address unavailable");
-		return { url: `http://${options.hostname ?? "127.0.0.1"}:${address.port}`, close };
+		const hostname = options.hostname ?? "127.0.0.1";
+		return { url: `http://${hostname.includes(":") ? `[${hostname}]` : hostname}:${address.port}`, close };
 	} catch (error) {
 		await close();
 		throw error;

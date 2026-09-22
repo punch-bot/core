@@ -50,12 +50,12 @@ export function createSandboxGatewayHost(options: {
 		return principal.workspaceId;
 	};
 	const resolve = (id: string, context: Context): RemoteSessionMetadata => {
-		if (removing.has(id)) throw new Error("Session is being removed");
 		const workspaceId = authorize("sessions:read", context);
 		const row = database
 			.prepare("SELECT sandbox_id, created_at FROM sandbox_gateway_sessions WHERE id=? AND workspace_id=?")
 			.get(id, workspaceId);
 		if (!row) throw new RemoteServiceError("service_not_allowed", "Session access denied");
+		if (removing.has(id)) throw new Error("Session is being removed");
 		return {
 			id,
 			workspaceId,
@@ -182,7 +182,7 @@ export function createSandboxGatewayHost(options: {
 				const read =
 					call === undefined ||
 					decodeServiceControlCall(call) ||
-					(call.serviceId === SandboxOperations.id && call.member === "status");
+					(call.serviceId === SandboxOperations.id && (call.member === "status" || call.member === "current"));
 				authorize(read ? "sessions:read" : "sessions:control", context);
 			},
 			async resolveSession(id, context) {

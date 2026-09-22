@@ -11,6 +11,10 @@ test("distinguishes missing containers from daemon failure and does not force de
 	const requests: string[] = [];
 	let status = 404;
 	const server = createServer((request, response) => {
+		if (request.url === "/version") {
+			response.end(JSON.stringify({ ApiVersion: "1.45" }));
+			return;
+		}
 		requests.push(`${request.method} ${request.url}`);
 		response.writeHead(status).end();
 	});
@@ -34,6 +38,10 @@ test("rejects a volume owned by another supervisor", async () => {
 	const socketPath = join(directory, "docker.sock");
 	const requests: string[] = [];
 	const server = createServer((request, response) => {
+		if (request.url === "/version") {
+			response.end(JSON.stringify({ ApiVersion: "1.45" }));
+			return;
+		}
 		requests.push(request.method!);
 		response
 			.writeHead(200, { "content-type": "application/json" })
@@ -45,6 +53,31 @@ test("rejects a volume owned by another supervisor", async () => {
 			"ownership mismatch",
 		);
 		expect(requests).toEqual(["GET"]);
+	} finally {
+		await new Promise<void>((resolve) => server.close(() => resolve()));
+		await rm(directory, { recursive: true, force: true });
+	}
+});
+
+test.each(["1.44", "1.54"])("negotiates Docker API %s once for concurrent requests", async (version) => {
+	const directory = await mkdtemp(join(tmpdir(), "punch-docker-"));
+	const socketPath = join(directory, "docker.sock");
+	const requests: string[] = [];
+	const server = createServer((request, response) => {
+		requests.push(request.url!);
+		if (request.url === "/version") response.end(JSON.stringify({ ApiVersion: version }));
+		else if (request.url === `/v${version}/containers/sandbox/json`) response.writeHead(404).end();
+		else response.writeHead(400).end();
+	});
+	await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+	try {
+		const engine = new DockerEngine({ socketPath });
+		expect(await Promise.all([engine.inspect("sandbox"), engine.inspect("sandbox")])).toEqual([undefined, undefined]);
+		expect(requests).toEqual([
+			"/version",
+			`/v${version}/containers/sandbox/json`,
+			`/v${version}/containers/sandbox/json`,
+		]);
 	} finally {
 		await new Promise<void>((resolve) => server.close(() => resolve()));
 		await rm(directory, { recursive: true, force: true });

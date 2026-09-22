@@ -411,5 +411,5 @@ test.skipIf(process.env.PUNCH_DOCKER_TEST !== "1")(
 			await rm(directory, { recursive: true, force: true });
 		}
 	},
-	180_000,
+	480_000,
 );

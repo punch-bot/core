@@ -14,8 +14,9 @@ test("runs outside coding-agent and retains completed operations across runtime 
 	models.setProvider(faux.provider);
 	const errors: unknown[] = [];
 	const options = { directory, models, model: faux.getModel(), onError: (error: unknown) => errors.push(error) };
-	let runtime = await createSandboxRuntime(options);
+	let runtime: Awaited<ReturnType<typeof createSandboxRuntime>> | undefined;
 	try {
+		runtime = await createSandboxRuntime(options);
 		await expect(createSandboxRuntime(options)).rejects.toThrow("already has a runtime writer");
 		const metadata = await runtime.create();
 		const session = await runtime.attach(metadata.id);
@@ -28,6 +29,7 @@ test("runs outside coding-agent and retains completed operations across runtime 
 			.toBe("completed");
 		const before = await session.lane.findEntries(undefined, BACKGROUND_CONTEXT);
 		await runtime.close();
+		runtime = undefined;
 		runtime = await createSandboxRuntime(options);
 		const reopened = await runtime.attach(metadata.id);
 		expect(await reopened.operations.accept(request, BACKGROUND_CONTEXT)).toEqual({
@@ -37,7 +39,7 @@ test("runs outside coding-agent and retains completed operations across runtime 
 		expect(await reopened.lane.findEntries(undefined, BACKGROUND_CONTEXT)).toEqual(before);
 		expect(errors).toEqual([]);
 	} finally {
-		await runtime.close();
+		await runtime?.close();
 		await rm(directory, { recursive: true, force: true });
 	}
 });
@@ -60,9 +62,11 @@ test("runtime tools use separate sandbox working directories and retain files af
 		model: faux.getModel(),
 		onError: (error: unknown) => errors.push(error),
 	};
-	let first = await createSandboxRuntime(options);
-	const second = await createSandboxRuntime({ ...options, directory: join(directory, "two") });
+	let first: Awaited<ReturnType<typeof createSandboxRuntime>> | undefined;
+	let second: Awaited<ReturnType<typeof createSandboxRuntime>> | undefined;
 	try {
+		first = await createSandboxRuntime(options);
+		second = await createSandboxRuntime({ ...options, directory: join(directory, "two") });
 		const metadata = await first.create();
 		const session = await first.attach(metadata.id);
 		expect(await first.attach(metadata.id)).toBe(session);
@@ -74,6 +78,7 @@ test("runtime tools use separate sandbox working directories and retain files af
 		await expect(readFile(join(directory, "two/work/answer.txt"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 		await expect(second.attach(metadata.id)).rejects.toThrow("Session not found");
 		await first.close();
+		first = undefined;
 		first = await createSandboxRuntime(options);
 		expect(await readFile(join(directory, "one/work/answer.txt"), "utf8")).toBe("sandbox one");
 		await first.remove(metadata.id);
@@ -81,8 +86,58 @@ test("runtime tools use separate sandbox working directories and retain files af
 		expect(await readFile(join(directory, "one/work/answer.txt"), "utf8")).toBe("sandbox one");
 		expect(errors).toEqual([]);
 	} finally {
-		await first.close();
-		await second.close();
+		await first?.close();
+		await second?.close();
+		await rm(directory, { recursive: true, force: true });
+	}
+});
+
+test("reattaching resumes an admitted operation once without replaying its prompt", async () => {
+	const directory = await mkdtemp(join(tmpdir(), "punch-runtime-recovery-"));
+	const faux = fauxProvider();
+	faux.setResponses([fauxAssistantMessage("recovered answer"), fauxAssistantMessage("next answer")]);
+	const models = createModels();
+	models.setProvider(faux.provider);
+	const errors: unknown[] = [];
+	const options = { directory, models, model: faux.getModel(), onError: (error: unknown) => errors.push(error) };
+	let runtime: Awaited<ReturnType<typeof createSandboxRuntime>> | undefined;
+	try {
+		runtime = await createSandboxRuntime(options);
+		const metadata = await runtime.create();
+		const session = await runtime.attach(metadata.id);
+		expect(
+			await session.lane.accept(
+				{ kind: "prompt", operationId: "persisted", prompt: "original question" },
+				BACKGROUND_CONTEXT,
+			),
+		).toMatchObject({ ok: true });
+		await runtime.close();
+		runtime = undefined;
+		runtime = await createSandboxRuntime(options);
+		const reopened = await runtime.attach(metadata.id);
+		await Promise.all(
+			Array.from({ length: 3 }, () =>
+				reopened.operations.accept(
+					{ operationId: "persisted", text: "must not replace original" },
+					BACKGROUND_CONTEXT,
+				),
+			),
+		);
+		await expect
+			.poll(async () => (await reopened.operations.status("persisted", BACKGROUND_CONTEXT)).status)
+			.toBe("completed");
+		expect(faux.state.callCount).toBe(1);
+		const transcript = JSON.stringify(await reopened.lane.findEntries(undefined, BACKGROUND_CONTEXT));
+		expect(transcript).toContain("original question");
+		expect(transcript).not.toContain("must not replace original");
+		await reopened.operations.accept({ operationId: "next", text: "next question" }, BACKGROUND_CONTEXT);
+		await expect
+			.poll(async () => (await reopened.operations.status("next", BACKGROUND_CONTEXT)).status)
+			.toBe("completed");
+		expect(faux.state.callCount).toBe(2);
+		expect(errors).toEqual([]);
+	} finally {
+		await runtime?.close();
 		await rm(directory, { recursive: true, force: true });
 	}
 });

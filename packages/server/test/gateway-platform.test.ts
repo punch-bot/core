@@ -8,15 +8,17 @@ import { createModels, fauxAssistantMessage, fauxProvider } from "@punch-bot/ai"
 import { createRemoteServiceBinding } from "@punch-bot/chord";
 import { Client, createClientServiceTransport } from "@punch-bot/client";
 import { createWebSocketTransportFactory } from "@punch-bot/client/websocket";
-import { expect, test } from "vitest";
+import { expect, onTestFinished, test } from "vitest";
 import { DiscordAdapter } from "../src/gateway/discord.ts";
 import { startGateway } from "../src/gateway/index.ts";
 import { GatewaySessions, RuntimeTranscript, SandboxOperations } from "../src/services.ts";
 import type { SupervisorClient } from "../src/supervisor/control.ts";
 import { startSandboxRuntimeServer } from "../src/supervisor/runtime-server.ts";
+import { Deferred } from "../src/testing/host.ts";
 
 test("signed Discord interactions and WebSocket clients share sandbox execution across gateway restart", async () => {
 	const directory = await mkdtemp(join(tmpdir(), "punch-platform-"));
+	onTestFinished(() => rm(directory, { recursive: true, force: true }));
 	const faux = fauxProvider();
 	const models = createModels();
 	models.setProvider(faux.provider);
@@ -37,6 +39,7 @@ test("signed Discord interactions and WebSocket clients share sandbox execution 
 		port: 0,
 		onError,
 	});
+	onTestFinished(() => runtime.close());
 	const summary = {
 		id: sandboxId,
 		workspaceId: "workspace",
@@ -86,6 +89,7 @@ test("signed Discord interactions and WebSocket clients share sandbox execution 
 		},
 	});
 	const httpServer = createServer();
+	onTestFinished(() => new Promise<void>((resolve) => httpServer.close(() => resolve())));
 	const options = {
 		serverId: randomUUID(),
 		databasePath: join(directory, "gateway.db"),
@@ -99,6 +103,7 @@ test("signed Discord interactions and WebSocket clients share sandbox execution 
 		onError,
 	};
 	let gateway = await startGateway({ ...options, adapters: [adapter] });
+	onTestFinished(() => gateway.close());
 	await new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
 	const address = httpServer.address();
 	if (!address || typeof address === "string") throw new Error("Missing address");
@@ -113,7 +118,9 @@ test("signed Discord interactions and WebSocket clients share sandbox execution 
 			}),
 		});
 	let client = await connect();
+	onTestFinished(() => client.dispose());
 	let release = () => {};
+	onTestFinished(() => release());
 	const dispatch = async (id: string, name: string, values: Record<string, string>) => {
 		const body = JSON.stringify({
 			id,
@@ -274,10 +281,146 @@ test("signed Discord interactions and WebSocket clients share sandbox execution 
 		expect(errors).toEqual([]);
 	} finally {
 		release();
-		await client.dispose();
-		await gateway.close();
-		await runtime.close();
-		await new Promise<void>((resolve) => httpServer.close(() => resolve()));
-		await rm(directory, { recursive: true, force: true });
 	}
 }, 20_000);
+
+test.each(["failed-send", "stalled-send", "early-abort", "queued-abort"])(
+	"gateway handles %s without losing operation receipts",
+	async (scenario) => {
+		const directory = await mkdtemp(join(tmpdir(), "punch-platform-errors-"));
+		onTestFinished(() => rm(directory, { recursive: true, force: true }));
+		const faux = fauxProvider();
+		const modelResponse = new Deferred<void>();
+		onTestFinished(() => modelResponse.resolve());
+		faux.setResponses([
+			async () => {
+				if (scenario === "early-abort" || scenario === "queued-abort") await modelResponse.promise;
+				return fauxAssistantMessage("answer");
+			},
+			fauxAssistantMessage("queued answer"),
+		]);
+		const models = createModels();
+		models.setProvider(faux.provider);
+		const errors: unknown[] = [];
+		const onError = (error: unknown) => errors.push(error);
+		const sandboxId = randomUUID(),
+			generation = randomUUID(),
+			token = "s".repeat(32);
+		const runtime = await startSandboxRuntimeServer({
+			directory: join(directory, "runtime"),
+			models,
+			model: faux.getModel(),
+			sandboxId,
+			generation,
+			token,
+			workspaceId: "workspace",
+			hostname: "127.0.0.1",
+			port: 0,
+			onError,
+		});
+		onTestFinished(() => runtime.close());
+		const acquisition = new Deferred<void>();
+		const acquiring = new Deferred<void>();
+		onTestFinished(() => acquisition.resolve());
+		const summary = {
+			id: sandboxId,
+			workspaceId: "workspace",
+			generation,
+			container: "container",
+			volume: "volume",
+			desired: "running" as const,
+			state: "ready" as const,
+			deleteData: false,
+		};
+		const supervisor: SupervisorClient = {
+			async create() {
+				return summary;
+			},
+			async inspect() {
+				return summary;
+			},
+			async acquire() {
+				acquiring.resolve();
+				if (scenario === "early-abort") await acquisition.promise;
+				return { sandboxId, generation, token, url: runtime.url };
+			},
+			async stop() {
+				throw new Error("Unexpected stop");
+			},
+			async delete() {
+				throw new Error("Unexpected delete");
+			},
+		};
+		const principal = {
+			userId: "user",
+			workspaceId: "workspace",
+			permissions: ["sessions:read", "sessions:create", "sessions:control"],
+		};
+		const conversation = { platform: "test", installationId: "1", conversationId: "2" };
+		const gateway = await startGateway({
+			serverId: randomUUID(),
+			databasePath: join(directory, "gateway.db"),
+			supervisor,
+			httpServer: createServer(),
+			websocket: {
+				async authenticate() {
+					return { principal, expiresAt: Date.now() + 60_000 };
+				},
+			},
+			onError,
+		});
+		onTestFinished(() => gateway.close());
+		const sending = new Deferred<void>();
+		const stalled = new Deferred<void>();
+		onTestFinished(() => stalled.resolve());
+		const presentation = await gateway.gateway.open({
+			principal,
+			conversation,
+			async send(event) {
+				if (!event.snapshot.lastResult || scenario === "early-abort" || scenario === "queued-abort") return;
+				sending.resolve();
+				if (scenario === "failed-send") throw new Error("Delivery unavailable");
+				await stalled.promise;
+			},
+		});
+		onTestFinished(() => presentation.close());
+		onTestFinished(() => {
+			modelResponse.resolve();
+			acquisition.resolve();
+			stalled.resolve();
+		});
+		const turn = presentation.execute("prompt", { type: "prompt", text: "question" });
+		void turn.catch(() => {});
+		if (scenario === "early-abort") {
+			await acquiring.promise;
+			const abort = presentation.execute("abort", { type: "abort" });
+			acquisition.resolve();
+			expect(await abort).toMatchObject({ aborted: expect.any(String) });
+			modelResponse.resolve();
+			await expect(turn).resolves.toMatchObject({ accepted: true });
+			expect(errors).toEqual([]);
+		} else if (scenario === "queued-abort") {
+			await expect.poll(() => faux.state.callCount).toBe(1);
+			const queued = presentation.execute("queued", { type: "prompt", text: "next question" });
+			void queued.catch(() => {});
+			expect(await presentation.execute("abort", { type: "abort" })).toMatchObject({ aborted: expect.any(String) });
+			modelResponse.resolve();
+			await expect(turn).resolves.toMatchObject({ accepted: true });
+			await expect(queued).resolves.toMatchObject({ accepted: true });
+			expect(errors).toEqual([]);
+		} else {
+			await sending.promise;
+			if (scenario === "stalled-send") {
+				await presentation.close();
+				await expect(turn).rejects.toThrow("closed");
+			} else {
+				await expect(turn).rejects.toThrow("Delivery unavailable");
+			}
+			expect(gateway.gateway.store.claim(principal, conversation, "prompt")).toMatchObject({
+				status: "failed",
+				result: { operationId: expect.any(String), sessionId: expect.any(String) },
+			});
+		}
+	},
+	10_000,
+);

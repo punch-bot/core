@@ -45,6 +45,8 @@ test("private control authenticates, preserves deletion intent, and reconciles a
 	const control = await startSupervisorControl({ registry, supervisor, token, port: 0, onError() {} });
 	const client = createSupervisorClient(control.url, token);
 	try {
+		expect((await fetch(`${control.url}/ready`)).status).toBe(401);
+		expect((await fetch(`${control.url}/ready`, { headers: { authorization: `Bearer ${token}` } })).status).toBe(200);
 		await expect(createSupervisorClient(control.url, "wrong").create("workspace")).rejects.toThrow("401");
 		expect(registry.list()).toEqual([]);
 		const sandbox = await client.create("workspace");
@@ -59,7 +61,7 @@ test("private control authenticates, preserves deletion intent, and reconciles a
 		});
 		expect(invalid.status).toBe(400);
 		expect(registry.get(sandbox.id, "workspace").desired).toBe("running");
-		await expect(client.delete(sandbox.id, "workspace", true)).rejects.toThrow();
+		await expect(client.delete(sandbox.id, "workspace", true)).rejects.toThrow("Daemon unavailable");
 		expect(registry.get(sandbox.id, "workspace")).toMatchObject({
 			desired: "deleted",
 			state: "failed",
@@ -67,11 +69,80 @@ test("private control authenticates, preserves deletion intent, and reconciles a
 		});
 		failDeletion = false;
 		await supervisor.reconcile();
-		expect(await client.inspect(sandbox.id, "workspace")).toMatchObject({ state: "deleted", deleteData: true });
+		const summary = await client.inspect(sandbox.id, "workspace");
+		expect(summary).toMatchObject({ state: "deleted", deleteData: true });
+		expect(summary).not.toHaveProperty("token");
+		await client.delete(sandbox.id, "workspace", true);
 		expect(deletedVolumes).toBe(1);
 		await expect(client.acquire(sandbox.id, "workspace")).rejects.toThrow();
 	} finally {
 		await control.close();
+		await supervisor.close();
+		registry.close();
+	}
+});
+
+test("control stays available for failed sandboxes after reconciliation and supports IPv6", async () => {
+	const registry = new SandboxRegistry(":memory:");
+	const bad = registry.create("bad");
+	const good = registry.create("good");
+	registry.save({ ...bad, desired: "running" }, bad);
+	registry.save({ ...good, desired: "running" }, good);
+	const containers = new Map<string, SandboxContainerState>();
+	const supervisor = new SandboxSupervisor({
+		registry,
+		image: `sha256:${"a".repeat(64)}`,
+		network: "test",
+		runtimeUrl: () => "http://runtime:8080",
+		async ready(route) {
+			if (route.sandboxId === bad.id) throw new Error("Invalid runtime configuration");
+		},
+		async environment() {
+			return {};
+		},
+		engine: {
+			async inspect(name) {
+				return containers.get(name);
+			},
+			async create(spec) {
+				containers.set(spec.name, { id: spec.name, running: false, labels: spec.labels });
+			},
+			async start(name) {
+				containers.set(name, { ...containers.get(name)!, running: true });
+			},
+			async stop(name) {
+				containers.set(name, { ...containers.get(name)!, running: false });
+			},
+			async remove(name) {
+				containers.delete(name);
+			},
+			async ensureVolume() {},
+			async removeVolume() {},
+		},
+	});
+	let control: Awaited<ReturnType<typeof startSupervisorControl>> | undefined;
+	try {
+		const failures = await supervisor.reconcile();
+		expect(failures).toEqual([
+			{ sandboxId: bad.id, error: expect.objectContaining({ message: "Invalid runtime configuration" }) },
+		]);
+		control = await startSupervisorControl({
+			registry,
+			supervisor,
+			token: "s".repeat(32),
+			hostname: "::1",
+			port: 0,
+			onError() {},
+		});
+		const client = createSupervisorClient(control.url, "s".repeat(32));
+		expect(await client.inspect(bad.id, "bad")).toMatchObject({ state: "failed" });
+		expect(await client.inspect(good.id, "good")).toMatchObject({ state: "ready" });
+		await client.delete(bad.id, "bad", false);
+		expect(await client.inspect(bad.id, "bad")).toMatchObject({ state: "deleted", deleteData: false });
+		await client.delete(bad.id, "bad", true);
+		expect(await client.inspect(bad.id, "bad")).toMatchObject({ state: "deleted", deleteData: true });
+	} finally {
+		await control?.close();
 		await supervisor.close();
 		registry.close();
 	}

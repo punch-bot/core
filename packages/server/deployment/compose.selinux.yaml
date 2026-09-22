@@ -13,8 +13,8 @@ services:
   gateway:
     volumes:
       - type: bind
-        source: ${PUNCH_CONFIG_DIRECTORY}/memberships.json
-        target: /config/memberships.json
+        source: ${PUNCH_CONFIG_DIRECTORY}/memberships
+        target: /config
         read_only: true
         bind:
           selinux: z

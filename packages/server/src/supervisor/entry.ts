@@ -35,7 +35,7 @@ const supervisor = new SandboxSupervisor({
 	},
 });
 try {
-	await supervisor.reconcile();
+	for (const failure of await supervisor.reconcile()) console.error("Sandbox reconciliation failed", failure);
 	const control = await startSupervisorControl({
 		supervisor,
 		registry,

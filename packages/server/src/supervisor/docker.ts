@@ -21,6 +21,7 @@ export interface SandboxContainerState {
 export class DockerEngine {
 	readonly #socketPath: string;
 	readonly #timeoutMs: number;
+	#apiVersion: Promise<string> | undefined;
 	constructor(options: { socketPath?: string; timeoutMs?: number } = {}) {
 		this.#socketPath = options.socketPath ?? "/var/run/docker.sock";
 		this.#timeoutMs = options.timeoutMs ?? 60_000;
@@ -28,12 +29,32 @@ export class DockerEngine {
 	}
 
 	async #request(method: string, path: string, body?: unknown, allowMissing = false): Promise<unknown> {
+		if (path !== "/version") {
+			this.#apiVersion ??= this.#request("GET", "/version")
+				.then((value) => {
+					if (
+						!value ||
+						typeof value !== "object" ||
+						!("ApiVersion" in value) ||
+						typeof value.ApiVersion !== "string" ||
+						!/^1\.\d+$/.test(value.ApiVersion) ||
+						Number(value.ApiVersion.split(".")[1]) < 25
+					)
+						throw new Error("Docker daemon must support API 1.25 or newer");
+					return value.ApiVersion;
+				})
+				.catch((error) => {
+					this.#apiVersion = undefined;
+					throw error;
+				});
+			path = `/v${await this.#apiVersion}${path}`;
+		}
 		const payload = body === undefined ? undefined : Buffer.from(JSON.stringify(body));
 		return new Promise((resolve, reject) => {
 			const req = request(
 				{
 					socketPath: this.#socketPath,
-					path: `/v1.45${path}`,
+					path,
 					method,
 					headers: payload ? { "content-type": "application/json", "content-length": payload.length } : {},
 				},

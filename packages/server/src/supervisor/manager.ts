@@ -97,6 +97,8 @@ export class SandboxSupervisor {
 							PUNCH_WORKSPACE_ID: workspaceId,
 							PUNCH_RUNTIME_GENERATION: record.generation,
 							PUNCH_RUNTIME_TOKEN: record.token,
+							PUNCH_RUNTIME_PORT: "8080",
+							PUNCH_SANDBOX_DIRECTORY: "/sandbox",
 						},
 					});
 					await engine.start(record.container);
@@ -155,6 +157,7 @@ export class SandboxSupervisor {
 		return this.#run(id, async () => {
 			const { registry, engine } = this.#options;
 			const previous = registry.get(id, workspaceId);
+			if (previous.state === "deleted" && (previous.deleteData || !deleteData)) return;
 			const deleting: SandboxRecord = {
 				...previous,
 				desired: "deleted",
@@ -179,18 +182,21 @@ export class SandboxSupervisor {
 		});
 	}
 	/** Adopt live generations; finish interrupted stop/delete operations without touching unrelated containers. */
-	async reconcile(): Promise<void> {
+	async reconcile(): Promise<{ sandboxId: string; error: unknown }[]> {
+		const records = this.#options.registry.list().filter((record) => record.state !== "deleted");
 		const results = await Promise.allSettled(
-			this.#options.registry
-				.list()
-				.filter((record) => record.state !== "deleted")
-				.map((record) => {
-					if (record.desired === "running") return this.acquire(record.id, record.workspaceId);
-					if (record.desired === "deleted") return this.delete(record.id, record.workspaceId, record.deleteData);
-					return this.stop(record.id, record.workspaceId);
-				}),
+			records.map((record) => {
+				if (record.desired === "running") return this.acquire(record.id, record.workspaceId);
+				if (record.desired === "deleted") return this.delete(record.id, record.workspaceId, record.deleteData);
+				return this.stop(record.id, record.workspaceId);
+			}),
 		);
-		const errors = results.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
-		if (errors.length) throw new AggregateError(errors, "Sandbox reconciliation failed");
+		return results.flatMap((result, index) => {
+			if (result.status === "fulfilled") return [];
+			const record = records[index]!;
+			// A recoverable lifecycle failure must have been durably recorded. Registry failures remain fatal.
+			if (this.#options.registry.get(record.id, record.workspaceId).state !== "failed") throw result.reason;
+			return [{ sandboxId: record.id, error: result.reason }];
+		});
 	}
 }

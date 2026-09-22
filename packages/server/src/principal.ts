@@ -5,6 +5,10 @@ export interface Principal {
 	readonly userId: string;
 	readonly workspaceId: string;
 	readonly permissions: readonly string[];
+	/** Credential that established this principal, retained for membership reauthorization. */
+	readonly externalIdentity?:
+		| { readonly type: "oidc"; readonly subject: string }
+		| { readonly type: "discord"; readonly guildId: string; readonly channelId: string; readonly userId: string };
 }
 
 const PRINCIPAL_CONTEXT_KEY = createContextKey<Principal>("punch.principal");
@@ -30,6 +34,7 @@ export function withPrincipal(principal: Principal, context: Context): Context {
 		userId: principal.userId,
 		workspaceId: principal.workspaceId,
 		permissions: Object.freeze([...principal.permissions]),
+		...(principal.externalIdentity ? { externalIdentity: Object.freeze({ ...principal.externalIdentity }) } : {}),
 	});
 	return withContextValue(PRINCIPAL_CONTEXT_KEY, snapshot, context);
 }

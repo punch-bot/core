@@ -5,7 +5,7 @@ import type { SandboxOperationStatus, SandboxOperations } from "../services.ts";
 export function createSandboxOperations(
 	lane: Pick<AgentLane, "accept" | "drive" | "getResult" | "inspectExecution" | "requestAbort">,
 	onError: (error: unknown) => void,
-): { service: SandboxOperations; close(): Promise<void> } {
+): { service: SandboxOperations; resume(operationId: string): void; close(): Promise<void> } {
 	let admissions = Promise.resolve();
 	let closed = false;
 	let closing: Promise<void> | undefined;
@@ -23,7 +23,19 @@ export function createSandboxOperations(
 		const current = (await lane.inspectExecution(BACKGROUND_CONTEXT)).current;
 		return { operationId, status: current?.id === operationId ? current.status : "unknown" };
 	};
+	const resume = (operationId: string): void => {
+		if (closed) throw new Error("Sandbox runtime is stopping");
+		if (drives.has(operationId)) return;
+		const drive = lane.drive({ operationId, waitForRetry: true, pollDeferred: true }, BACKGROUND_CONTEXT);
+		drives.set(operationId, drive);
+		void drive
+			.then((result) => {
+				if (!result.ok) report(result.error);
+			}, report)
+			.finally(() => drives.delete(operationId));
+	};
 	return {
+		resume,
 		service: {
 			accept(request, context) {
 				const admitted = admissions.then(async () => {
@@ -36,22 +48,16 @@ export function createSandboxOperations(
 					)
 						throw new Error("Invalid sandbox prompt");
 					const previous = await status(request.operationId);
-					if (previous.status !== "unknown") return previous;
+					if (previous.status !== "unknown") {
+						if (["open", "running", "aborting"].includes(previous.status)) resume(request.operationId);
+						return previous;
+					}
 					const result = await lane.accept(
 						{ kind: "prompt", operationId: request.operationId, prompt: request.text },
 						BACKGROUND_CONTEXT,
 					);
 					if (!result.ok) throw new Error(result.error.message);
-					const drive = lane.drive(
-						{ operationId: result.value.operationId, waitForRetry: true, pollDeferred: true },
-						BACKGROUND_CONTEXT,
-					);
-					drives.set(result.value.operationId, drive);
-					void drive
-						.then((result) => {
-							if (!result.ok) report(result.error);
-						}, report)
-						.finally(() => drives.delete(request.operationId));
+					resume(result.value.operationId);
 					return { operationId: result.value.operationId, status: "running" as const };
 				});
 				admissions = admitted.then(
@@ -61,6 +67,11 @@ export function createSandboxOperations(
 				return admitted;
 			},
 			status,
+			async current() {
+				await admissions;
+				const current = (await lane.inspectExecution(BACKGROUND_CONTEXT)).current;
+				return current ? { operationId: current.id, status: current.status } : null;
+			},
 			async abort(operationId) {
 				const result = await lane.requestAbort(operationId, BACKGROUND_CONTEXT);
 				if (!result.ok) throw new Error(result.error.message);

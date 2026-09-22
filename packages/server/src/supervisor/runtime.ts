@@ -62,6 +62,9 @@ export async function createSandboxRuntime(options: SandboxRuntimeOptions) {
 			harness = created.harness;
 			const lane = await harness.lane("main", BACKGROUND_CONTEXT);
 			const operations = createSandboxOperations(lane, options.onError);
+			for (const operation of created.open) {
+				if (operation.lane === "main") operations.resume(operation.operationId);
+			}
 			const active = harness;
 			return {
 				metadata,

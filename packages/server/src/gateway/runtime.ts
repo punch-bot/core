@@ -16,6 +16,7 @@ export class Gateway implements GatewayAdapterHost {
 	readonly #presentations = new Set<GatewayPresentation>();
 	readonly #active = new Set<Promise<unknown>>();
 	readonly #queues = new Map<string, Promise<unknown>>();
+	readonly #admissions = new Map<string, Promise<void>>();
 	#closed = false;
 	#closing?: Promise<void>;
 	constructor(options: { server: Server; store: GatewayStore; onError(error: unknown): void }) {
@@ -108,17 +109,30 @@ export class Gateway implements GatewayAdapterHost {
 		});
 		let output: { sessionId: string; snapshot: LaneTranscriptSnapshot } | undefined;
 		let sending: Promise<void> | undefined;
+		let sendError: Error | undefined;
 		const flush = (): Promise<void> => {
+			if (sendError) return Promise.reject(sendError);
 			if (sending) return sending;
 			sending = Promise.resolve()
 				.then(async () => {
 					while (output && !disposed) {
 						const event = output;
 						output = undefined;
-						await presentation.send({ type: "transcript", ...event });
+						await new Promise<void>((resolve, reject) => {
+							const abort = (): void => reject(controller.signal.reason);
+							if (controller.signal.aborted) return abort();
+							controller.signal.addEventListener("abort", abort, { once: true });
+							void Promise.resolve()
+								.then(() => presentation.send({ type: "transcript", ...event }))
+								.then(resolve, reject)
+								.finally(() => controller.signal.removeEventListener("abort", abort));
+						});
 					}
 				})
-				.catch(this.#onError)
+				.catch((error) => {
+					sendError = error instanceof Error ? error : new Error("Transcript delivery failed", { cause: error });
+					throw sendError;
+				})
 				.finally(() => {
 					sending = undefined;
 				});
@@ -127,7 +141,9 @@ export class Gateway implements GatewayAdapterHost {
 		const unsubscribe = transcript.state.subscribe((state) => {
 			if (state?.snapshot && client.attachment) {
 				output = { sessionId: client.attachment.sessionId, snapshot: state.snapshot };
-				void flush();
+				void flush().catch((error) => {
+					if (!disposed) this.#onError(error);
+				});
 			}
 		});
 		const waitForCompletion = async (operationId: string): Promise<void> => {
@@ -181,7 +197,7 @@ export class Gateway implements GatewayAdapterHost {
 					await Promise.allSettled([binding.dispose(context), managementBinding.dispose(context)]);
 				} finally {
 					await client.dispose();
-					await sending;
+					await sending?.catch(() => {});
 				}
 			})();
 			return disposing;
@@ -197,7 +213,23 @@ export class Gateway implements GatewayAdapterHost {
 			};
 			const handle: GatewayPresentation = {
 				execute: (eventId, command) => {
+					const queueKey = conversationKey(principal, key);
+					let resolveAdmission = () => {};
+					const admitted =
+						command.type === "prompt"
+							? new Promise<void>((resolve) => {
+									resolveAdmission = resolve;
+								})
+							: undefined;
+					// A queued prompt must not make abort wait for the active turn to complete.
+					if (admitted && !this.#queues.has(queueKey)) this.#admissions.set(queueKey, admitted);
+					const finishAdmission = (): void => {
+						resolveAdmission();
+						if (admitted && this.#admissions.get(queueKey) === admitted) this.#admissions.delete(queueKey);
+					};
 					const run = async (): Promise<JsonValue> => {
+						if (admitted) this.#admissions.set(queueKey, admitted);
+						else if (command.type === "abort" || command.type === "status") await this.#admissions.get(queueKey);
 						if (disposed || this.#closed) throw new Error("Gateway presentation closed");
 						if (!eventId || eventId.length > 256) throw new Error("Invalid platform event ID");
 						if (command.type === "prompt" && (!command.text.trim() || command.text.length > 32_000))
@@ -229,12 +261,13 @@ export class Gateway implements GatewayAdapterHost {
 										submitted = { sessionId, operationId };
 										this.store.recordOperation(principal, key, eventId, sessionId, operationId);
 										await operations.accept({ operationId, text: command.text }, context);
+										finishAdmission();
 										await waitForCompletion(operationId);
 										result = { sessionId, operationId, accepted: true };
 										break;
 									}
 									case "abort": {
-										const operationId = transcript.state.value?.snapshot?.operation?.id;
+										const operationId = (await operations.current(context))?.operationId;
 										if (operationId) await operations.abort(operationId, context);
 										result = { sessionId, aborted: operationId ?? null };
 										break;
@@ -246,7 +279,7 @@ export class Gateway implements GatewayAdapterHost {
 									case "status":
 										result = {
 											sessionId,
-											operation: transcript.state.value?.snapshot?.operation?.id ?? null,
+											operation: (await operations.current(context))?.operationId ?? null,
 											model: transcript.state.value?.snapshot?.configuration.model ?? null,
 										};
 										break;
@@ -267,8 +300,10 @@ export class Gateway implements GatewayAdapterHost {
 						}
 					};
 					if (command.type === "abort" || command.type === "status") return this.#track(run());
-					const queueKey = conversationKey(principal, key);
-					const result = (this.#queues.get(queueKey) ?? Promise.resolve()).catch(() => {}).then(run);
+					const result = (this.#queues.get(queueKey) ?? Promise.resolve())
+						.catch(() => {})
+						.then(run)
+						.finally(finishAdmission);
 					this.#queues.set(queueKey, result);
 					void result
 						.finally(() => {

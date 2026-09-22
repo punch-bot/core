@@ -9,7 +9,7 @@ import { Client, createClientServiceTransport } from "@punch-bot/client";
 import { createWebSocketTransportFactory } from "@punch-bot/client/websocket";
 import { expect, test } from "vitest";
 import { withPrincipal } from "../src/principal.ts";
-import { RuntimeSessions, SandboxOperations } from "../src/services.ts";
+import { RuntimeModels, RuntimeSessions, RuntimeTranscript, SandboxOperations } from "../src/services.ts";
 import { signRuntimeCapability } from "../src/supervisor/capability.ts";
 import { createRemoteSessionHandle } from "../src/supervisor/remote-session.ts";
 import { startSandboxRuntimeServer } from "../src/supervisor/runtime-server.ts";
@@ -65,15 +65,27 @@ test("authenticates remote runtime calls and preserves operations after presenta
 		await management.ready(BACKGROUND_CONTEXT);
 		const session = await management.use(RuntimeSessions).create(BACKGROUND_CONTEXT);
 		await management.use(RuntimeSessions).attach(session.id, BACKGROUND_CONTEXT);
+		for (const model of [
+			{ provider: "faux", modelId: "typo" },
+			{ provider: "missing", modelId: "faux-1" },
+			{ provider: 42, modelId: null },
+		]) {
+			await expect(
+				client.request(client.attachment!, { serviceId: RuntimeModels.id, member: "select", args: [model] }),
+			).rejects.toThrow("Model is unavailable");
+		}
 		const connected = client;
 		const operations = createRemoteServiceBinding({
-			services: [SandboxOperations],
+			services: [SandboxOperations, RuntimeTranscript],
 			transport: createClientServiceTransport(client, () => connected.attachment),
 			bound: true,
 			assertAccess() {},
 			onError: (error) => errors.push(error),
 		});
 		await operations.ready(BACKGROUND_CONTEXT);
+		await expect
+			.poll(() => operations.use(RuntimeTranscript).state.value?.snapshot.configuration.model)
+			.toEqual({ provider: "faux", modelId: "faux-1" });
 		await operations
 			.use(SandboxOperations)
 			.accept({ operationId: "remote-operation", text: "question" }, BACKGROUND_CONTEXT);
@@ -149,6 +161,7 @@ test("authenticates remote runtime calls and preserves operations after presenta
 		} finally {
 			await handle.close(context);
 		}
+		expect(errors).toEqual([]);
 	} finally {
 		await client?.dispose();
 		await runtime.close();

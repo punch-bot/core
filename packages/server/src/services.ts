@@ -32,6 +32,7 @@ export interface SandboxOperationStatus {
 export interface SandboxOperations {
 	accept(request: { operationId: string; text: string }, context: Context): Promise<SandboxOperationStatus>;
 	status(operationId: string, context: Context): Promise<SandboxOperationStatus>;
+	current(context: Context): Promise<SandboxOperationStatus | null>;
 	abort(operationId: string, context: Context): Promise<void>;
 }
 export const SandboxOperations = defineService<SandboxOperations>("punch.sandbox-operations");
