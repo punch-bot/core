@@ -2,11 +2,14 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { BACKGROUND_CONTEXT } from "@punch-bot/agent";
 import { getPrincipal, type Principal, withPrincipal } from "../principal.ts";
 
-/** The trusted gateway signs a short-lived, generation-scoped copy of verified client identity. */
+// A presentation can wait 14 minutes for a turn after route acquisition and prompt admission.
+const CAPABILITY_LIFETIME_MS = 20 * 60_000;
+
+/** The trusted gateway signs a generation-scoped copy of verified client identity. */
 export function signRuntimeCapability(secret: string, generation: string, principal: Principal): string {
-	const payload = Buffer.from(JSON.stringify({ generation, principal, expiresAt: Date.now() + 300_000 })).toString(
-		"base64url",
-	);
+	const payload = Buffer.from(
+		JSON.stringify({ generation, principal, expiresAt: Date.now() + CAPABILITY_LIFETIME_MS }),
+	).toString("base64url");
 	return `${payload}.${createHmac("sha256", secret).update(payload).digest("base64url")}`;
 }
 
@@ -33,7 +36,7 @@ export function verifyRuntimeCapability(
 		typeof value.expiresAt !== "number" ||
 		!Number.isFinite(value.expiresAt) ||
 		value.expiresAt <= Date.now() ||
-		value.expiresAt > Date.now() + 300_000
+		value.expiresAt > Date.now() + CAPABILITY_LIFETIME_MS
 	)
 		throw new Error("Expired or stale runtime capability");
 	const principal = getPrincipal(withPrincipal(value.principal, BACKGROUND_CONTEXT))!;

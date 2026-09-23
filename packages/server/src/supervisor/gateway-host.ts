@@ -132,22 +132,27 @@ export function createSandboxGatewayHost(options: {
 								removing.add(id);
 								try {
 									await presentation.prepareSessionRemoval(id, ctx);
-									const route = await options.supervisor.acquire(metadata.sandboxId, metadata.workspaceId);
-									if (route.sandboxId !== metadata.sandboxId) throw new Error("Supervisor route mismatch");
-									const client = await connectSandboxRuntime(route, getPrincipal(ctx)!);
-									try {
-										await client.request(
-											{ serverId: metadata.sandboxId },
-											{ serviceId: RuntimeSessions.id, member: "remove", args: [id] },
-											ctx.abortSignal,
-										);
-										database
-											.prepare("DELETE FROM sandbox_gateway_sessions WHERE id=? AND workspace_id=?")
-											.run(id, metadata.workspaceId);
-										await options.onSessionRemoved?.(id, ctx);
-									} finally {
-										await client.dispose();
+									const sandbox = await options.supervisor.inspect(metadata.sandboxId, metadata.workspaceId);
+									if (sandbox.id !== metadata.sandboxId || sandbox.workspaceId !== metadata.workspaceId)
+										throw new Error("Supervisor returned the wrong sandbox");
+									if (sandbox.state !== "deleted") {
+										const route = await options.supervisor.acquire(metadata.sandboxId, metadata.workspaceId);
+										if (route.sandboxId !== metadata.sandboxId) throw new Error("Supervisor route mismatch");
+										const client = await connectSandboxRuntime(route, getPrincipal(ctx)!);
+										try {
+											await client.request(
+												{ serverId: metadata.sandboxId },
+												{ serviceId: RuntimeSessions.id, member: "remove", args: [id] },
+												ctx.abortSignal,
+											);
+										} finally {
+											await client.dispose();
+										}
 									}
+									database
+										.prepare("DELETE FROM sandbox_gateway_sessions WHERE id=? AND workspace_id=?")
+										.run(id, metadata.workspaceId);
+									await options.onSessionRemoved?.(id, ctx);
 								} finally {
 									removing.delete(id);
 								}

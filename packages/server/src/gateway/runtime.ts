@@ -109,29 +109,28 @@ export class Gateway implements GatewayAdapterHost {
 		});
 		let output: { sessionId: string; snapshot: LaneTranscriptSnapshot } | undefined;
 		let sending: Promise<void> | undefined;
-		let sendError: Error | undefined;
 		const flush = (): Promise<void> => {
-			if (sendError) return Promise.reject(sendError);
 			if (sending) return sending;
 			sending = Promise.resolve()
 				.then(async () => {
 					while (output && !disposed) {
 						const event = output;
 						output = undefined;
-						await new Promise<void>((resolve, reject) => {
-							const abort = (): void => reject(controller.signal.reason);
-							if (controller.signal.aborted) return abort();
-							controller.signal.addEventListener("abort", abort, { once: true });
-							void Promise.resolve()
-								.then(() => presentation.send({ type: "transcript", ...event }))
-								.then(resolve, reject)
-								.finally(() => controller.signal.removeEventListener("abort", abort));
-						});
+						try {
+							await new Promise<void>((resolve, reject) => {
+								const abort = (): void => reject(controller.signal.reason);
+								if (controller.signal.aborted) return abort();
+								controller.signal.addEventListener("abort", abort, { once: true });
+								void Promise.resolve()
+									.then(() => presentation.send({ type: "transcript", ...event }))
+									.then(resolve, reject)
+									.finally(() => controller.signal.removeEventListener("abort", abort));
+							});
+						} catch (error) {
+							output ??= event;
+							throw error;
+						}
 					}
-				})
-				.catch((error) => {
-					sendError = error instanceof Error ? error : new Error("Transcript delivery failed", { cause: error });
-					throw sendError;
 				})
 				.finally(() => {
 					sending = undefined;
@@ -229,7 +228,19 @@ export class Gateway implements GatewayAdapterHost {
 					};
 					const run = async (): Promise<JsonValue> => {
 						if (admitted) this.#admissions.set(queueKey, admitted);
-						else if (command.type === "abort" || command.type === "status") await this.#admissions.get(queueKey);
+						else if (command.type === "abort" || command.type === "status") {
+							const admission = this.#admissions.get(queueKey);
+							if (admission) {
+								await new Promise<void>((resolve, reject) => {
+									const abort = (): void => reject(controller.signal.reason);
+									if (controller.signal.aborted) return abort();
+									controller.signal.addEventListener("abort", abort, { once: true });
+									void admission
+										.then(resolve, reject)
+										.finally(() => controller.signal.removeEventListener("abort", abort));
+								});
+							}
+						}
 						if (disposed || this.#closed) throw new Error("Gateway presentation closed");
 						if (!eventId || eventId.length > 256) throw new Error("Invalid platform event ID");
 						if (command.type === "prompt" && (!command.text.trim() || command.text.length > 32_000))

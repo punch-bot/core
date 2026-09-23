@@ -284,7 +284,7 @@ test("signed Discord interactions and WebSocket clients share sandbox execution 
 	}
 }, 20_000);
 
-test.each(["failed-send", "stalled-send", "early-abort", "queued-abort"])(
+test.each(["failed-send", "retry-send", "stalled-send", "early-abort", "queued-abort", "stalled-admission"])(
 	"gateway handles %s without losing operation receipts",
 	async (scenario) => {
 		const directory = await mkdtemp(join(tmpdir(), "punch-platform-errors-"));
@@ -341,7 +341,7 @@ test.each(["failed-send", "stalled-send", "early-abort", "queued-abort"])(
 			},
 			async acquire() {
 				acquiring.resolve();
-				if (scenario === "early-abort") await acquisition.promise;
+				if (scenario === "early-abort" || scenario === "stalled-admission") await acquisition.promise;
 				return { sandboxId, generation, token, url: runtime.url };
 			},
 			async stop() {
@@ -372,6 +372,7 @@ test.each(["failed-send", "stalled-send", "early-abort", "queued-abort"])(
 		onTestFinished(() => gateway.close());
 		const sending = new Deferred<void>();
 		const stalled = new Deferred<void>();
+		let sendFailures = 0;
 		onTestFinished(() => stalled.resolve());
 		const presentation = await gateway.gateway.open({
 			principal,
@@ -379,7 +380,9 @@ test.each(["failed-send", "stalled-send", "early-abort", "queued-abort"])(
 			async send(event) {
 				if (!event.snapshot.lastResult || scenario === "early-abort" || scenario === "queued-abort") return;
 				sending.resolve();
-				if (scenario === "failed-send") throw new Error("Delivery unavailable");
+				if (scenario === "failed-send" || (scenario === "retry-send" && sendFailures++ === 0))
+					throw new Error("Delivery unavailable");
+				if (scenario === "retry-send") return;
 				await stalled.promise;
 			},
 		});
@@ -399,6 +402,14 @@ test.each(["failed-send", "stalled-send", "early-abort", "queued-abort"])(
 			modelResponse.resolve();
 			await expect(turn).resolves.toMatchObject({ accepted: true });
 			expect(errors).toEqual([]);
+		} else if (scenario === "stalled-admission") {
+			await acquiring.promise;
+			const status = presentation.execute("status", { type: "status" });
+			const closing = presentation.close();
+			await expect(status).rejects.toThrow("closed");
+			acquisition.resolve();
+			await closing;
+			await expect(turn).rejects.toThrow();
 		} else if (scenario === "queued-abort") {
 			await expect.poll(() => faux.state.callCount).toBe(1);
 			const queued = presentation.execute("queued", { type: "prompt", text: "next question" });
@@ -420,6 +431,12 @@ test.each(["failed-send", "stalled-send", "early-abort", "queued-abort"])(
 				status: "failed",
 				result: { operationId: expect.any(String), sessionId: expect.any(String) },
 			});
+			if (scenario === "retry-send") {
+				await expect(presentation.execute("status-after-retry", { type: "status" })).resolves.toMatchObject({
+					sessionId: expect.any(String),
+				});
+				expect(errors.filter((error) => String(error).includes("Delivery unavailable"))).toHaveLength(1);
+			}
 		}
 	},
 	10_000,

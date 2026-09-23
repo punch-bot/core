@@ -7,16 +7,16 @@ import { createModels, fauxAssistantMessage, fauxProvider } from "@punch-bot/ai"
 import { createRemoteServiceBinding } from "@punch-bot/chord";
 import { Client, createClientServiceTransport } from "@punch-bot/client";
 import { createWebSocketTransportFactory } from "@punch-bot/client/websocket";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { withPrincipal } from "../src/principal.ts";
 import { RuntimeModels, RuntimeSessions, RuntimeTranscript, SandboxOperations } from "../src/services.ts";
-import { signRuntimeCapability } from "../src/supervisor/capability.ts";
+import { signRuntimeCapability, verifyRuntimeCapability } from "../src/supervisor/capability.ts";
 import { createRemoteSessionHandle } from "../src/supervisor/remote-session.ts";
 import { startSandboxRuntimeServer } from "../src/supervisor/runtime-server.ts";
 
 test("authenticates remote runtime calls and preserves operations after presentation disconnect", async () => {
 	const directory = await mkdtemp(join(tmpdir(), "punch-runtime-ws-"));
-	const faux = fauxProvider();
+	const faux = fauxProvider({ models: [{ id: "faux-1" }, { id: "faux-2" }] });
 	faux.setResponses([fauxAssistantMessage("remote sandbox answer")]);
 	const models = createModels();
 	models.setProvider(faux.provider);
@@ -86,6 +86,14 @@ test("authenticates remote runtime calls and preserves operations after presenta
 		await expect
 			.poll(() => operations.use(RuntimeTranscript).state.value?.snapshot.configuration.model)
 			.toEqual({ provider: "faux", modelId: "faux-1" });
+		await client.request(client.attachment!, {
+			serviceId: RuntimeModels.id,
+			member: "select",
+			args: [{ provider: "faux", modelId: "faux-2" }],
+		});
+		await expect
+			.poll(() => operations.use(RuntimeTranscript).state.value?.snapshot.configuration.model)
+			.toEqual({ provider: "faux", modelId: "faux-2" });
 		await operations
 			.use(SandboxOperations)
 			.accept({ operationId: "remote-operation", text: "question" }, BACKGROUND_CONTEXT);
@@ -166,5 +174,20 @@ test("authenticates remote runtime calls and preserves operations after presenta
 		await client?.dispose();
 		await runtime.close();
 		await rm(directory, { recursive: true, force: true });
+	}
+});
+
+test("runtime capabilities outlive the supported 14-minute turn", () => {
+	const now = Date.now();
+	const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+	try {
+		const principal = { userId: "user", workspaceId: "workspace", permissions: ["sessions:read"] };
+		const token = signRuntimeCapability("s".repeat(32), "generation", principal);
+		clock.mockReturnValue(now + 14 * 60_000);
+		expect(verifyRuntimeCapability(token, "s".repeat(32), "generation", "workspace").principal).toEqual(principal);
+		clock.mockReturnValue(now + 20 * 60_000);
+		expect(() => verifyRuntimeCapability(token, "s".repeat(32), "generation", "workspace")).toThrow("Expired");
+	} finally {
+		clock.mockRestore();
 	}
 });

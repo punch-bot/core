@@ -82,8 +82,41 @@ export async function createSandboxRuntime(options: SandboxRuntimeOptions) {
 		}
 	};
 	const sessions = new Map<string, ReturnType<typeof open>>();
+	const leases = new Map<string, number>();
+	const idleTimers = new Map<string, NodeJS.Timeout>();
+	const evicting = new Map<string, Promise<void>>();
 	const mutations = new Set<Promise<unknown>>();
 	const removals = new Map<string, Promise<void>>();
+	const evict = async (id: string): Promise<void> => {
+		idleTimers.delete(id);
+		if (closed || leases.has(id) || removals.has(id)) return;
+		const pending = sessions.get(id);
+		if (!pending) return;
+		try {
+			const session = await pending;
+			if (closed || leases.has(id) || removals.has(id)) return;
+			if ((await session.lane.inspectExecution(BACKGROUND_CONTEXT)).current) {
+				if (closed || leases.has(id) || removals.has(id)) return;
+				const timer = setTimeout(() => void evict(id), 1_000);
+				timer.unref();
+				idleTimers.set(id, timer);
+				return;
+			}
+			if (closed || removals.has(id) || sessions.get(id) !== pending || leases.has(id)) return;
+			sessions.delete(id);
+			const closingSession = session.close();
+			evicting.set(id, closingSession);
+			await closingSession;
+		} catch (error) {
+			try {
+				options.onError(error);
+			} catch {
+				/* Error observers cannot interrupt cleanup. */
+			}
+		} finally {
+			evicting.delete(id);
+		}
+	};
 	return {
 		async activity() {
 			const results = await Promise.all(
@@ -113,9 +146,16 @@ export async function createSandboxRuntime(options: SandboxRuntimeOptions) {
 			void result.finally(() => mutations.delete(result)).catch(() => {});
 			return result;
 		},
-		attach(id: string): ReturnType<typeof open> {
+		async attach(id: string): ReturnType<typeof open> {
 			if (closed) return Promise.reject(new Error("Runtime closed"));
 			if (removals.has(id)) return Promise.reject(new Error("Session is being removed"));
+			const idle = idleTimers.get(id);
+			if (idle) {
+				clearTimeout(idle);
+				idleTimers.delete(id);
+			}
+			await evicting.get(id);
+			if (closed || removals.has(id)) throw new Error("Runtime closed or session is being removed");
 			const existing = sessions.get(id);
 			if (existing) return existing;
 			const pending = (async () => {
@@ -129,11 +169,43 @@ export async function createSandboxRuntime(options: SandboxRuntimeOptions) {
 			});
 			return pending;
 		},
+		async lease(id: string) {
+			leases.set(id, (leases.get(id) ?? 0) + 1);
+			let session: Awaited<ReturnType<typeof open>>;
+			try {
+				session = await this.attach(id);
+			} catch (error) {
+				const count = leases.get(id)! - 1;
+				if (count) leases.set(id, count);
+				else leases.delete(id);
+				throw error;
+			}
+			let released = false;
+			return {
+				session,
+				release() {
+					if (released) return;
+					released = true;
+					const count = leases.get(id)! - 1;
+					if (count) leases.set(id, count);
+					else {
+						leases.delete(id);
+						const timer = setTimeout(() => void evict(id), 0);
+						timer.unref();
+						idleTimers.set(id, timer);
+					}
+				},
+			};
+		},
 		remove(id: string): Promise<void> {
 			if (closed) return Promise.reject(new Error("Runtime closed"));
 			const existing = removals.get(id);
 			if (existing) return existing;
 			const pending = (async () => {
+				const idle = idleTimers.get(id);
+				if (idle) clearTimeout(idle);
+				idleTimers.delete(id);
+				await evicting.get(id);
 				const active = sessions.get(id);
 				if (active) {
 					await (await active).close();
@@ -154,8 +226,10 @@ export async function createSandboxRuntime(options: SandboxRuntimeOptions) {
 		},
 		close(): Promise<void> {
 			closed = true;
+			for (const timer of idleTimers.values()) clearTimeout(timer);
+			idleTimers.clear();
 			closing ??= (async () => {
-				await Promise.allSettled(mutations);
+				await Promise.allSettled([...mutations, ...evicting.values()]);
 				const results = await Promise.allSettled(
 					[...sessions.values()].map(async (session) => (await session).close()),
 				);

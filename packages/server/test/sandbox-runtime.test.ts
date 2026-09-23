@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@punch-bot/agent";
 import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall } from "@punch-bot/ai";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { createSandboxRuntime } from "../src/supervisor/runtime.ts";
 
 test("runs outside coding-agent and retains completed operations across runtime replacement", async () => {
@@ -138,6 +138,50 @@ test("reattaching resumes an admitted operation once without replaying its promp
 		expect(errors).toEqual([]);
 	} finally {
 		await runtime?.close();
+		await rm(directory, { recursive: true, force: true });
+	}
+});
+
+test("evicts detached harnesses after their background operations finish", async () => {
+	const directory = await mkdtemp(join(tmpdir(), "punch-runtime-idle-"));
+	const faux = fauxProvider();
+	let finish!: () => void;
+	const completion = new Promise<void>((resolve) => {
+		finish = resolve;
+	});
+	faux.setResponses([
+		async () => {
+			await completion;
+			return fauxAssistantMessage("finished after detach");
+		},
+	]);
+	const models = createModels();
+	models.setProvider(faux.provider);
+	const errors: unknown[] = [];
+	const runtime = await createSandboxRuntime({
+		directory,
+		models,
+		model: faux.getModel(),
+		onError: (error) => errors.push(error),
+	});
+	try {
+		const metadata = await runtime.create();
+		const lease = await runtime.lease(metadata.id);
+		const close = vi.spyOn(lease.session, "close");
+		await lease.session.operations.accept({ operationId: "detached", text: "continue" }, BACKGROUND_CONTEXT);
+		await expect.poll(() => faux.state.callCount).toBe(1);
+		lease.release();
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		expect(close).not.toHaveBeenCalled();
+		finish();
+		await expect.poll(() => close.mock.calls.length, { timeout: 5_000 }).toBe(1);
+		const reopened = await runtime.attach(metadata.id);
+		expect(reopened).not.toBe(lease.session);
+		expect(await reopened.operations.status("detached", BACKGROUND_CONTEXT)).toMatchObject({ status: "completed" });
+		expect(errors).toEqual([]);
+	} finally {
+		finish();
+		await runtime.close();
 		await rm(directory, { recursive: true, force: true });
 	}
 });

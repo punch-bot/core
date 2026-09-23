@@ -20,13 +20,25 @@ export function getPrincipal(context: Context): Principal | undefined {
 
 /** Snapshot verified claims so adapter mutations cannot change an accepted identity. */
 export function withPrincipal(principal: Principal, context: Context): Context {
+	const identity = principal.externalIdentity;
+	const validIdentity =
+		identity === undefined ||
+		(identity !== null &&
+			typeof identity === "object" &&
+			(identity.type === "oidc"
+				? typeof identity.subject === "string" && !!identity.subject.trim()
+				: identity.type === "discord" &&
+					[identity.guildId, identity.channelId, identity.userId].every(
+						(value) => typeof value === "string" && !!value.trim(),
+					)));
 	if (
 		typeof principal.userId !== "string" ||
 		!principal.userId.trim() ||
 		typeof principal.workspaceId !== "string" ||
 		!principal.workspaceId.trim() ||
 		!Array.isArray(principal.permissions) ||
-		principal.permissions.some((permission) => typeof permission !== "string" || !permission)
+		principal.permissions.some((permission) => typeof permission !== "string" || !permission) ||
+		!validIdentity
 	) {
 		throw new TypeError("Invalid authenticated principal");
 	}

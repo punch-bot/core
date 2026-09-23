@@ -94,59 +94,68 @@ export async function startSandboxRuntimeServer(
 			return metadata;
 		},
 		async openSession(metadata) {
-			const session = await runtime.attach(metadata.id);
 			return {
 				async attachClient() {
-					const watch = await session.lane.watch(BACKGROUND_CONTEXT);
-					const state = replicatedState({ snapshot: watch.snapshot as LaneTranscriptSnapshot });
-					let updates = Promise.resolve();
-					let released = false;
-					watch.start((event) => {
-						updates = updates
-							.then(async () => {
-								if (released) return;
-								if (reduceLaneSnapshot(state.state.snapshot, event) === "rebase")
-									state.state.snapshot = (await watch.resnapshot(
-										BACKGROUND_CONTEXT,
-									)) as LaneTranscriptSnapshot;
-								state.publish(BACKGROUND_CONTEXT);
-							})
-							.catch((error) => {
+					const { session, release } = await runtime.lease(metadata.id);
+					try {
+						const watch = await session.lane.watch(BACKGROUND_CONTEXT);
+						const state = replicatedState({ snapshot: watch.snapshot as LaneTranscriptSnapshot });
+						let updates = Promise.resolve();
+						let released = false;
+						watch.start((event) => {
+							updates = updates
+								.then(async () => {
+									if (released) return;
+									if (reduceLaneSnapshot(state.state.snapshot, event) === "rebase")
+										state.state.snapshot = (await watch.resnapshot(
+											BACKGROUND_CONTEXT,
+										)) as LaneTranscriptSnapshot;
+									state.publish(BACKGROUND_CONTEXT);
+								})
+								.catch((error) => {
+									try {
+										options.onError(error);
+									} catch {}
+								});
+						});
+						const provider = new RemoteServiceProvider([
+							{ service: SandboxOperations, mode: "singleton" },
+							{ service: RuntimeTranscript, mode: "singleton" },
+							{ service: RuntimeModels, mode: "singleton" },
+						]);
+						provider.provide(SandboxOperations, session.operations);
+						provider.provide(RuntimeTranscript, { state });
+						provider.provide(RuntimeModels, {
+							async select(model, context) {
+								if (
+									!model ||
+									typeof model.provider !== "string" ||
+									typeof model.modelId !== "string" ||
+									!options.models.getModel(model.provider, model.modelId)
+								)
+									throw new RemoteServiceError("service_invalid_value", "Model is unavailable");
+								await session.lane.setModel(model, context);
+							},
+						});
+						const endpoint = createRemoteServiceEndpoint(provider);
+						return {
+							invokeService: (call, publish, ctx) => endpoint.invoke(call, publish, ctx),
+							async release() {
+								released = true;
+								watch.unsubscribe();
 								try {
-									options.onError(error);
-								} catch {}
-							});
-					});
-					const provider = new RemoteServiceProvider([
-						{ service: SandboxOperations, mode: "singleton" },
-						{ service: RuntimeTranscript, mode: "singleton" },
-						{ service: RuntimeModels, mode: "singleton" },
-					]);
-					provider.provide(SandboxOperations, session.operations);
-					provider.provide(RuntimeTranscript, { state });
-					provider.provide(RuntimeModels, {
-						async select(model, context) {
-							if (
-								!model ||
-								typeof model.provider !== "string" ||
-								typeof model.modelId !== "string" ||
-								!options.models.getModel(model.provider, model.modelId)
-							)
-								throw new RemoteServiceError("service_invalid_value", "Model is unavailable");
-							await session.lane.setModel(model, context);
-						},
-					});
-					const endpoint = createRemoteServiceEndpoint(provider);
-					return {
-						invokeService: (call, publish, ctx) => endpoint.invoke(call, publish, ctx),
-						async release() {
-							released = true;
-							watch.unsubscribe();
-							await updates;
-							endpoint.dispose();
-							provider.dispose();
-						},
-					};
+									await updates;
+								} finally {
+									endpoint.dispose();
+									provider.dispose();
+									release();
+								}
+							},
+						};
+					} catch (error) {
+						release();
+						throw error;
+					}
 				},
 				async close() {},
 			};
@@ -164,7 +173,9 @@ export async function startSandboxRuntimeServer(
 			return;
 		}
 		void runtime.activity().then(
-			(activeOperations) => {
+			(activity) => {
+				// Readiness only needs identity; bound the diagnostic list to the 4 KiB reader limit.
+				const activeOperations = activity.slice(0, 8);
 				response
 					.writeHead(closing ? 503 : 200, { "content-type": "application/json", "cache-control": "no-store" })
 					.end(JSON.stringify({ sandboxId: options.sandboxId, generation: options.generation, activeOperations }));

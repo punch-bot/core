@@ -45,14 +45,17 @@ test("gateway catalogs persist remote sessions and enforce workspace access", as
 		state: "ready" as const,
 		deleteData: false,
 	};
+	let deleted = false;
+	let removed: string | undefined;
 	const supervisor: SupervisorClient = {
 		async create() {
 			return summary;
 		},
 		async inspect() {
-			return summary;
+			return deleted ? { ...summary, desired: "deleted", state: "deleted" } : summary;
 		},
 		async acquire() {
+			if (deleted) throw new Error("Sandbox deleted");
 			return { sandboxId, generation, token, url: runtime.url };
 		},
 		async stop() {
@@ -62,13 +65,19 @@ test("gateway catalogs persist remote sessions and enforce workspace access", as
 			throw new Error("Gateway must not delete the sandbox");
 		},
 	};
-	const options = { databasePath: join(directory, "gateway.db"), supervisor };
+	const options = {
+		databasePath: join(directory, "gateway.db"),
+		supervisor,
+		async onSessionRemoved(id: string) {
+			removed = id;
+		},
+	};
 	let gateway = createSandboxGatewayHost(options);
 	const context = withPrincipal(
 		{
 			workspaceId: "workspace",
 			userId: "user",
-			permissions: ["sessions:read", "sessions:create", "sessions:control"],
+			permissions: ["sessions:read", "sessions:create", "sessions:control", "sessions:remove"],
 		},
 		BACKGROUND_CONTEXT,
 	);
@@ -124,6 +133,22 @@ test("gateway catalogs persist remote sessions and enforce workspace access", as
 			await hidden.invokeService({ serviceId: GatewaySessions.id, member: "list", args: [] }, async () => {}, other),
 		).toEqual([]);
 		await hidden.release(other);
+		deleted = true;
+		const cleanup = await gateway.host.serverServices.attachClient(presentation, context);
+		await cleanup.invokeService(
+			{ serviceId: GatewaySessions.id, member: "remove", args: [id] },
+			async () => {},
+			context,
+		);
+		expect(removed).toBe(id);
+		expect(
+			await cleanup.invokeService(
+				{ serviceId: GatewaySessions.id, member: "list", args: [] },
+				async () => {},
+				context,
+			),
+		).toEqual([]);
+		await cleanup.release(context);
 		expect(errors).toEqual([]);
 	} finally {
 		await gateway.close();

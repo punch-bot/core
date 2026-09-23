@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@punch-bot/agent";
 import { expect, test } from "vitest";
 import { createFileMembership } from "../src/gateway/membership.ts";
-import { withPrincipal } from "../src/principal.ts";
+import { type Principal, withPrincipal } from "../src/principal.ts";
 
 test("file memberships isolate Discord threads and reject cached identities after revocation", async () => {
 	const directory = await mkdtemp(join(tmpdir(), "punch-membership-"));
@@ -64,5 +64,19 @@ test("revokes only the removed external credential even when another grant has t
 		await expect(membership.authorize(oidcContext)).rejects.toThrow("revoked");
 	} finally {
 		await rm(directory, { recursive: true, force: true });
+	}
+});
+
+test("rejects malformed external identities at the principal boundary", () => {
+	const principal = { userId: "alice", workspaceId: "team", permissions: ["sessions:read"] };
+	for (const externalIdentity of [
+		{ type: "oidc" },
+		{ type: "unknown", subject: "alice" },
+		{ type: "discord", guildId: "1", channelId: "2" },
+		{ type: "discord", guildId: "1", channelId: " ", userId: "3" },
+	]) {
+		expect(() => withPrincipal({ ...principal, externalIdentity } as Principal, BACKGROUND_CONTEXT)).toThrow(
+			"Invalid authenticated principal",
+		);
 	}
 });
