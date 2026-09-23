@@ -3,7 +3,7 @@ import { IncomingMessage } from "node:http";
 import { Socket } from "node:net";
 import { SignJWT } from "jose";
 import { afterEach, expect, test, vi } from "vitest";
-import { createOidcAuthenticator } from "../src/experimental/gateway/auth.ts";
+import { createOidcAuthenticator } from "../src/gateway/auth.ts";
 
 afterEach(() => vi.unstubAllGlobals());
 

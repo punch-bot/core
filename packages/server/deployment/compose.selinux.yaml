@@ -1,0 +1,20 @@
+# Add this override only on an SELinux-enforcing Docker host.
+services:
+  supervisor:
+    # Docker API administration requires access to the host's existing socket label.
+    security_opt: ["label=disable"]
+    volumes:
+      - type: bind
+        source: ${PUNCH_CONFIG_DIRECTORY:?Set the absolute config directory}
+        target: /config
+        read_only: true
+        bind:
+          selinux: z
+  gateway:
+    volumes:
+      - type: bind
+        source: ${PUNCH_CONFIG_DIRECTORY}/memberships
+        target: /config
+        read_only: true
+        bind:
+          selinux: z

@@ -3,12 +3,12 @@ import type { Context, JsonValue } from "@punch-bot/chord";
 import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
 import { Client } from "@punch-bot/client";
 import { getPrincipal, type Principal, type Server, withPrincipal } from "@punch-bot/server";
+import { type ConversationKey, conversationKey, type GatewayStore } from "@punch-bot/server/gateway/store";
 import { AgentController } from "../services/agent-controller.ts";
 import { createServerServiceSource, createSessionServiceSource } from "../services/connection.ts";
 import { type ModelRef, Models } from "../services/models.ts";
 import { SessionManagement } from "../services/sessions.ts";
 import { Transcript } from "../services/transcript.ts";
-import { type ConversationKey, conversationKey, type GatewayStore } from "./store.ts";
 
 const TRANSCRIPT_COMPLETION_TIMEOUT_MS = 10_000;
 

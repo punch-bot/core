@@ -199,6 +199,30 @@ describe("Session protocol", () => {
 		await expect(second.attach(serverId, "session-1")).resolves.toMatchObject({ ok: true });
 	});
 
+	test("a lost attachment detaches only its client and permits reattachment", async () => {
+		const host = new TestServerHost();
+		await host.seed("session-1");
+		const server = createServer(host);
+		const first = connect(server);
+		const second = connect(server);
+		await Promise.all([first.hello(), second.hello()]);
+		await first.attach(serverId, "session-1");
+		await second.attach(serverId, "session-1");
+		const harness = host.latestHarness("session-1");
+		harness.attachmentTerminations[0]!.resolve(new Error("runtime connection lost"));
+		await expect.poll(() => harness.attachedClients).toBe(1);
+		await expect(first.requestSessionService(serverId, "session-1", sessionCall("run"))).resolves.toMatchObject({
+			ok: false,
+			error: { code: "session_not_attached" },
+		});
+		await expect(second.requestSessionService(serverId, "session-1", sessionCall("run"))).resolves.toMatchObject({
+			ok: true,
+		});
+		await expect(first.attach(serverId, "session-1")).resolves.toMatchObject({ ok: true });
+		expect(host.harnesses.get("session-1")).toHaveLength(1);
+		expect(harness.attachedClients).toBe(2);
+	});
+
 	test("clears connection ownership when attachment release fails", async () => {
 		const host = new TestServerHost();
 		await host.seed("session-1");

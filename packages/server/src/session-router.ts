@@ -176,6 +176,13 @@ export class SessionRouter<TMetadata extends SessionMetadata = SessionMetadata> 
 			const acquiring = Promise.resolve(hosted.handle.attachClient(context));
 			attachment.acquiring = acquiring;
 			attachment.lease = await acquiring;
+			if (attachment.lease.terminated) {
+				void attachment.lease.terminated.then(
+					(error) => this.invalidateAttachment(attachment, error),
+					(error: unknown) =>
+						this.invalidateAttachment(attachment, error instanceof Error ? error : new Error(String(error))),
+				);
+			}
 		} catch (error) {
 			hosted.attachments.delete(attachment);
 			throw error;
@@ -320,5 +327,13 @@ export class SessionRouter<TMetadata extends SessionMetadata = SessionMetadata> 
 			);
 		}
 		if (error) this.options.reportError(error);
+	}
+
+	private invalidateAttachment(attachment: ClientAttachment, error: Error): void {
+		if (attachment.releasing !== undefined) return;
+		this.options.reportError(error);
+		void this.releaseAttachment(attachment, BACKGROUND_CONTEXT).catch((releaseError: unknown) =>
+			this.options.reportError(releaseError),
+		);
 	}
 }

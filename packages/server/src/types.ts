@@ -16,6 +16,8 @@ export type MaybePromise<T> = T | Promise<T>;
 
 /** One presentation connection's live capability for a hosted Session. */
 export interface RoutedSessionAttachment {
+	/** Unexpected loss of this lease; other clients of the same Session remain attached. */
+	readonly terminated?: Promise<Error>;
 	/** Route one contract-agnostic service operation to the attached Session endpoint. */
 	invokeService(
 		call: ServiceCall,

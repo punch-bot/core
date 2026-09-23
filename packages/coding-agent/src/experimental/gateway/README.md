@@ -1,5 +1,7 @@
 # Experimental gateway
 
+This is the local PNCH-26 prototype. The maintained standalone gateway, Docker supervisor, and headless runtime are documented in [sandbox gateway deployment](../../../../server/deployment/README.md).
+
 Implements the server-side gateway proposed in [PNCH-26](https://linear.app/tnfoundation/issue/PNCH-26/gateway-to-discord-and-android-app). Android connects through the existing framed CBOR protocol over WebSocket. The Discord adapter translates signed interactions into the same typed session services.
 
 ```text
@@ -158,10 +160,12 @@ From `packages/server`, run the focused transport tests:
 node ../../node_modules/vitest/dist/cli.js --run test/websocket.test.ts
 ```
 
-From `packages/coding-agent`, run gateway and OIDC tests:
+From `packages/coding-agent`, run the prototype gateway tests:
 
 ```sh
-node ../../node_modules/vitest/dist/cli.js --run test/gateway.test.ts test/gateway-auth.test.ts test/gateway-backend.test.ts
+node ../../node_modules/vitest/dist/cli.js --run test/gateway.test.ts test/gateway-backend.test.ts
 ```
 
 The tests use local sockets, generated signing keys, fake session services and a real backend running the faux model provider. They do not contact Discord, an OIDC issuer or an external model provider.
+
+OIDC tests moved to `packages/server/test/gateway-auth.test.ts` with the shared authenticator.

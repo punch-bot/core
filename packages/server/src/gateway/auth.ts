@@ -1,7 +1,7 @@
 import type { IncomingMessage } from "node:http";
-import type { Principal } from "@punch-bot/server";
-import type { WebSocketIdentity } from "@punch-bot/server/websocket";
 import { createRemoteJWKSet, type JWTPayload, jwtVerify } from "jose";
+import type { Principal } from "../principal.ts";
+import type { WebSocketIdentity } from "../websocket.ts";
 
 export interface OidcAuthenticatorOptions {
 	readonly issuer: string;

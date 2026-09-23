@@ -5,6 +5,10 @@ export interface Principal {
 	readonly userId: string;
 	readonly workspaceId: string;
 	readonly permissions: readonly string[];
+	/** Credential that established this principal, retained for membership reauthorization. */
+	readonly externalIdentity?:
+		| { readonly type: "oidc"; readonly subject: string }
+		| { readonly type: "discord"; readonly guildId: string; readonly channelId: string; readonly userId: string };
 }
 
 const PRINCIPAL_CONTEXT_KEY = createContextKey<Principal>("punch.principal");
@@ -16,13 +20,25 @@ export function getPrincipal(context: Context): Principal | undefined {
 
 /** Snapshot verified claims so adapter mutations cannot change an accepted identity. */
 export function withPrincipal(principal: Principal, context: Context): Context {
+	const identity = principal.externalIdentity;
+	const validIdentity =
+		identity === undefined ||
+		(identity !== null &&
+			typeof identity === "object" &&
+			(identity.type === "oidc"
+				? typeof identity.subject === "string" && !!identity.subject.trim()
+				: identity.type === "discord" &&
+					[identity.guildId, identity.channelId, identity.userId].every(
+						(value) => typeof value === "string" && !!value.trim(),
+					)));
 	if (
 		typeof principal.userId !== "string" ||
 		!principal.userId.trim() ||
 		typeof principal.workspaceId !== "string" ||
 		!principal.workspaceId.trim() ||
 		!Array.isArray(principal.permissions) ||
-		principal.permissions.some((permission) => typeof permission !== "string" || !permission)
+		principal.permissions.some((permission) => typeof permission !== "string" || !permission) ||
+		!validIdentity
 	) {
 		throw new TypeError("Invalid authenticated principal");
 	}
@@ -30,6 +46,7 @@ export function withPrincipal(principal: Principal, context: Context): Context {
 		userId: principal.userId,
 		workspaceId: principal.workspaceId,
 		permissions: Object.freeze([...principal.permissions]),
+		...(principal.externalIdentity ? { externalIdentity: Object.freeze({ ...principal.externalIdentity }) } : {}),
 	});
 	return withContextValue(PRINCIPAL_CONTEXT_KEY, snapshot, context);
 }
