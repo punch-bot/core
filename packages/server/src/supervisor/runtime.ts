@@ -105,10 +105,11 @@ export async function createSandboxRuntime(options: SandboxRuntimeOptions) {
 		try {
 			const session = await pending;
 			if (closed || leases.has(id) || removals.has(id)) return;
-			let active = false;
+			let active = true;
 			try {
 				active = !!(await session.lane.inspectExecution(BACKGROUND_CONTEXT)).current;
 			} catch (error) {
+				// Unknown activity must not abort a detached operation. Retry after the diagnostic recovers.
 				reportFault(id, error);
 			}
 			if (active) {
