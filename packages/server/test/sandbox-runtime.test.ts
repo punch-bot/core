@@ -204,9 +204,7 @@ test("faulted session diagnostics do not block sandbox readiness", async () => {
 		const close = vi.spyOn(lease.session, "close");
 		const inspection = vi
 			.spyOn(lease.session.lane, "inspectExecution")
-			.mockRejectedValueOnce(new Error("Session faulted"))
-			.mockRejectedValueOnce(new Error("Session faulted"))
-			.mockRejectedValueOnce(new Error("Session faulted"));
+			.mockRejectedValue(new Error("Session faulted"));
 		expect(await runtime.activity()).toEqual([]);
 		expect(await runtime.activity()).toEqual([]);
 		expect(errors).toHaveLength(1);
