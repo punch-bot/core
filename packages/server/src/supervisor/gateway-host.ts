@@ -162,7 +162,7 @@ export function createSandboxGatewayHost(options: {
 											}
 										} catch (error) {
 											// Deletion may have completed between inspection and runtime access.
-											if (!(await deleted())) throw error;
+											if (!(await deleted().catch(() => false))) throw error;
 										}
 									}
 									database

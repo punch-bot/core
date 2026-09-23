@@ -48,12 +48,15 @@ test("gateway catalogs persist remote sessions and enforce workspace access", as
 	let deleted = false;
 	let deleteOnAcquire = false;
 	let failAcquire = false;
+	let inspectCalls = 0;
+	let failOnInspectCall = 0;
 	let removed: string | undefined;
 	const supervisor: SupervisorClient = {
 		async create() {
 			return summary;
 		},
 		async inspect() {
+			if (++inspectCalls === failOnInspectCall) throw new Error("Supervisor unreachable");
 			return deleted ? { ...summary, desired: "deleted", state: "deleted" } : summary;
 		},
 		async acquire() {
@@ -169,6 +172,17 @@ test("gateway catalogs persist remote sessions and enforce workspace access", as
 			),
 		).rejects.toThrow("Runtime unavailable");
 		expect(await gateway.host.resolveSession(next.sessionId, context)).toMatchObject({ id: next.sessionId });
+		expect(removed).toBe(id);
+		failOnInspectCall = inspectCalls + 2;
+		await expect(
+			cleanup.invokeService(
+				{ serviceId: GatewaySessions.id, member: "remove", args: [next.sessionId] },
+				async () => {},
+				context,
+			),
+		).rejects.toThrow("Runtime unavailable");
+		expect(await gateway.host.resolveSession(next.sessionId, context)).toMatchObject({ id: next.sessionId });
+		expect(removed).toBe(id);
 		failAcquire = false;
 		deleteOnAcquire = true;
 		await cleanup.invokeService(
