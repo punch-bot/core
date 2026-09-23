@@ -173,7 +173,12 @@ export class Gateway implements GatewayAdapterHost {
 				remove = transcript.state.subscribe((state) => {
 					const snapshot = state?.snapshot;
 					if (!snapshot) return;
-					if (snapshot.lastResult?.operationId === operationId) return finish();
+					if (snapshot.lastResult?.operationId === operationId)
+						return finish(
+							snapshot.lastResult.status === "failed"
+								? new Error(snapshot.lastResult.error?.message ?? "Sandbox operation failed")
+								: undefined,
+						);
 					if (snapshot.faulted) return finish(new Error("Session faulted before transcript completion"));
 					if (snapshot.operation?.id === operationId) {
 						observed = true;

@@ -61,8 +61,15 @@ export function createRemoteSessionHandle(options: {
 						target,
 						control.serviceId,
 						control.mode,
-						(update) => {
-							if (!released) return publish(control.subscriptionId, update, context);
+						async (update) => {
+							if (released) return;
+							try {
+								await options.authorize(context);
+								if (!released) await publish(control.subscriptionId, update, context);
+							} catch {
+								// A revoked subscriber must not receive later updates, even without another RPC.
+								void Promise.resolve(attachment.release(context)).catch(() => {});
+							}
 						},
 						ctx.abortSignal,
 					);

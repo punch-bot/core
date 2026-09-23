@@ -4,9 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@punch-bot/agent";
 import { createModels, fauxAssistantMessage, fauxProvider } from "@punch-bot/ai";
+import { createServiceSubscribeCall } from "@punch-bot/chord";
 import { expect, test } from "vitest";
 import { withPrincipal } from "../src/principal.ts";
-import { GatewaySessions, SandboxOperations } from "../src/services.ts";
+import { GatewaySessions, RuntimeTranscript, SandboxOperations } from "../src/services.ts";
 import type { SupervisorClient } from "../src/supervisor/control.ts";
 import { createSandboxGatewayHost } from "../src/supervisor/gateway-host.ts";
 import { startSandboxRuntimeServer } from "../src/supervisor/runtime-server.ts";
@@ -50,6 +51,8 @@ test("gateway catalogs persist remote sessions and enforce workspace access", as
 	let failAcquire = false;
 	let inspectCalls = 0;
 	let failOnInspectCall = 0;
+	let authorized = true;
+	let revokedChecks = 0;
 	let removed: string | undefined;
 	const supervisor: SupervisorClient = {
 		async create() {
@@ -75,6 +78,12 @@ test("gateway catalogs persist remote sessions and enforce workspace access", as
 	const options = {
 		databasePath: join(directory, "gateway.db"),
 		supervisor,
+		async authorizePrincipal() {
+			if (!authorized) {
+				revokedChecks++;
+				throw new Error("Membership revoked");
+			}
+		},
 		async onSessionRemoved(id: string) {
 			removed = id;
 		},
@@ -128,6 +137,51 @@ test("gateway catalogs persist remote sessions and enforce workspace access", as
 					{ timeout: 5_000 },
 				)
 				.toEqual({ operationId: "gateway-operation", status: "completed" });
+			const updates: unknown[] = [];
+			await attachment.invokeService(
+				createServiceSubscribeCall("revoked-transcript", RuntimeTranscript.id, "singleton"),
+				async (_id, update) => {
+					updates.push(update);
+				},
+				context,
+			);
+			let finish!: () => void;
+			const completion = new Promise<void>((resolve) => {
+				finish = resolve;
+			});
+			faux.setResponses([
+				async () => {
+					await completion;
+					return fauxAssistantMessage("answer after revocation");
+				},
+			]);
+			try {
+				await attachment.invokeService(
+					{
+						serviceId: SandboxOperations.id,
+						member: "accept",
+						args: [{ operationId: "revoked-operation", text: "question" }],
+					},
+					async () => {},
+					context,
+				);
+				await expect.poll(() => faux.state.callCount).toBe(2);
+				const before = updates.length;
+				authorized = false;
+				finish();
+				await expect.poll(() => revokedChecks, { timeout: 5_000 }).toBeGreaterThan(0);
+				await expect(
+					attachment.invokeService(
+						{ serviceId: SandboxOperations.id, member: "status", args: ["revoked-operation"] },
+						async () => {},
+						context,
+					),
+				).rejects.toThrow("closed");
+				expect(updates).toHaveLength(before);
+			} finally {
+				finish();
+				authorized = true;
+			}
 		} finally {
 			await handle.close(context);
 		}

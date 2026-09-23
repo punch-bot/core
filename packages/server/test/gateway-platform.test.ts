@@ -284,7 +284,15 @@ test("signed Discord interactions and WebSocket clients share sandbox execution 
 	}
 }, 20_000);
 
-test.each(["failed-send", "retry-send", "stalled-send", "early-abort", "queued-abort", "stalled-admission"])(
+test.each([
+	"failed-send",
+	"retry-send",
+	"stalled-send",
+	"failed-operation",
+	"early-abort",
+	"queued-abort",
+	"stalled-admission",
+])(
 	"gateway handles %s without losing operation receipts",
 	async (scenario) => {
 		const directory = await mkdtemp(join(tmpdir(), "punch-platform-errors-"));
@@ -295,6 +303,8 @@ test.each(["failed-send", "retry-send", "stalled-send", "early-abort", "queued-a
 		faux.setResponses([
 			async () => {
 				if (scenario === "early-abort" || scenario === "queued-abort") await modelResponse.promise;
+				if (scenario === "failed-operation")
+					return fauxAssistantMessage("", { stopReason: "error", errorMessage: "Provider authentication failed" });
 				return fauxAssistantMessage("answer");
 			},
 			fauxAssistantMessage("queued answer"),
@@ -382,7 +392,7 @@ test.each(["failed-send", "retry-send", "stalled-send", "early-abort", "queued-a
 				sending.resolve();
 				if (scenario === "failed-send" || (scenario === "retry-send" && sendFailures++ === 0))
 					throw new Error("Delivery unavailable");
-				if (scenario === "retry-send") return;
+				if (scenario === "retry-send" || scenario === "failed-operation") return;
 				await stalled.promise;
 			},
 		});
@@ -424,6 +434,8 @@ test.each(["failed-send", "retry-send", "stalled-send", "early-abort", "queued-a
 			if (scenario === "stalled-send") {
 				await presentation.close();
 				await expect(turn).rejects.toThrow("closed");
+			} else if (scenario === "failed-operation") {
+				await expect(turn).rejects.toThrow("Provider authentication failed");
 			} else {
 				await expect(turn).rejects.toThrow("Delivery unavailable");
 			}
