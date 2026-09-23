@@ -2,8 +2,8 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { BACKGROUND_CONTEXT } from "@punch-bot/agent";
 import { getPrincipal, type Principal, withPrincipal } from "../principal.ts";
 
-// A presentation can wait 14 minutes for a turn after route acquisition and prompt admission.
-const CAPABILITY_LIFETIME_MS = 20 * 60_000;
+// Reserve 3 minutes for connection, attachment and prompt admission before the 14-minute turn wait.
+const CAPABILITY_LIFETIME_MS = 17 * 60_000;
 
 /** The trusted gateway signs a generation-scoped copy of verified client identity. */
 export function signRuntimeCapability(secret: string, generation: string, principal: Principal): string {

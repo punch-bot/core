@@ -185,7 +185,7 @@ test("runtime capabilities outlive the supported 14-minute turn", () => {
 		const token = signRuntimeCapability("s".repeat(32), "generation", principal);
 		clock.mockReturnValue(now + 14 * 60_000);
 		expect(verifyRuntimeCapability(token, "s".repeat(32), "generation", "workspace").principal).toEqual(principal);
-		clock.mockReturnValue(now + 20 * 60_000);
+		clock.mockReturnValue(now + 17 * 60_000);
 		expect(() => verifyRuntimeCapability(token, "s".repeat(32), "generation", "workspace")).toThrow("Expired");
 	} finally {
 		clock.mockRestore();

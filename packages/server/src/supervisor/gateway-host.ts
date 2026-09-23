@@ -132,21 +132,37 @@ export function createSandboxGatewayHost(options: {
 								removing.add(id);
 								try {
 									await presentation.prepareSessionRemoval(id, ctx);
-									const sandbox = await options.supervisor.inspect(metadata.sandboxId, metadata.workspaceId);
-									if (sandbox.id !== metadata.sandboxId || sandbox.workspaceId !== metadata.workspaceId)
-										throw new Error("Supervisor returned the wrong sandbox");
-									if (sandbox.state !== "deleted") {
-										const route = await options.supervisor.acquire(metadata.sandboxId, metadata.workspaceId);
-										if (route.sandboxId !== metadata.sandboxId) throw new Error("Supervisor route mismatch");
-										const client = await connectSandboxRuntime(route, getPrincipal(ctx)!);
+									const deleted = async (): Promise<boolean> => {
+										const sandbox = await options.supervisor.inspect(
+											metadata.sandboxId,
+											metadata.workspaceId,
+										);
+										if (sandbox.id !== metadata.sandboxId || sandbox.workspaceId !== metadata.workspaceId)
+											throw new Error("Supervisor returned the wrong sandbox");
+										// Deletion intent is durable; acquire rejects it even while cleanup is in progress.
+										return sandbox.desired === "deleted";
+									};
+									if (!(await deleted())) {
 										try {
-											await client.request(
-												{ serverId: metadata.sandboxId },
-												{ serviceId: RuntimeSessions.id, member: "remove", args: [id] },
-												ctx.abortSignal,
+											const route = await options.supervisor.acquire(
+												metadata.sandboxId,
+												metadata.workspaceId,
 											);
-										} finally {
-											await client.dispose();
+											if (route.sandboxId !== metadata.sandboxId)
+												throw new Error("Supervisor route mismatch");
+											const client = await connectSandboxRuntime(route, getPrincipal(ctx)!);
+											try {
+												await client.request(
+													{ serverId: metadata.sandboxId },
+													{ serviceId: RuntimeSessions.id, member: "remove", args: [id] },
+													ctx.abortSignal,
+												);
+											} finally {
+												await client.dispose();
+											}
+										} catch (error) {
+											// Deletion may have completed between inspection and runtime access.
+											if (!(await deleted())) throw error;
 										}
 									}
 									database

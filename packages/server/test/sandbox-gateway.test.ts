@@ -46,6 +46,8 @@ test("gateway catalogs persist remote sessions and enforce workspace access", as
 		deleteData: false,
 	};
 	let deleted = false;
+	let deleteOnAcquire = false;
+	let failAcquire = false;
 	let removed: string | undefined;
 	const supervisor: SupervisorClient = {
 		async create() {
@@ -55,7 +57,9 @@ test("gateway catalogs persist remote sessions and enforce workspace access", as
 			return deleted ? { ...summary, desired: "deleted", state: "deleted" } : summary;
 		},
 		async acquire() {
+			if (deleteOnAcquire) deleted = true;
 			if (deleted) throw new Error("Sandbox deleted");
+			if (failAcquire) throw new Error("Runtime unavailable");
 			return { sandboxId, generation, token, url: runtime.url };
 		},
 		async stop() {
@@ -141,6 +145,38 @@ test("gateway catalogs persist remote sessions and enforce workspace access", as
 			context,
 		);
 		expect(removed).toBe(id);
+		expect(
+			await cleanup.invokeService(
+				{ serviceId: GatewaySessions.id, member: "list", args: [] },
+				async () => {},
+				context,
+			),
+		).toEqual([]);
+		deleted = false;
+		const next = await cleanup.invokeService(
+			{ serviceId: GatewaySessions.id, member: "create", args: [null] },
+			async () => {},
+			context,
+		);
+		if (!next || typeof next !== "object" || Array.isArray(next) || typeof next.sessionId !== "string")
+			throw new Error("Missing second session summary");
+		failAcquire = true;
+		await expect(
+			cleanup.invokeService(
+				{ serviceId: GatewaySessions.id, member: "remove", args: [next.sessionId] },
+				async () => {},
+				context,
+			),
+		).rejects.toThrow("Runtime unavailable");
+		expect(await gateway.host.resolveSession(next.sessionId, context)).toMatchObject({ id: next.sessionId });
+		failAcquire = false;
+		deleteOnAcquire = true;
+		await cleanup.invokeService(
+			{ serviceId: GatewaySessions.id, member: "remove", args: [next.sessionId] },
+			async () => {},
+			context,
+		);
+		expect(removed).toBe(next.sessionId);
 		expect(
 			await cleanup.invokeService(
 				{ serviceId: GatewaySessions.id, member: "list", args: [] },
