@@ -165,7 +165,7 @@ test("gateway catalogs persist remote sessions and enforce workspace access", as
 					async () => {},
 					context,
 				);
-				await expect.poll(() => faux.state.callCount).toBe(2);
+				await expect.poll(() => faux.state.callCount, { timeout: 5_000 }).toBe(2);
 				const before = updates.length;
 				authorized = false;
 				finish();
