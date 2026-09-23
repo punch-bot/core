@@ -145,9 +145,7 @@ export class Gateway implements GatewayAdapterHost {
 				});
 			}
 		});
-		const waitForCompletion = async (operationId: string): Promise<void> => {
-			// Discord interaction tokens last 15 minutes. A timeout detaches only this presentation.
-			const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(14 * 60_000)]);
+		const waitForCompletion = async (operationId: string, signal: AbortSignal): Promise<void> => {
 			await new Promise<void>((resolve, reject) => {
 				let settled = false;
 				let observed = false;
@@ -217,6 +215,8 @@ export class Gateway implements GatewayAdapterHost {
 			};
 			const handle: GatewayPresentation = {
 				execute: (eventId, command) => {
+					// Discord interaction tokens last 15 minutes, including time spent waiting in the queue.
+					const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(14 * 60_000)]);
 					const queueKey = conversationKey(principal, key);
 					let resolveAdmission = () => {};
 					const admitted =
@@ -232,6 +232,7 @@ export class Gateway implements GatewayAdapterHost {
 						if (admitted && this.#admissions.get(queueKey) === admitted) this.#admissions.delete(queueKey);
 					};
 					const run = async (): Promise<JsonValue> => {
+						signal.throwIfAborted();
 						if (admitted) this.#admissions.set(queueKey, admitted);
 						else if (command.type === "abort" || command.type === "status") {
 							const admission = this.#admissions.get(queueKey);
@@ -251,6 +252,7 @@ export class Gateway implements GatewayAdapterHost {
 						if (command.type === "prompt" && (!command.text.trim() || command.text.length > 32_000))
 							throw new Error("Prompt must contain 1 to 32000 characters");
 						await this.store.authorize("sessions:read", undefined, context);
+						signal.throwIfAborted();
 						const receipt = this.store.claim(principal, key, eventId);
 						if (receipt) return { duplicate: true, ...receipt };
 						let submitted: { sessionId: string; operationId: string } | undefined;
@@ -275,10 +277,11 @@ export class Gateway implements GatewayAdapterHost {
 											.update(JSON.stringify([conversationKey(principal, key), eventId]))
 											.digest("hex");
 										submitted = { sessionId, operationId };
+										signal.throwIfAborted();
 										this.store.recordOperation(principal, key, eventId, sessionId, operationId);
 										await operations.accept({ operationId, text: command.text }, context);
 										finishAdmission();
-										await waitForCompletion(operationId);
+										await waitForCompletion(operationId, signal);
 										result = { sessionId, operationId, accepted: true };
 										break;
 									}
@@ -326,7 +329,13 @@ export class Gateway implements GatewayAdapterHost {
 							if (this.#queues.get(queueKey) === result) this.#queues.delete(queueKey);
 						})
 						.catch(() => {});
-					return this.#track(result);
+					const response = new Promise<JsonValue>((resolve, reject) => {
+						const abort = (): void => reject(signal.reason);
+						if (signal.aborted) return abort();
+						signal.addEventListener("abort", abort, { once: true });
+						void result.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+					});
+					return this.#track(response);
 				},
 				close: async () => {
 					this.#presentations.delete(handle);

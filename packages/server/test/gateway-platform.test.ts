@@ -8,7 +8,7 @@ import { createModels, fauxAssistantMessage, fauxProvider } from "@punch-bot/ai"
 import { createRemoteServiceBinding } from "@punch-bot/chord";
 import { Client, createClientServiceTransport } from "@punch-bot/client";
 import { createWebSocketTransportFactory } from "@punch-bot/client/websocket";
-import { expect, onTestFinished, test } from "vitest";
+import { expect, onTestFinished, test, vi } from "vitest";
 import { DiscordAdapter } from "../src/gateway/discord.ts";
 import { startGateway } from "../src/gateway/index.ts";
 import { GatewaySessions, RuntimeTranscript, SandboxOperations } from "../src/services.ts";
@@ -291,6 +291,7 @@ test.each([
 	"failed-operation",
 	"early-abort",
 	"queued-abort",
+	"queued-expiry",
 	"stalled-admission",
 ])(
 	"gateway handles %s without losing operation receipts",
@@ -302,7 +303,8 @@ test.each([
 		onTestFinished(() => modelResponse.resolve());
 		faux.setResponses([
 			async () => {
-				if (scenario === "early-abort" || scenario === "queued-abort") await modelResponse.promise;
+				if (scenario === "early-abort" || scenario === "queued-abort" || scenario === "queued-expiry")
+					await modelResponse.promise;
 				if (scenario === "failed-operation")
 					return fauxAssistantMessage("", { stopReason: "error", errorMessage: "Provider authentication failed" });
 				return fauxAssistantMessage("answer");
@@ -388,7 +390,13 @@ test.each([
 			principal,
 			conversation,
 			async send(event) {
-				if (!event.snapshot.lastResult || scenario === "early-abort" || scenario === "queued-abort") return;
+				if (
+					!event.snapshot.lastResult ||
+					scenario === "early-abort" ||
+					scenario === "queued-abort" ||
+					scenario === "queued-expiry"
+				)
+					return;
 				sending.resolve();
 				if (scenario === "failed-send" || (scenario === "retry-send" && sendFailures++ === 0))
 					throw new Error("Delivery unavailable");
@@ -402,6 +410,17 @@ test.each([
 			acquisition.resolve();
 			stalled.resolve();
 		});
+		const deadlines: AbortController[] = [];
+		if (scenario === "queued-expiry") {
+			const timeout = AbortSignal.timeout;
+			const mock = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+				if (ms !== 14 * 60_000) return timeout(ms);
+				const deadline = new AbortController();
+				deadlines.push(deadline);
+				return deadline.signal;
+			});
+			onTestFinished(() => mock.mockRestore());
+		}
 		const turn = presentation.execute("prompt", { type: "prompt", text: "question" });
 		void turn.catch(() => {});
 		if (scenario === "early-abort") {
@@ -420,6 +439,15 @@ test.each([
 			acquisition.resolve();
 			await closing;
 			await expect(turn).rejects.toThrow();
+		} else if (scenario === "queued-expiry") {
+			await expect.poll(() => faux.state.callCount).toBe(1);
+			const queued = presentation.execute("queued", { type: "prompt", text: "expired question" });
+			deadlines[1]!.abort(new Error("Interaction deadline exceeded"));
+			await expect(queued).rejects.toThrow("Interaction deadline exceeded");
+			expect(gateway.gateway.store.claim(principal, conversation, "queued")).toBeUndefined();
+			modelResponse.resolve();
+			await expect(turn).resolves.toMatchObject({ accepted: true });
+			expect(faux.state.callCount).toBe(1);
 		} else if (scenario === "queued-abort") {
 			await expect.poll(() => faux.state.callCount).toBe(1);
 			const queued = presentation.execute("queued", { type: "prompt", text: "next question" });

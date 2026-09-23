@@ -185,3 +185,33 @@ test("evicts detached harnesses after their background operations finish", async
 		await rm(directory, { recursive: true, force: true });
 	}
 });
+
+test("faulted session diagnostics do not block sandbox readiness", async () => {
+	const directory = await mkdtemp(join(tmpdir(), "punch-runtime-fault-"));
+	const faux = fauxProvider();
+	const models = createModels();
+	models.setProvider(faux.provider);
+	const errors: unknown[] = [];
+	const runtime = await createSandboxRuntime({
+		directory,
+		models,
+		model: faux.getModel(),
+		onError: (error) => errors.push(error),
+	});
+	try {
+		const metadata = await runtime.create();
+		const lease = await runtime.lease(metadata.id);
+		const close = vi.spyOn(lease.session, "close");
+		vi.spyOn(lease.session.lane, "inspectExecution").mockRejectedValue(new Error("Session faulted"));
+		expect(await runtime.activity()).toEqual([]);
+		expect(await runtime.activity()).toEqual([]);
+		expect(errors).toHaveLength(1);
+		lease.release();
+		await expect.poll(() => close.mock.calls.length, { timeout: 5_000 }).toBe(1);
+		const reopened = await runtime.attach(metadata.id);
+		expect(reopened).not.toBe(lease.session);
+	} finally {
+		await runtime.close();
+		await rm(directory, { recursive: true, force: true });
+	}
+});

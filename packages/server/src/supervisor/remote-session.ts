@@ -36,13 +36,20 @@ export function createRemoteSessionHandle(options: {
 		const subscriptions = new Map<string, ReturnType<Client["subscribeService"]>>();
 		let released = false;
 		let releasing: Promise<void> | undefined;
+		let terminateAttachment!: (error: Error) => void;
+		const terminated = new Promise<Error>((resolve) => {
+			terminateAttachment = resolve;
+		});
 		const removeConnectionListener = client.onConnectionStateChange(({ state, error }) => {
 			if (state === "disconnected" && !released) {
-				closed = true;
-				terminate(error ?? new Error("Sandbox runtime disconnected; reattach to reacquire its current generation"));
+				terminateAttachment(
+					error ?? new Error("Sandbox runtime disconnected; reattach to reacquire its current generation"),
+				);
+				void Promise.resolve(attachment.release(context)).catch(() => {});
 			}
 		});
 		const attachment: RoutedSessionAttachment = {
+			terminated,
 			async invokeService(call, publish, ctx) {
 				if (released || closed) throw new Error("Sandbox session route closed");
 				const caller = getPrincipal(ctx);
@@ -68,6 +75,7 @@ export function createRemoteSessionHandle(options: {
 								if (!released) await publish(control.subscriptionId, update, context);
 							} catch {
 								// A revoked subscriber must not receive later updates, even without another RPC.
+								terminateAttachment(new Error("Session access revoked"));
 								void Promise.resolve(attachment.release(context)).catch(() => {});
 							}
 						},

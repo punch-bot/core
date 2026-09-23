@@ -87,6 +87,16 @@ export async function createSandboxRuntime(options: SandboxRuntimeOptions) {
 	const evicting = new Map<string, Promise<void>>();
 	const mutations = new Set<Promise<unknown>>();
 	const removals = new Map<string, Promise<void>>();
+	const faulted = new Set<string>();
+	const reportFault = (id: string, error: unknown): void => {
+		if (faulted.has(id)) return;
+		faulted.add(id);
+		try {
+			options.onError(error);
+		} catch {
+			/* Error observers cannot interrupt cleanup. */
+		}
+	};
 	const evict = async (id: string): Promise<void> => {
 		idleTimers.delete(id);
 		if (closed || leases.has(id) || removals.has(id)) return;
@@ -95,7 +105,13 @@ export async function createSandboxRuntime(options: SandboxRuntimeOptions) {
 		try {
 			const session = await pending;
 			if (closed || leases.has(id) || removals.has(id)) return;
-			if ((await session.lane.inspectExecution(BACKGROUND_CONTEXT)).current) {
+			let active = false;
+			try {
+				active = !!(await session.lane.inspectExecution(BACKGROUND_CONTEXT)).current;
+			} catch (error) {
+				reportFault(id, error);
+			}
+			if (active) {
 				if (closed || leases.has(id) || removals.has(id)) return;
 				const timer = setTimeout(() => void evict(id), 1_000);
 				timer.unref();
@@ -108,22 +124,25 @@ export async function createSandboxRuntime(options: SandboxRuntimeOptions) {
 			evicting.set(id, closingSession);
 			await closingSession;
 		} catch (error) {
-			try {
-				options.onError(error);
-			} catch {
-				/* Error observers cannot interrupt cleanup. */
-			}
+			reportFault(id, error);
 		} finally {
 			evicting.delete(id);
+			if (!sessions.has(id)) faulted.delete(id);
 		}
 	};
 	return {
 		async activity() {
 			const results = await Promise.all(
 				[...sessions.entries()].map(async ([sessionId, pending]) => {
-					const session = await pending;
-					const { current } = await session.lane.inspectExecution(BACKGROUND_CONTEXT);
-					return current ? [{ sessionId, operationId: current.id, status: current.status }] : [];
+					try {
+						const session = await pending;
+						const { current } = await session.lane.inspectExecution(BACKGROUND_CONTEXT);
+						faulted.delete(sessionId);
+						return current ? [{ sessionId, operationId: current.id, status: current.status }] : [];
+					} catch (error) {
+						reportFault(sessionId, error);
+						return [];
+					}
 				}),
 			);
 			return results.flat();
@@ -165,7 +184,10 @@ export async function createSandboxRuntime(options: SandboxRuntimeOptions) {
 			})();
 			sessions.set(id, pending);
 			void pending.catch(() => {
-				if (sessions.get(id) === pending) sessions.delete(id);
+				if (sessions.get(id) === pending) {
+					sessions.delete(id);
+					faulted.delete(id);
+				}
 			});
 			return pending;
 		},
