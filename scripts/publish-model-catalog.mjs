@@ -13,6 +13,11 @@ import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { isDeepStrictEqual } from "node:util";
 
+// Revision layout under `${CATALOG_PREFIX}/revisions/<revision>/`:
+//   models.json, providers/<id>.json          chat-only catalog served to released clients
+//   models.all.json, providers/<id>.all.json  arrays containing every model type;
+//                                             served to clients that request typed models
+//   providers.json                            sorted provider ids shared by both variants
 const CATALOG_SCHEMA_VERSION = 1;
 const CATALOG_PREFIX = `models/v${CATALOG_SCHEMA_VERSION}`;
 const CATALOG_INDEX_KEY = `${CATALOG_PREFIX}/index.json`;
@@ -23,6 +28,7 @@ const IMMUTABLE_CACHE_CONTROL = "public, max-age=31536000, immutable";
 const INDEX_CACHE_CONTROL = "no-store";
 const REQUIRED_PROVIDERS = ["anthropic", "openai", "openrouter"];
 const MINIMUM_MODEL_COUNT = 500;
+const MODEL_TYPES = ["chat", "image", "classifier"];
 
 function parseArgs(args) {
 	const options = {
@@ -65,55 +71,81 @@ function readJson(path) {
 	return JSON.parse(readFileSync(path, "utf8"));
 }
 
+function isObject(value) {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function chatProjection(providerModels) {
+	return Object.fromEntries(providerModels.filter((model) => model.type === "chat").map((model) => [model.id, model]));
+}
+
 function validateBundle(inputDir) {
 	const modelsPath = join(inputDir, "models.json");
+	const allModelsPath = join(inputDir, "models.all.json");
 	const providerIndexPath = join(inputDir, "providers.json");
 	const providersDir = join(inputDir, "providers");
 	const modelsBytes = readFileSync(modelsPath);
+	const allModelsBytes = readFileSync(allModelsPath);
 	const models = JSON.parse(modelsBytes.toString("utf8"));
+	const allModels = JSON.parse(allModelsBytes.toString("utf8"));
 	const providerIds = readJson(providerIndexPath);
 
-	if (typeof models !== "object" || models === null || Array.isArray(models)) {
-		throw new Error("models.json must contain an object");
-	}
+	if (!isObject(models)) throw new Error("models.json must contain an object");
+	if (!isObject(allModels)) throw new Error("models.all.json must contain an object");
 	if (!Array.isArray(providerIds) || !providerIds.every((value) => typeof value === "string")) {
 		throw new Error("providers.json must contain an array of provider IDs");
 	}
 
-	const expectedProviderIds = Object.keys(models).sort();
+	const expectedProviderIds = Object.keys(allModels).sort();
 	if (!isDeepStrictEqual(providerIds, expectedProviderIds)) {
-		throw new Error("providers.json does not match the sorted providers in models.json");
+		throw new Error("providers.json does not match the sorted providers in models.all.json");
+	}
+	if (!isDeepStrictEqual(Object.keys(models).sort(), expectedProviderIds)) {
+		throw new Error("models.json and models.all.json list different providers");
 	}
 	for (const providerId of REQUIRED_PROVIDERS) {
 		if (!Object.hasOwn(models, providerId)) throw new Error(`Required provider is missing: ${providerId}`);
 	}
 
+	// modelCount remains the legacy chat-catalog count for existing consumers.
 	let modelCount = 0;
+	let imageModelCount = 0;
+	let classifierModelCount = 0;
 	for (const providerId of providerIds) {
-		const providerModels = models[providerId];
-		if (typeof providerModels !== "object" || providerModels === null || Array.isArray(providerModels)) {
-			throw new Error(`Provider catalog must be an object: ${providerId}`);
-		}
-		const providerFile = readJson(join(providersDir, `${providerId}.json`));
+		const providerModels = allModels[providerId];
+		if (!Array.isArray(providerModels)) throw new Error(`Full provider catalog must be an array: ${providerId}`);
+		const providerFile = readJson(join(providersDir, `${providerId}.all.json`));
 		if (!isDeepStrictEqual(providerFile, providerModels)) {
-			throw new Error(`Provider shard does not match models.json: ${providerId}`);
+			throw new Error(`Provider shard does not match models.all.json: ${providerId}`);
 		}
-		for (const [modelId, model] of Object.entries(providerModels)) {
-			if (
-				typeof model !== "object" ||
-				model === null ||
-				Array.isArray(model) ||
-				model.id !== modelId ||
-				model.provider !== providerId
-			) {
-				throw new Error(`Invalid model entry: ${providerId}/${modelId}`);
+		const identities = new Set();
+		for (const model of providerModels) {
+			if (!isObject(model) || typeof model.id !== "string" || model.provider !== providerId) {
+				throw new Error(`Invalid model entry in provider catalog: ${providerId}`);
 			}
-			modelCount++;
+			if (!MODEL_TYPES.includes(model.type)) {
+				throw new Error(`Model entry has an unknown type: ${providerId}/${model.id} (${JSON.stringify(model.type)})`);
+			}
+			const identity = `${model.type}:${model.id}`;
+			if (identities.has(identity)) throw new Error(`Duplicate model entry: ${providerId}/${identity}`);
+			identities.add(identity);
+			if (model.type === "chat") modelCount++;
+			else if (model.type === "image") imageModelCount++;
+			else classifierModelCount++;
+		}
+
+		// The legacy variant must be exactly the chat projection of the full catalog.
+		const chatModels = chatProjection(providerModels);
+		if (!isDeepStrictEqual(models[providerId], chatModels)) {
+			throw new Error(`models.json is not the chat projection of models.all.json: ${providerId}`);
+		}
+		if (!isDeepStrictEqual(readJson(join(providersDir, `${providerId}.json`)), chatModels)) {
+			throw new Error(`Provider shard does not match models.json: ${providerId}`);
 		}
 	}
 
 	const shardFiles = readdirSync(providersDir).filter((name) => name.endsWith(".json")).sort();
-	const expectedShardFiles = providerIds.map((providerId) => `${providerId}.json`).sort();
+	const expectedShardFiles = providerIds.flatMap((providerId) => [`${providerId}.json`, `${providerId}.all.json`]).sort();
 	if (!isDeepStrictEqual(shardFiles, expectedShardFiles)) {
 		throw new Error("Provider shard files do not match providers.json");
 	}
@@ -121,14 +153,21 @@ function validateBundle(inputDir) {
 		throw new Error(`Refusing to publish only ${modelCount} models; expected at least ${MINIMUM_MODEL_COUNT}`);
 	}
 
-	const digest = createHash("sha256").update(modelsBytes).digest("hex");
+	// The full catalog is a superset of the chat catalog, so hashing it alone
+	// changes the revision for chat-only and image-only updates alike.
+	const digest = createHash("sha256").update(allModelsBytes).digest("hex");
 	return {
 		modelsPath,
+		allModelsPath,
 		providerIndexPath,
 		providersDir,
 		providerIds,
 		providerCount: providerIds.length,
 		modelCount,
+		chatModelCount: modelCount,
+		imageModelCount,
+		classifierModelCount,
+		totalModelCount: modelCount + imageModelCount + classifierModelCount,
 		revision: `sha256-${digest}`,
 	};
 }
@@ -228,6 +267,11 @@ function buildIndex(existingIndex, publication) {
 		publishedAt: new Date().toISOString(),
 		providerCount: publication.providerCount,
 		modelCount: publication.modelCount,
+		chatModelCount: publication.chatModelCount,
+		imageModelCount: publication.imageModelCount,
+		classifierModelCount: publication.classifierModelCount,
+		totalModelCount: publication.totalModelCount,
+		modelTypes: publication.modelTypes,
 	};
 	const catalogs = (existingIndex?.catalogs || [])
 		.filter((catalog) => catalog.minimumPiVersion !== MINIMUM_PI_VERSION)
@@ -250,7 +294,14 @@ async function main() {
 		revision: bundle.revision,
 		sourceCommit: options.sourceCommit || gitSourceCommit(),
 		providerCount: bundle.providerCount,
+		/** Legacy count for the chat-only `models.json` catalog. */
 		modelCount: bundle.modelCount,
+		chatModelCount: bundle.chatModelCount,
+		imageModelCount: bundle.imageModelCount,
+		classifierModelCount: bundle.classifierModelCount,
+		totalModelCount: bundle.totalModelCount,
+		/** Types present in the `.all` variant of this revision. */
+		modelTypes: MODEL_TYPES,
 	};
 	writeFileSync(join(inputDir, "publication.json"), `${JSON.stringify(publication, null, 2)}\n`);
 
@@ -278,18 +329,27 @@ async function main() {
 		uploadJson(
 			options.bucket,
 			options.endpoint,
+			bundle.allModelsPath,
+			`${revisionPrefix}/models.all.json`,
+			IMMUTABLE_CACHE_CONTROL,
+		);
+		uploadJson(
+			options.bucket,
+			options.endpoint,
 			bundle.providerIndexPath,
 			`${revisionPrefix}/providers.json`,
 			IMMUTABLE_CACHE_CONTROL,
 		);
 		for (const providerId of bundle.providerIds) {
-			uploadJson(
-				options.bucket,
-				options.endpoint,
-				join(bundle.providersDir, `${providerId}.json`),
-				`${revisionPrefix}/providers/${providerId}.json`,
-				IMMUTABLE_CACHE_CONTROL,
-			);
+			for (const shard of [`${providerId}.json`, `${providerId}.all.json`]) {
+				uploadJson(
+					options.bucket,
+					options.endpoint,
+					join(bundle.providersDir, shard),
+					`${revisionPrefix}/providers/${shard}`,
+					IMMUTABLE_CACHE_CONTROL,
+				);
+			}
 		}
 
 		const nextIndex = buildIndex(currentIndex, publication);

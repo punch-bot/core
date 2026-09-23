@@ -118,7 +118,6 @@ required_paths=(
     "package-lock.json"
     "scripts/build-binaries.sh"
     "packages/ai/src/models.generated.ts"
-    "packages/ai/src/image-models.generated.ts"
     "packages/ai/src/providers/data/.manifest.json"
     "packages/coding-agent/package.json"
     "packages/coding-agent/src/utils/image-resize-worker.ts"
