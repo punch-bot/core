@@ -19,6 +19,7 @@ import { MemoryStorage } from "../memory.ts";
 
 const FORMAT_VERSION = 1;
 const MAIN_FILE = "main.jsonl";
+const RECLAIM_SUFFIX = ".reclaim";
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
 
 type StoredTask = TaskRecord<JsonValue, JsonValue, JsonValue>;
@@ -91,6 +92,11 @@ const isSafeInteger = (value: unknown): value is number => Number.isSafeInteger(
 const sidecarFileName = (kind: "doc" | "task", id: Id): string => `${kind}-${id}.jsonl`;
 
 const isSidecarFileName = (name: string): boolean => /^(?:doc|task)-(?:0|[1-9]\d*)\.jsonl$/.test(name);
+
+const isReclaimFileName = (name: string): boolean => /^(?:doc|task)-(?:0|[1-9]\d*)\.jsonl\.reclaim$/.test(name);
+
+const isCurrentOnly = (record: DocumentCreate): boolean =>
+	record.scope.kind !== "conversation" || record.history === "latest";
 
 const sidecarKey = (file: string, seq: Seq, ordinal: number): string => JSON.stringify([file, seq, ordinal]);
 
@@ -233,21 +239,16 @@ export class JsonlStorage implements Storage {
 	private readonly directory: string;
 	private readonly mainPath: string;
 	private readonly fsync: boolean;
-	private readonly memory: MemoryStorage;
+	private readonly memory = new MemoryStorage();
+	private readonly currentOnlyDocuments = new Set<Id>();
+	private readonly liveTaskSidecars = new Set<Id>();
 	private closed = false;
 	private poisonError: JsonlStoragePoisonedError | undefined;
 
-	private constructor(
-		fs: FileSystem,
-		directory: string,
-		mainPath: string,
-		memory: MemoryStorage,
-		options: JsonlStorageOptions,
-	) {
+	private constructor(fs: FileSystem, directory: string, mainPath: string, options: JsonlStorageOptions) {
 		this.fs = fs;
 		this.directory = directory;
 		this.mainPath = mainPath;
-		this.memory = memory;
 		this.fsync = options.fsync ?? false;
 	}
 
@@ -264,15 +265,16 @@ export class JsonlStorage implements Storage {
 		if (!created.ok) throw errorFromFile("directory creation", created.error);
 		const mainPathResult = await fs.joinPath([absolute.value, MAIN_FILE], context);
 		if (!mainPathResult.ok) throw errorFromFile("path join", mainPathResult.error);
-		const memory = new MemoryStorage();
-		await JsonlStorage.recover(fs, absolute.value, mainPathResult.value, memory, context);
-		return new JsonlStorage(fs, absolute.value, mainPathResult.value, memory, options);
+		const storage = new JsonlStorage(fs, absolute.value, mainPathResult.value, options);
+		await storage.recover(context);
+		return storage;
 	}
 
 	async commit(writes: readonly StorageWrite[], context: Context): Promise<Seq> {
 		this.assertUsable();
 		const prepared = this.memory.prepareCommit(writes);
 		const encoded = this.encodeCommit(prepared.seq, prepared.writes);
+		const reclamations = this.planReclamations(prepared.writes, encoded);
 		const sidecars = await Promise.all(
 			[...encoded.sidecars].map(async ([file, content]) => ({
 				file,
@@ -293,7 +295,10 @@ export class JsonlStorage implements Storage {
 		}
 		const marker = await this.fs.appendFile(this.mainPath, encoded.marker, context);
 		if (!marker.ok) throw this.poison(errorFromFile(`append to ${MAIN_FILE}`, marker.error));
-		return prepared.apply();
+		const seq = prepared.apply();
+		this.adoptSidecarState(prepared.writes);
+		await this.reclaimSidecars(reclamations, context);
+		return seq;
 	}
 
 	async mintId() {
@@ -421,14 +426,95 @@ export class JsonlStorage implements Storage {
 		return { marker: jsonLine(marker), sidecars };
 	}
 
-	private static async recover(
-		fs: FileSystem,
-		directory: string,
-		mainPath: string,
-		memory: MemoryStorage,
-		context: Context,
-	): Promise<void> {
-		const main = await JsonlStorage.readLines(fs, mainPath, MAIN_FILE, context, (text, line) =>
+	private planReclamations(writes: readonly StorageWrite[], encoded: EncodedCommit): ReadonlyMap<string, string> {
+		const createdCurrentOnlyDocuments = new Set<Id>();
+		const retiredDocuments = new Set<Id>();
+		const baseDocuments = new Set<Id>();
+		const finalTasks = new Map<Id, StoredTask>();
+		for (const write of writes) {
+			switch (write.type) {
+				case "document.create":
+					if (isCurrentOnly(write.record)) createdCurrentOnlyDocuments.add(write.record.id);
+					break;
+				case "document.change":
+					if (write.content.kind === "base") baseDocuments.add(write.id);
+					break;
+				case "document.retire":
+					retiredDocuments.add(write.id);
+					break;
+				case "task":
+					finalTasks.set(write.value.id, write.value);
+					break;
+			}
+		}
+
+		const replacements = new Map<string, string>();
+		const isCurrentOnlyDocument = (id: Id): boolean =>
+			this.currentOnlyDocuments.has(id) || createdCurrentOnlyDocuments.has(id);
+		for (const id of retiredDocuments) {
+			if (isCurrentOnlyDocument(id)) replacements.set(sidecarFileName("doc", id), "");
+		}
+		for (const id of baseDocuments) {
+			if (!isCurrentOnlyDocument(id) || retiredDocuments.has(id)) continue;
+			const file = sidecarFileName("doc", id);
+			const content = encoded.sidecars.get(file);
+			if (content !== undefined) replacements.set(file, content);
+		}
+		for (const [id, task] of finalTasks) {
+			if (
+				task.state.status === "terminal" &&
+				(this.liveTaskSidecars.has(id) || encoded.sidecars.has(sidecarFileName("task", id)))
+			) {
+				replacements.set(sidecarFileName("task", id), "");
+			}
+		}
+		return replacements;
+	}
+
+	private adoptSidecarState(writes: readonly StorageWrite[]): void {
+		for (const write of writes) {
+			if (write.type === "document.create") {
+				if (isCurrentOnly(write.record)) this.currentOnlyDocuments.add(write.record.id);
+			} else if (write.type === "task") {
+				if (write.value.state.status === "terminal") this.liveTaskSidecars.delete(write.value.id);
+				else this.liveTaskSidecars.add(write.value.id);
+			}
+		}
+	}
+
+	/** The marker already published this state, so reclamation is retryable best-effort maintenance. */
+	private async reclaimSidecars(replacements: ReadonlyMap<string, string>, context: Context): Promise<void> {
+		if (replacements.size === 0) return;
+		if (this.fsync) {
+			const flushed = await this.fs.flushFile(this.mainPath, context);
+			if (!flushed.ok) return;
+		}
+		for (const [file, content] of replacements) await this.replaceSidecar(file, content, context);
+	}
+
+	private async replaceSidecar(file: string, content: string, context: Context): Promise<void> {
+		const path = await this.fs.joinPath([this.directory, file], context);
+		if (!path.ok) return;
+		if (content === "") {
+			await this.fs.remove(path.value, { force: true }, context);
+			return;
+		}
+		const temporaryPath = await this.fs.joinPath([this.directory, `${file}${RECLAIM_SUFFIX}`], context);
+		if (!temporaryPath.ok) return;
+		const written = await this.fs.writeFile(temporaryPath.value, content, context);
+		if (!written.ok) return;
+		if (this.fsync) {
+			const flushed = await this.fs.flushFile(temporaryPath.value, context);
+			if (!flushed.ok) return;
+		}
+		await this.fs.renameFile(temporaryPath.value, path.value, context);
+	}
+
+	private async recover(context: Context): Promise<void> {
+		const fs = this.fs;
+		const directory = this.directory;
+		const memory = this.memory;
+		const main = await JsonlStorage.readLines(fs, this.mainPath, MAIN_FILE, context, (text, line) =>
 			parseMainMarker(text, line),
 		);
 		let previousSeq = 0;
@@ -441,6 +527,11 @@ export class JsonlStorage implements Storage {
 
 		const listed = await fs.listDir(directory, context);
 		if (!listed.ok) throw errorFromFile("directory listing", listed.error);
+		for (const info of listed.value) {
+			if (info.kind === "file" && isReclaimFileName(info.name)) {
+				await fs.remove(info.path, { force: true }, context);
+			}
+		}
 		const sidecarFiles = listed.value
 			.filter((info) => info.kind === "file" && isSidecarFileName(info.name))
 			.map((info) => info.name)
@@ -468,6 +559,56 @@ export class JsonlStorage implements Storage {
 			}
 		}
 
+		const currentOnlyDocuments = new Set<Id>();
+		const retiredDocuments = new Set<Id>();
+		const finalTaskIsLive = new Map<Id, boolean>();
+		for (const { value: marker } of main.lines) {
+			for (const operation of marker.writes) {
+				if (operation.type === "document.create") {
+					if (isCurrentOnly(operation.record)) currentOnlyDocuments.add(operation.record.id);
+				} else if (operation.type === "document.retire") {
+					retiredDocuments.add(operation.id);
+				} else if (operation.type === "task") {
+					finalTaskIsLive.set(operation.value.id, false);
+				} else if (operation.type === "task.sidecar") {
+					finalTaskIsLive.set(operation.id, true);
+				}
+			}
+		}
+		const retiredCurrentOnlyDocuments = new Set([...retiredDocuments].filter((id) => currentOnlyDocuments.has(id)));
+
+		const latestBases = new Map<Id, SidecarRecord>();
+		for (const { value: marker } of main.lines) {
+			for (const operation of marker.writes) {
+				if (operation.type !== "document.create" && operation.type !== "document.change") continue;
+				const id = operation.type === "document.create" ? operation.record.id : operation.id;
+				if (!currentOnlyDocuments.has(id)) continue;
+				const record = recordByKey.get(
+					sidecarKey(sidecarFileName("doc", id), marker.seq, operation.ordinal),
+				)?.value;
+				if (
+					record?.payload.type !== "document" ||
+					record.payload.id !== id ||
+					record.payload.content.kind !== "base"
+				) {
+					continue;
+				}
+				const previous = latestBases.get(id);
+				if (
+					previous === undefined ||
+					record.seq > previous.seq ||
+					(record.seq === previous.seq && record.ordinal > previous.ordinal)
+				) {
+					latestBases.set(id, record);
+				}
+			}
+		}
+
+		const isBeforeLatestBase = (id: Id, seq: Seq, ordinal: number): boolean => {
+			const base = latestBases.get(id);
+			return base !== undefined && (seq < base.seq || (seq === base.seq && ordinal < base.ordinal));
+		};
+		const terminalTasks = new Set([...finalTaskIsLive].filter(([, live]) => !live).map(([id]) => id));
 		const confirmed = new Set<string>();
 		for (const line of main.lines) {
 			const marker = line.value;
@@ -482,52 +623,61 @@ export class JsonlStorage implements Storage {
 						writes.push(operation);
 						break;
 					case "task.sidecar": {
+						const optional = terminalTasks.has(operation.id);
 						const record = JsonlStorage.confirmRecord(
 							marker,
 							operation.ordinal,
 							sidecarFileName("task", operation.id),
 							recordByKey,
 							confirmed,
+							optional,
 						);
-						if (record.payload.type !== "task" || record.payload.value.id !== operation.id) {
-							throw new JsonlCorruptionError(`Confirmed task sidecar data does not match commit ${marker.seq}`);
+						if (record !== undefined) {
+							if (record.payload.type !== "task" || record.payload.value.id !== operation.id) {
+								throw new JsonlCorruptionError(
+									`Confirmed task sidecar data does not match commit ${marker.seq}`,
+								);
+							}
+							if (!optional) writes.push({ type: "task", value: record.payload.value });
 						}
-						writes.push({ type: "task", value: record.payload.value });
 						break;
 					}
-					case "document.create": {
-						const record = JsonlStorage.confirmRecord(
-							marker,
-							operation.ordinal,
-							sidecarFileName("doc", operation.record.id),
-							recordByKey,
-							confirmed,
-						);
-						if (record.payload.type !== "document" || record.payload.id !== operation.record.id) {
-							throw new JsonlCorruptionError(
-								`Confirmed document sidecar data does not match commit ${marker.seq}`,
-							);
-						}
-						if (record.payload.content.kind !== "base") {
-							throw new JsonlCorruptionError(`Document creation lacks a confirmed base in commit ${marker.seq}`);
-						}
-						writes.push({ type: "document.create", record: operation.record, content: record.payload.content });
-						break;
-					}
+					case "document.create":
 					case "document.change": {
+						const id = operation.type === "document.create" ? operation.record.id : operation.id;
+						const reclaimed =
+							retiredCurrentOnlyDocuments.has(id) || isBeforeLatestBase(id, marker.seq, operation.ordinal);
 						const record = JsonlStorage.confirmRecord(
 							marker,
 							operation.ordinal,
-							sidecarFileName("doc", operation.id),
+							sidecarFileName("doc", id),
 							recordByKey,
 							confirmed,
+							reclaimed,
 						);
-						if (record.payload.type !== "document" || record.payload.id !== operation.id) {
-							throw new JsonlCorruptionError(
-								`Confirmed document sidecar data does not match commit ${marker.seq}`,
-							);
+						let content: DocumentContent | undefined;
+						if (record !== undefined) {
+							if (record.payload.type !== "document" || record.payload.id !== id) {
+								throw new JsonlCorruptionError(
+									`Confirmed document sidecar data does not match commit ${marker.seq}`,
+								);
+							}
+							content = record.payload.content;
 						}
-						writes.push({ type: "document.change", id: operation.id, content: record.payload.content });
+						if (operation.type === "document.create") {
+							if (content !== undefined && content.kind !== "base") {
+								throw new JsonlCorruptionError(
+									`Document creation lacks a confirmed base in commit ${marker.seq}`,
+								);
+							}
+							writes.push({
+								type: "document.create",
+								record: operation.record,
+								content: reclaimed || content === undefined ? { kind: "base", version: 1, value: {} } : content,
+							});
+						} else if (!reclaimed && content !== undefined) {
+							writes.push({ type: "document.change", id, content });
+						}
 						break;
 					}
 				}
@@ -542,6 +692,7 @@ export class JsonlStorage implements Storage {
 			}
 		}
 
+		const reclamations = new Map<string, string>();
 		for (const [file, parsed] of parsedFiles) {
 			let unconfirmedAt: number | undefined;
 			for (const line of parsed.lines) {
@@ -558,6 +709,33 @@ export class JsonlStorage implements Storage {
 				const truncated = await fs.truncateFile(parsed.path, unconfirmedAt, context);
 				if (!truncated.ok) throw errorFromFile(`tail truncation of ${file}`, truncated.error);
 			}
+
+			const id = Number(file.slice(file.indexOf("-") + 1, -".jsonl".length));
+			const confirmedLines = parsed.lines.filter((line) =>
+				confirmed.has(sidecarKey(file, line.value.seq, line.value.ordinal)),
+			);
+			let retainedLines: readonly ParsedLine<SidecarRecord>[] | undefined;
+			if (file.startsWith("task-") && terminalTasks.has(id)) {
+				retainedLines = [];
+			} else if (file.startsWith("doc-") && retiredCurrentOnlyDocuments.has(id)) {
+				retainedLines = [];
+			} else if (file.startsWith("doc-") && latestBases.has(id)) {
+				retainedLines = confirmedLines.filter(
+					(line) => !isBeforeLatestBase(id, line.value.seq, line.value.ordinal),
+				);
+			}
+			if (
+				retainedLines !== undefined &&
+				(retainedLines.length < confirmedLines.length || retainedLines.length === 0)
+			) {
+				reclamations.set(file, retainedLines.map((line) => jsonLine(line.value)).join(""));
+			}
+		}
+		await this.reclaimSidecars(reclamations, context);
+
+		for (const id of currentOnlyDocuments) this.currentOnlyDocuments.add(id);
+		for (const [id, live] of finalTaskIsLive) {
+			if (live) this.liveTaskSidecars.add(id);
 		}
 	}
 
@@ -567,11 +745,13 @@ export class JsonlStorage implements Storage {
 		file: string,
 		recordByKey: ReadonlyMap<string, ParsedLine<SidecarRecord>>,
 		confirmed: Set<string>,
-	): SidecarRecord {
+		optional: boolean,
+	): SidecarRecord | undefined {
 		const key = sidecarKey(file, marker.seq, ordinal);
 		if (confirmed.has(key)) throw new JsonlCorruptionError(`Sidecar record is confirmed more than once`);
 		const line = recordByKey.get(key);
 		if (line === undefined) {
+			if (optional) return undefined;
 			throw new JsonlCorruptionError(`Missing confirmed sidecar record ${file} at sequence ${marker.seq}`);
 		}
 		confirmed.add(key);

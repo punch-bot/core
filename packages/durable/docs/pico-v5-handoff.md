@@ -79,9 +79,10 @@ arguments, and reads never expose backend-owned cached objects.
 JSONL creation has `fsync?: boolean`, defaulting to `false`. With `false`, append
 sidecars and then the marker without an explicit flush. With `true`, append all
 affected sidecars, flush each affected sidecar, and then append the main marker.
-Do not explicitly flush `main.jsonl`. A main-only commit has no sidecars to
-flush. Any uncertain append or flush failure poisons the open backend and
-publishes no prepared in-memory mutation.
+Do not explicitly flush `main.jsonl` for ordinary publication. A main-only commit
+has no sidecars to flush. Any uncertain publication append or flush failure
+poisons the open backend and publishes no prepared in-memory mutation. Package 5
+adds the separate post-publication flush required to authorize reclamation.
 
 Fault-test torn/short sidecar writes, failures between sidecars, every marker
 boundary, unconfirmed tails, missing confirmed data, poisoned writes, exact-byte
@@ -92,7 +93,13 @@ conformance suite directly and after reopen.
 ## 5. JSONL reclamation
 
 Implement task-document retirement and current-only base reclamation using
-committed markers, temporary replacement, rename, and descriptor invalidation.
+committed markers and descriptor invalidation. Remove a sidecar directly when no
+records remain; otherwise use temporary replacement and rename. With `fsync:
+true`, flush `main.jsonl` once before destructive reclamation so the authorizing
+marker cannot disappear while cleanup survives; if that flush fails, skip
+reclamation without failing the already-published commit. Flush a non-empty
+temporary replacement before rename. This is not publication flushing or main
+compaction.
 
 Crash-test every rewrite/rename boundary. Verify that rewindable history is
 never reclaimed and default no-fsync behavior matches the specification.
