@@ -245,7 +245,7 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 			);
 
 			expect(
-				(await storage.scanEntries({ conversationId: rootId }, undefined, 10, context)).items.map(({ id }) => id),
+				(await storage.scanEntries({ conversationId: rootId }, 10, undefined, context)).items.map(({ id }) => id),
 			).toEqual([30, 20, 10]);
 			expect((await storage.findLatestHeadMarker(rootId, undefined, context))?.id).toBe(20);
 		}),
@@ -264,11 +264,11 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 				context,
 			);
 
-			const first = await storage.scanEntries({ conversationId: rootId }, undefined, 2, context);
+			const first = await storage.scanEntries({ conversationId: rootId }, 2, undefined, context);
 			expect(first.items.map(({ id }) => id)).toEqual([newestId, middleId]);
 			const appendedId = await storage.mintId();
 			await storage.commit([{ type: "entry", value: entry(appendedId, rootId) }], context);
-			const second = await storage.scanEntries({ conversationId: rootId }, first.next, 2, context);
+			const second = await storage.scanEntries({ conversationId: rootId }, 2, first.next, context);
 			expect(second.items.map(({ id }) => id)).toEqual([oldestId]);
 			expect(second.next).toBeUndefined();
 		}),
@@ -285,11 +285,11 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 				context,
 			);
 
-			const first = await storage.scanConversations(undefined, 2, context);
+			const first = await storage.scanConversations(2, undefined, context);
 			expect(first.items.map(({ id }) => id)).toEqual([rootId, secondId]);
 			expect(first.next).toBeDefined();
 			const roundTrippedCursor = JSON.parse(JSON.stringify(first.next)) as NonNullable<typeof first.next>;
-			const second = await storage.scanConversations(roundTrippedCursor, 2, context);
+			const second = await storage.scanConversations(2, roundTrippedCursor, context);
 			expect(second.items.map(({ id }) => id)).toEqual([thirdId]);
 			expect(second.next).toBeUndefined();
 		}),
@@ -356,11 +356,11 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 			const childExcludedLater = await storage.mintId();
 			await storage.commit([{ type: "entry", value: entry(childExcludedLater, childId) }], context);
 
-			const first = await storage.scanEntries({ conversationId: grandchildId }, undefined, 2, context);
+			const first = await storage.scanEntries({ conversationId: grandchildId }, 2, undefined, context);
 			expect(first.items.map(({ id }) => id)).toEqual([grandchildTail, grandchildHead]);
-			const second = await storage.scanEntries({ conversationId: grandchildId }, first.next, 2, context);
+			const second = await storage.scanEntries({ conversationId: grandchildId }, 2, first.next, context);
 			expect(second.items.map(({ id }) => id)).toEqual([childForkPoint, rootForkPoint]);
-			const third = await storage.scanEntries({ conversationId: grandchildId }, second.next, 2, context);
+			const third = await storage.scanEntries({ conversationId: grandchildId }, 2, second.next, context);
 			expect(third.items.map(({ id }) => id)).toEqual([rootFirst]);
 			expect(third.next).toBeUndefined();
 
@@ -374,16 +374,16 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 
 			const activeFirst = await storage.scanEntries(
 				{ conversationId: grandchildId, minEntryId: currentMarker?.head },
-				undefined,
 				1,
+				undefined,
 				context,
 			);
 			expect(activeFirst.items.map(({ id }) => id)).toEqual([grandchildTail]);
 			expect(activeFirst.next).toBeDefined();
 			const activeSecond = await storage.scanEntries(
 				{ conversationId: grandchildId, minEntryId: currentMarker?.head },
-				activeFirst.next,
 				1,
+				activeFirst.next,
 				context,
 			);
 			expect(activeSecond.items.map(({ id }) => id)).toEqual([grandchildHead]);
@@ -397,8 +397,8 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 							minEntryId: historicalMarker?.head,
 							maxEntryId: childForkPoint,
 						},
-						undefined,
 						10,
+						undefined,
 						context,
 					)
 				).items.map(({ id }) => id),
@@ -412,7 +412,7 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 			expect((await storage.entry(grandchildHead, context))?.commitSeq).toBe(grandchildEntriesSeq);
 			expect((await storage.entry(grandchildTail, context))?.commitSeq).toBe(grandchildEntriesSeq);
 			expect(await storage.entry(999_999, context)).toBeUndefined();
-			await expect(storage.scanEntries({ conversationId: 999_999 }, undefined, 10, context)).rejects.toThrow(
+			await expect(storage.scanEntries({ conversationId: 999_999 }, 10, undefined, context)).rejects.toThrow(
 				"Unknown conversation",
 			);
 		}),
@@ -455,17 +455,17 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 			await storage.commit([{ type: "task", value: terminal }], context);
 			expect(await storage.task(firstId, context)).toEqual(terminal);
 
-			const pendingPage = await storage.scanTasks({ status: "pending" }, undefined, 1, context);
+			const pendingPage = await storage.scanTasks({ status: "pending" }, 1, undefined, context);
 			expect(pendingPage.items.map(({ id }) => id)).toEqual([secondId]);
 			expect(pendingPage.next).toBeDefined();
 			expect(
-				(await storage.scanTasks({ status: "pending" }, pendingPage.next, 1, context)).items.map(({ id }) => id),
+				(await storage.scanTasks({ status: "pending" }, 1, pendingPage.next, context)).items.map(({ id }) => id),
 			).toEqual([thirdId]);
 			expect(
-				(await storage.scanTasks({ status: "terminal", abortRequested: true }, undefined, 10, context)).items,
+				(await storage.scanTasks({ status: "terminal", abortRequested: true }, 10, undefined, context)).items,
 			).toEqual([terminal]);
 			expect(
-				(await storage.scanTasks({ background: true }, undefined, 10, context)).items.map(({ id }) => id),
+				(await storage.scanTasks({ background: true }, 10, undefined, context)).items.map(({ id }) => id),
 			).toEqual([secondId]);
 		}),
 
@@ -671,12 +671,12 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 			});
 			expect(
 				(
-					await storage.scanDocuments({ scope: firstRecord.scope, at: changedAt }, undefined, 10, context)
+					await storage.scanDocuments({ scope: firstRecord.scope, at: changedAt }, 10, undefined, context)
 				).items.map(({ id }) => id),
 			).toEqual([firstId]);
 			expect(
 				(
-					await storage.scanDocuments({ scope: firstRecord.scope, at: retiredAt }, undefined, 10, context)
+					await storage.scanDocuments({ scope: firstRecord.scope, at: retiredAt }, 10, undefined, context)
 				).items.map(({ id }) => id),
 			).toEqual([secondId]);
 			expect(await storage.document(firstId, retiredAt, context)).toBeUndefined();
@@ -809,18 +809,18 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 				)?.id,
 			).toBe(firstId);
 			expect(
-				(await storage.scanDocuments({ scope: { kind: "session" }, at: "current" }, undefined, 1, context)).items,
+				(await storage.scanDocuments({ scope: { kind: "session" }, at: "current" }, 1, undefined, context)).items,
 			).toHaveLength(1);
 			const first = await storage.scanDocuments(
 				{ scope: { kind: "session" }, at: "current" },
-				undefined,
 				1,
+				undefined,
 				context,
 			);
 			const second = await storage.scanDocuments(
 				{ scope: { kind: "session" }, at: "current" },
-				first.next,
 				1,
+				first.next,
 				context,
 			);
 			expect([...first.items, ...second.items].map(({ id }) => id)).toEqual([firstId, secondId]);
@@ -828,8 +828,8 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 				(
 					await storage.scanDocuments(
 						{ scope: { kind: "conversation", conversationId: rootId }, at: "current" },
-						undefined,
 						10,
+						undefined,
 						context,
 					)
 				).items.map(({ id }) => id),
@@ -851,8 +851,8 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 				(
 					await storage.scanDocuments(
 						{ scope: { kind: "task", taskId }, at: "current", kind: "task.cache" },
-						undefined,
 						10,
+						undefined,
 						context,
 					)
 				).items.map(({ id }) => id),
@@ -984,7 +984,7 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 				).rejects.toThrow("already has a current incarnation");
 
 				expect(await storage.task(taskId, context)).toEqual(task);
-				expect((await storage.scanTasks({ status: "pending" }, undefined, 10, context)).items).toEqual([task]);
+				expect((await storage.scanTasks({ status: "pending" }, 10, undefined, context)).items).toEqual([task]);
 				expect(await storage.submissionByRequest(rootId, "atomic", context)).toEqual(submission);
 				expect(await storage.entry(entryId, context)).toBeUndefined();
 				expect(await storage.document(conflictingDocumentId, "current", context)).toBeUndefined();
@@ -1065,10 +1065,10 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 				context,
 			);
 
-			expect((await storage.scanTasks({ kind: first }, undefined, 10, context)).items.map(({ id }) => id)).toEqual([
+			expect((await storage.scanTasks({ kind: first }, 10, undefined, context)).items.map(({ id }) => id)).toEqual([
 				firstTaskId,
 			]);
-			expect((await storage.scanTasks({ kind: second }, undefined, 10, context)).items.map(({ id }) => id)).toEqual([
+			expect((await storage.scanTasks({ kind: second }, 10, undefined, context)).items.map(({ id }) => id)).toEqual([
 				secondTaskId,
 			]);
 			expect((await storage.task(firstTaskId, context))?.kind).toBe(first);
@@ -1099,8 +1099,8 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 				(
 					await storage.scanDocuments(
 						{ scope: { kind: "session" }, at: "current", kind: first },
-						undefined,
 						10,
+						undefined,
 						context,
 					)
 				).items.map(({ id }) => id),

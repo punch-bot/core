@@ -11,7 +11,7 @@ facades, membranes, document routing, view projection, events, or clone chains.
 
 - Obsolete `pico` and `pico4` prototypes were removed.
 - `pico3` remains.
-- Packages 1–5 are implemented in `packages/durable`; later Pico5 runtime packages remain.
+- Packages 1–7 are implemented in `packages/durable`; later Pico5 runtime packages remain.
 
 ## 1. Records, cursors, and memory tables
 
@@ -113,8 +113,10 @@ Experimental variants under other Delta directories are not Pico APIs.
 
 Implement these packages as one milestone. Keep the implementation layers
 separate, but do not build a temporary untyped document-acquisition seam.
-Implement the generic `Tx` table surface these tests require: table reads,
-`ReadAfterWrite`, ID-creating writes, and full task replacement. Semantic
+Implement the generic `Tx` table surface these tests require: exact table reads,
+paginated conversation/entry/task scans, `ReadAfterWrite`, ID-creating writes,
+and full task replacement. Scans expose the Storage cursor and caller-selected
+limit; they never hide an unbounded full scan. Semantic
 conversation, entry, task, and scheduler behavior remains in Packages 13–17.
 
 Keep one Astra-immutable tracker per loaded document. Its trusted immutable

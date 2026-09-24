@@ -280,7 +280,7 @@ export const STORAGE_READ_BENCHMARKS: readonly StorageReadBenchmark[] = [
 		name: "entry page scan (100)",
 		async run(storage) {
 			return (
-				await storage.scanEntries({ conversationId: ROOT_CONVERSATION_ID }, undefined, 100, BACKGROUND_CONTEXT)
+				await storage.scanEntries({ conversationId: ROOT_CONVERSATION_ID }, 100, undefined, BACKGROUND_CONTEXT)
 			).items.length;
 		},
 		expected: () => 100,
@@ -291,8 +291,8 @@ export const STORAGE_READ_BENCHMARKS: readonly StorageReadBenchmark[] = [
 			return (
 				await storage.scanTasks(
 					{ kind: "benchmark.filtered", status: "pending", background: true },
-					undefined,
 					50,
+					undefined,
 					BACKGROUND_CONTEXT,
 				)
 			).items.length;
@@ -349,8 +349,8 @@ export const STORAGE_READ_BENCHMARKS: readonly StorageReadBenchmark[] = [
 			return (
 				await storage.scanEntries(
 					{ conversationId: dataset.deepestConversationId },
-					undefined,
 					100,
+					undefined,
 					BACKGROUND_CONTEXT,
 				)
 			).items.length;

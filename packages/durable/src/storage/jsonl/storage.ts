@@ -100,11 +100,7 @@ const isCurrentOnly = (record: DocumentCreate): boolean =>
 
 const sidecarKey = (file: string, seq: Seq, ordinal: number): string => JSON.stringify([file, seq, ordinal]);
 
-const jsonLine = (value: unknown): string => {
-	const encoded = JSON.stringify(value);
-	if (encoded === undefined) throw new TypeError("JSONL record is not serializable");
-	return `${encoded}\n`;
-};
+const jsonLine = (value: MainMarker | SidecarRecord): string => `${JSON.stringify(value)}\n`;
 
 const errorFromFile = (action: string, error: FileError): Error =>
 	new Error(`JSONL ${action} failed: ${error.message}`, { cause: error });
@@ -309,8 +305,8 @@ export class JsonlStorage implements Storage {
 		return this.store.conversation(id, context);
 	}
 
-	async scanConversations(cursor: Cursor | undefined, limit: number, context: Context) {
-		return this.store.scanConversations(cursor, limit, context);
+	async scanConversations(limit: number, cursor: Cursor | undefined, context: Context) {
+		return this.store.scanConversations(limit, cursor, context);
 	}
 
 	async entry(id: Id, context: Context) {
@@ -321,16 +317,16 @@ export class JsonlStorage implements Storage {
 		return this.store.findLatestHeadMarker(conversationId, atOrBeforeEntryId, context);
 	}
 
-	async scanEntries(query: EntryQuery, cursor: Cursor | undefined, limit: number, context: Context) {
-		return this.store.scanEntries(query, cursor, limit, context);
+	async scanEntries(query: EntryQuery, limit: number, cursor: Cursor | undefined, context: Context) {
+		return this.store.scanEntries(query, limit, cursor, context);
 	}
 
 	async task(id: Id, context: Context) {
 		return this.store.task(id, context);
 	}
 
-	async scanTasks(query: TaskQuery, cursor: Cursor | undefined, limit: number, context: Context) {
-		return this.store.scanTasks(query, cursor, limit, context);
+	async scanTasks(query: TaskQuery, limit: number, cursor: Cursor | undefined, context: Context) {
+		return this.store.scanTasks(query, limit, cursor, context);
 	}
 
 	async submission(id: Id, context: Context) {
@@ -349,8 +345,8 @@ export class JsonlStorage implements Storage {
 		return this.store.document(id, at, context);
 	}
 
-	async scanDocuments(query: DocumentQuery, cursor: Cursor | undefined, limit: number, context: Context) {
-		return this.store.scanDocuments(query, cursor, limit, context);
+	async scanDocuments(query: DocumentQuery, limit: number, cursor: Cursor | undefined, context: Context) {
+		return this.store.scanDocuments(query, limit, cursor, context);
 	}
 
 	async close(context: Context): Promise<void> {
