@@ -1,10 +1,7 @@
 import type { JsonValue } from "@punch-bot/chord";
 import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
-import type { DocumentCreate, Id, Seq, Storage, StorageWrite, TaskRecord } from "../src/types.ts";
-import { ROOT_CONVERSATION_ID } from "../src/types.ts";
-
-export const STORAGE_BENCHMARK_BACKENDS = ["memory", "sqlite", "jsonl"] as const;
-export type StorageBenchmarkBackend = (typeof STORAGE_BENCHMARK_BACKENDS)[number];
+import type { DocumentCreate, Id, Seq, Storage, StorageWrite, TaskRecord } from "../types.ts";
+import { ROOT_CONVERSATION_ID } from "../types.ts";
 
 export type StorageBenchmarkScale = {
 	readonly name: string;
@@ -376,6 +373,25 @@ export type StorageWriteBenchmark = {
 	readonly expected: number;
 	run(storage: Storage): Promise<number>;
 };
+
+/** Seed the common state expected by every write benchmark sample. */
+export async function seedStorageWriteBenchmark(storage: Storage): Promise<void> {
+	await storage.commit([{ type: "conversation", value: { id: ROOT_CONVERSATION_ID } }], BACKGROUND_CONTEXT);
+	await storage.commit(
+		await Promise.all(
+			Array.from({ length: 100 }, async (_, index) => ({
+				type: "entry" as const,
+				value: {
+					id: await storage.mintId(),
+					conversationId: ROOT_CONVERSATION_ID,
+					kind: "benchmark.baseline",
+					data: { index },
+				},
+			})),
+		),
+		BACKGROUND_CONTEXT,
+	);
+}
 
 export const STORAGE_WRITE_BENCHMARKS: readonly StorageWriteBenchmark[] = [
 	{
