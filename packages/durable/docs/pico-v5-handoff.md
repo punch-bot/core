@@ -106,10 +106,15 @@ never reclaimed and default no-fsync behavior matches the specification.
 
 ## 6–7. Tracker transaction core, definitions, and typed access
 
-Implement these packages as one milestone after Chord Delta selects and exposes
-one canonical Astra-immutable tracker; experimental variants are not Pico APIs.
-Keep the implementation layers separate, but do not build a temporary untyped
-document-acquisition seam.
+**Prerequisite:** `@earendil-works/chord/delta` exports the canonical
+Astra-immutable-optimized `track`, `Tracker`, `Change`, and `Prepared`.
+Experimental variants under other Delta directories are not Pico APIs.
+
+Implement these packages as one milestone. Keep the implementation layers
+separate, but do not build a temporary untyped document-acquisition seam.
+Implement the generic `Tx` table surface these tests require: table reads,
+`ReadAfterWrite`, ID-creating writes, and full task replacement. Semantic
+conversation, entry, task, and scheduler behavior remains in Packages 13–17.
 
 Keep one Astra-immutable tracker per loaded document. Its trusted immutable
 `value` is the current shareable revision. `prepare()` emits detached
@@ -159,7 +164,7 @@ Transaction-staged creation or migration enters the shared cache only after its
 enclosing Storage commit succeeds. All cold loads run on the Session line; a
 loaded immutable revision may be read without copying.
 
-Test callback failure; escaped-draft sealing and revocation; concurrent duplicate
+Test callback failure; escaped-draft revocation at callback settlement; concurrent duplicate
 acquisition; callback failure and success with a pending acquisition; late
 acquisition after sealing; concurrent initialization once; initial bases; family
 first-seed wins; scope/token mismatch; non-creating reads; shared immutable
@@ -217,13 +222,13 @@ commit; no intermediate candidate is adopted or published.
 
 ## 11. Chord document source
 
-**Prerequisite:** Chord exposes the normative atomic `ReplicatedStateSource`
-attachment and `replicatedState(source)` adoption contract.
+Chord's existing `ReplicatedStateSource` attachment and `replicatedState(source)`
+adoption contract already matches specification §9.1; this is Pico-side work.
 
-Make Chord replicated state adopt Pico's opaque committed document source through
-a supported race-free source contract. It must atomically attach in O(1) to the
-source's current immutable revision and later committed immutable
-revision/operation frames without another tracker, value copy, or re-diff. Pico
+Implement Pico's opaque committed document source on that contract. It must
+atomically attach in O(1) to the source's current immutable revision and later
+committed immutable revision/operation frames without another tracker, value
+copy, or re-diff. Pico
 remains the sole document mutator. Trusted immutable source revisions and
 operation placement payloads may share containers.
 

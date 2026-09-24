@@ -55,9 +55,9 @@ Required invariants:
 3. All visible progress is durable. There is no volatile publication path.
 4. External effects do not run inside the Session mutation transaction.
 5. Entries and IDs are immutable and never reused after a committed write.
-6. Document drafts are sealed against mutation when their transaction callback
-   settles and fully revoked when their change adopts or aborts. Values assigned
-   into a draft are copied by value.
+6. Document drafts are fully revoked when their transaction callback settles:
+   the Session synchronously prepares or aborts every open change at that point.
+   Values assigned into a draft are copied by value.
 7. The mutation line remains held through storage settlement and committed-state
    adoption. Listener callbacks run later, off the line.
 8. An uncertain storage failure is fatal to the open Session. It publishes
@@ -908,7 +908,7 @@ interface Tracker<T extends object> {
 Each loaded document owns one tracker whose `value` is its current immutable
 revision. Immutability is a trusted ownership contract, not runtime freezing:
 a revision and its descendants must never be mutated after transfer to the
-tracker. `prepare()` seals draft writes, emits detached self-contained
+tracker. `prepare()` revokes the draft, emits detached self-contained
 operations, and computes `value` with the optimized immutable applier before
 Storage admission. Unchanged subtrees are structurally shared with `base`.
 Operation placement payloads may also be shared with `value`; mutating either a
@@ -933,7 +933,7 @@ begin transaction
   acquire and memoize document changes by logical address
   mutate revocable Astra overlay drafts
 callback settles
-  seal Tx and every draft against further mutation
+  seal Tx; synchronously prepare or abort every open change, revoking every draft
   if any acquisition is pending: abort open changes, reject, then drain and abort it
 callback fails with no pending acquisition
   abort every open change; persist and publish nothing
@@ -972,9 +972,9 @@ version transitions still write a base when their prepared batch is empty; an
 equal-value version base does not emit a watch update.
 
 Values assigned into a draft are copied immediately by value. Repeated
-placements are independent. Draft writes and all `Tx` operations reject after
-the callback settles; draft reads remain borrowed until adopt or abort fully
-revokes every handle before `commit()` settles.
+placements are independent. Draft reads, draft writes, and all `Tx` operations
+reject after the callback settles. The prepared immutable value remains readable
+by Session-owned checkpoint and Storage preparation.
 
 ```ts
 let escaped: Draft<LiveState>;
@@ -1492,6 +1492,12 @@ becomes one text content item; no stream becomes an empty content list. Explicit
 text in explicit result content is bounded by the same limits before transcript
 persistence; non-text content is retained as declared by its pi-ai type.
 
+`stream()` never spills complete output to a file because spilling requires a
+filesystem, which may be remote or unavailable. A tool that must preserve
+complete output spills through the `ExecutionEnv` or `FileSystem` it was given,
+such as shell execution with spill capture, and reports the resulting path in its
+result details or progress.
+
 `progress(value)` replaces the invocation's complete JSON `progress` payload; it
 does not merge keys. Its promise resolves after the corresponding or coalesced
 document commit. During normal settlement, accepted output updates drain before
@@ -1705,7 +1711,7 @@ does not delete transcript history.
 
 ### 9.1 Document source
 
-Chord exposes this source-adoption contract from its replicated-state layer:
+Chord's existing replicated-state layer exposes this source-adoption contract:
 
 ```ts
 interface ReplicatedStateSourceFrame<T> {
@@ -2173,9 +2179,8 @@ initial implementation.
 
 These are contracts, not invitations to add defensive machinery:
 
-- **Detached draft work:** draft writes and all `Tx` operations reject after the
-  Session callback settles. Draft reads remain borrowed until adoption or abort
-  revokes every handle before `commit()` settles. Fire-and-forget work that runs
+- **Detached draft work:** draft reads, draft writes, and all `Tx` operations
+  reject after the Session callback settles. Fire-and-forget work that runs
   before callback settlement can still mutate the active transaction and is
   unsupported.
 - **Read after write:** read every required table row before the first table
