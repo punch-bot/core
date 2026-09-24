@@ -1,5 +1,5 @@
 import type { Context, JsonValue } from "@punch-bot/chord";
-import { applyImmutable, type Op } from "@punch-bot/chord/delta";
+import { apply, type Op } from "@punch-bot/chord/delta";
 import type {
 	ConversationRecord,
 	Cursor,
@@ -449,7 +449,7 @@ export class SqliteStorage implements Storage {
 			if (revision.kind !== "delta" || revision.version !== base.version) {
 				throw new Error(`Document ${id} crosses a stored version boundary without a base`);
 			}
-			value = applyImmutable(value, parseJson<readonly Op[]>(revision.content)) as JsonObject;
+			value = apply(value, parseJson<readonly Op[]>(revision.content)) as JsonObject;
 		}
 		return { record, version: base.version, value };
 	}
