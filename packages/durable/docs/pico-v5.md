@@ -57,7 +57,7 @@ Required invariants:
 5. Entries and IDs are immutable and never reused after a committed write.
 6. Document drafts are fully revoked when their transaction callback settles:
    the Session synchronously prepares or aborts every open change at that point.
-   Values assigned into a draft are copied by value.
+   Values assigned into a draft are copied by value and must be strict JSON.
 7. The mutation line remains held through storage settlement and committed-state
    adoption. Listener callbacks run later, off the line.
 8. An uncertain storage failure is fatal to the open Session. It publishes
@@ -939,9 +939,7 @@ callback fails with no pending acquisition
   abort every open change; persist and publish nothing
 callback succeeds with no pending acquisition
   prepare every open change -> immutable next revision + self-contained Chord Op[]
-  validate strict JSON in operation placement payloads
   Session evaluates each required/ordinary document write exactly once
-  validate strict JSON in every selected complete base
   prepare every affected loaded conversation mount revision
   Storage.commit persists the atomic batch while the Session line remains held
 storage succeeds
@@ -953,15 +951,20 @@ storage fails
 
 A pending acquisition that resolves after sealing never exposes a draft; its
 change is aborted and its promise rejects. The Session observes every such
-settlement before releasing the line. Initializer, migration, fork-copy, loaded,
-and replacement roots are detached into exclusive kernel ownership before they
-become immutable tracker revisions; migration callbacks never receive a live
-tracker revision.
+settlement before releasing the line. Initializer, migration, and replacement
+roots come from caller code: the Session copies each one into exclusive kernel
+ownership, rejecting any value that is not strict JSON, before it becomes an
+immutable tracker revision. Loaded and fork-copy roots are already detached
+strict JSON from Storage and enter the tracker without another copy. Chord's
+`track()` and `prepareReplace()` take ownership in O(1) without traversal, so
+every root they receive must come from one of these sources. Migration callbacks
+never receive a live tracker revision.
 
 Preparation, validation, checkpoint, or mounted-view preparation failure occurs
-before Storage admission and rolls back normally. Strict-JSON validation walks
-every prepared operation placement payload and every complete value selected as
-a base. Tracker branding and `baseRevision` enforce ownership and staleness; the
+before Storage admission and rolls back normally. The Session performs no
+strict-JSON walk of prepared operations or selected bases: roots are checked on
+entry and Chord checks every draft placement, so every revision, operation
+payload, and base is strict JSON by construction. Tracker branding and `baseRevision` enforce ownership and staleness; the
 Session never substitutes caller-created prepared values. The prepared immutable
 candidate itself becomes the adopted and published value. Storage receives that complete value only when the
 Session selects a base; otherwise it receives only the prepared operation batch.
@@ -972,7 +975,12 @@ version transitions still write a base when their prepared batch is empty; an
 equal-value version base does not emit a watch update.
 
 Values assigned into a draft are copied immediately by value. Repeated
-placements are independent. Draft reads, draft writes, and all `Tx` operations
+placements are independent. Chord checks each placement while copying it and
+throws at the offending assignment, before the draft changes, when the value is
+not strict JSON: `undefined` array elements or nested object values, non-finite
+numbers, functions, symbols, bigints, accessors, symbol keys, sparse arrays, or
+objects whose prototype is neither `Object.prototype` nor `null`. Assigning
+`undefined` directly to an object property deletes that property. Draft reads, draft writes, and all `Tx` operations
 reject after the callback settles. The prepared immutable value remains readable
 by Session-owned checkpoint and Storage preparation.
 

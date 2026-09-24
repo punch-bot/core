@@ -107,7 +107,8 @@ never reclaimed and default no-fsync behavior matches the specification.
 ## 6–7. Tracker transaction core, definitions, and typed access
 
 **Prerequisite:** `@earendil-works/chord/delta` exports the canonical
-Astra-immutable-optimized `track`, `Tracker`, `Change`, and `Prepared`.
+Astra-immutable-optimized `track`, `Tracker`, `Change`, and `Prepared`, and its
+draft placements reject values that are not strict JSON.
 Experimental variants under other Delta directories are not Pico APIs.
 
 Implement these packages as one milestone. Keep the implementation layers
@@ -138,8 +139,8 @@ unresolved acquisition rejects: seal `Tx`, abort open changes, drain and abort
 the pending acquisition, and observe its failure. Callback failure aborts every
 change. Callback success prepares every change before Storage admission.
 
-Validate strict JSON in every prepared operation placement payload and every
-complete value selected as a base. Tracker branding and revision checks enforce
+Do not walk prepared operation payloads or selected bases for strict JSON; they
+are strict JSON by construction. Tracker branding and revision checks enforce
 ownership and staleness. Evaluate each staged document write exactly once and
 pass Storage only the selected base value or operation batch. Keep every previous immutable revision unchanged through Storage
 settlement. On success, adopt every prepared value by pointer swap and enqueue
@@ -148,9 +149,11 @@ Storage failure, abort prepared changes, poison the Session, and publish nothing
 Preparation failures roll back normally; Package 8 adds checkpoint selection and
 its failure path.
 
-Loaded roots, initializers, migrations, fork copies, and replacement roots enter
-exclusive kernel ownership before becoming trusted immutable revisions. Values
-assigned through drafts are copied per placement. Astra empty batches suppress
+Initializer, migration, and replacement roots are copied into exclusive kernel
+ownership with a strict-JSON check before becoming trusted immutable revisions.
+Loaded and fork-copy roots come detached from Storage and are tracked without
+another copy. Chord copies and strict-JSON-checks every draft placement and
+throws at the offending assignment. Astra empty batches suppress
 ordinary writes, while replayable nonempty structural no-ops remain valid writes
 and publications. No runtime freezing or second operation-payload copy is
 required.
@@ -172,7 +175,8 @@ snapshots and stable prior revisions; empty-batch suppression and replayable
 redundant structural no-ops; multi-document preparation failure; uncertain
 Storage failure poisoning; old-revision stability through Storage settlement;
 pointer-swap and replacement adoption; operation/revision payload sharing under
-the trusted no-mutation contract; assignment copying and repeated-placement
+the trusted no-mutation contract; non-JSON initializer and draft-placement
+rejection; assignment copying and repeated-placement
 independence; authority and prepared-draft non-escape; terminal-task rejection;
 task-derived conversation identity; retirement; reincarnation-bound sources;
 and unload/reload. Include create-task-then-document,
