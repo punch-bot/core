@@ -1483,8 +1483,8 @@ type ToolRegistration = Tool & {
 };
 ```
 
-Omitted `replay` is `unsafe`. Omitted output bounds are 64 KiB, 200 lines, and
-`retain: "head"`. `stream()` synchronously accepts UTF-8 output into that
+Omitted `replay` is `unsafe`. Omitted output bounds are 50 KiB, 2,000 lines,
+and `retain: "head"`. `stream()` synchronously accepts UTF-8 output into that
 invocation-owned bounded buffer and throws after invocation end. Throttled
 commits publish the retained output and dropped byte/line counts in the tool
 presentation document. If `execute()` omits `content`, the final retained stream
