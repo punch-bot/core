@@ -74,14 +74,14 @@ describe("Session transaction tables", () => {
 		const conversationId = await createConversation(session);
 		await session.commit(async (tx) => {
 			expect(await tx.conversation(conversationId)).toEqual({ id: conversationId });
-			expect(await tx.scanConversations(1)).toEqual({ items: [{ id: conversationId }] });
+			expect(await tx.scanConversations({}, 1)).toEqual({ items: [{ id: conversationId }] });
 			expect(await tx.scanTasks({ conversationId }, 10)).toEqual({ items: [] });
 			expect(await tx.scanEntries({ conversationId }, 10)).toEqual({ items: [] });
 			await tx.appendEntry(conversationId, { kind: "note" });
 			await expect(tx.conversation(conversationId)).rejects.toBeInstanceOf(ReadAfterWrite);
 			await expect(tx.task(1)).rejects.toThrow("Tx.task() cannot read tables after the first table write");
 			await expect(tx.entry(1)).rejects.toBeInstanceOf(ReadAfterWrite);
-			await expect(tx.scanConversations(10)).rejects.toBeInstanceOf(ReadAfterWrite);
+			await expect(tx.scanConversations({}, 10)).rejects.toBeInstanceOf(ReadAfterWrite);
 			await expect(tx.scanEntries({ conversationId }, 10)).rejects.toBeInstanceOf(ReadAfterWrite);
 			// Document access remains available after table writes.
 			(await tx.doc(NotesDoc, conversationId)).text = "after write";
@@ -97,10 +97,10 @@ describe("Session transaction tables", () => {
 			await createConversation(session),
 		];
 		await session.commit(async (tx) => {
-			const first = await tx.scanConversations(2);
+			const first = await tx.scanConversations({}, 2);
 			expect(first.items.map(({ id }) => id)).toEqual(ids.slice(0, 2));
 			expect(first.next).toBeDefined();
-			const second = await tx.scanConversations(2, first.next);
+			const second = await tx.scanConversations({}, 2, first.next);
 			expect(second.items.map(({ id }) => id)).toEqual(ids.slice(2));
 			expect(second.next).toBeUndefined();
 		}, context);
@@ -120,7 +120,7 @@ describe("Session transaction tables", () => {
 	it("creates conversations, entries, and tasks with minted IDs", async () => {
 		const { session, storage, publications } = openTestSession();
 		const created = await session.commit(async (tx) => {
-			const conversation = await tx.createConversation({});
+			const conversation = await tx.createConversation();
 			const first = await tx.appendEntry(conversation.id, { kind: "note", data: "one" });
 			const headed = await tx.appendEntry(conversation.id, { kind: "summary", head: "self" });
 			const task = await tx.createTask(
@@ -245,7 +245,7 @@ describe("Session transaction tables", () => {
 		for (const document of documents) expect(document.conversationId).toBe(conversationId);
 
 		await session.commit(async (tx) => {
-			await tx.createConversation({});
+			await tx.createConversation();
 			(await tx.doc(ProgressDoc, taskId)).lines.push("committed task");
 		}, context);
 		await flush();

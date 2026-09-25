@@ -160,7 +160,7 @@ export function documentCreate(definition: AnyDocDefinition, address: DocumentAd
 }
 
 /** Reject typed access whose token disagrees with the persisted scope, history, or fork semantics. */
-export function checkRecordScope(definition: AnyDocDefinition, record: DocumentRecord): void {
+export function checkRecordScope(definition: AnyDocDefinition, record: DocumentCreate | DocumentRecord): void {
 	if (
 		record.scope.kind !== definition.scope ||
 		(record.scope.kind === "conversation" &&
@@ -171,7 +171,11 @@ export function checkRecordScope(definition: AnyDocDefinition, record: DocumentR
 }
 
 /** Reject typed access to a stored version the supplied definition cannot use. */
-export function checkRecordVersion(definition: AnyDocDefinition, record: DocumentRecord, version: number): void {
+export function checkRecordVersion(
+	definition: AnyDocDefinition,
+	record: DocumentCreate | DocumentRecord,
+	version: number,
+): void {
 	if (version > definition.version) {
 		throw new Error(`Document ${record.id} (${record.kind}) has newer version ${version} than ${definition.version}`);
 	}
@@ -182,8 +186,18 @@ export function checkRecordVersion(definition: AnyDocDefinition, record: Documen
 
 /** Validate and materialize a detached stored value for typed access. */
 export function materializeDocument(definition: AnyDocDefinition, stored: StoredDocument): JsonObject {
-	checkRecordScope(definition, stored.record);
-	checkRecordVersion(definition, stored.record, stored.version);
-	if (stored.version === definition.version) return stored.value;
-	return copyJson(definition.migrate!(stored.value, stored.version)) as JsonObject;
+	return materializeDocumentValue(definition, stored.record, stored.version, stored.value);
+}
+
+/** Validate and materialize one detached value before its first persisted incarnation. */
+export function materializeDocumentValue(
+	definition: AnyDocDefinition,
+	record: DocumentCreate | DocumentRecord,
+	version: number,
+	value: JsonObject,
+): JsonObject {
+	checkRecordScope(definition, record);
+	checkRecordVersion(definition, record, version);
+	if (version === definition.version) return value;
+	return copyJson(definition.migrate!(value, version)) as JsonObject;
 }

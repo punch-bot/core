@@ -1,6 +1,8 @@
 import type { Context, JsonValue } from "@punch-bot/chord";
 import { apply, type Op } from "@punch-bot/chord/delta";
+import { StorageRejected } from "../../errors.ts";
 import type {
+	ConversationQuery,
 	ConversationRecord,
 	Cursor,
 	DocumentAddress,
@@ -40,6 +42,7 @@ type IdRow = { readonly id: number };
 type MetadataRow = { readonly next_id: string; readonly next_seq: number };
 type DocumentAction = {
 	create?: DocumentCreate;
+	copy?: Extract<StorageWrite, { readonly type: "document.copy" }>["source"];
 	content?: DocumentContent;
 	retire: boolean;
 };
@@ -109,6 +112,7 @@ const writeId = (write: StorageWrite): Id | undefined => {
 		case "submission":
 			return write.value.id;
 		case "document.create":
+		case "document.copy":
 			return write.record.id;
 		case "document.change":
 		case "document.retire":
@@ -213,16 +217,26 @@ export class SqliteStorage implements Storage {
 	}
 
 	async scanConversations(
+		query: ConversationQuery,
 		limit: number,
 		cursor: Cursor | undefined,
 		_context: Context,
 	): Promise<Page<ConversationRecord, Cursor>> {
 		this.assertOpen();
-		const after = cursorId(cursor) ?? -1;
+		const clauses = ["id > ?"];
+		const params: SqliteValue[] = [cursorId(cursor) ?? -1];
+		if (query.ownerConversationId !== undefined) {
+			clauses.push("owner_conversation_id = ?");
+			params.push(query.ownerConversationId);
+		}
+		if (query.ownerTaskId !== undefined) {
+			clauses.push("owner_task_id = ?");
+			params.push(query.ownerTaskId);
+		}
+		params.push(limit + 1);
 		const rows = allRows<JsonRow>(
-			this.db.prepare("SELECT record FROM conversations WHERE id > ? ORDER BY id LIMIT ?"),
-			after,
-			limit + 1,
+			this.db.prepare(`SELECT record FROM conversations WHERE ${clauses.join(" AND ")} ORDER BY id LIMIT ?`),
+			...params,
 		);
 		return page(
 			rows.map((row) => parseJson<ConversationRecord>(row.record)),
@@ -422,36 +436,7 @@ export class SqliteStorage implements Storage {
 
 	async document(id: Id, at: DocumentPoint, _context: Context): Promise<StoredDocument | undefined> {
 		this.assertOpen();
-		const row = getRow<JsonRow>(this.db.prepare("SELECT record FROM documents WHERE id = ?"), id);
-		if (row === undefined) return undefined;
-		const record = parseJson<DocumentRecord>(row.record);
-		if (at !== "current" && isCurrentOnly(record)) {
-			throw new Error(`Document ${id} does not retain historical content`);
-		}
-		if (!isAliveAt(record, at)) return undefined;
-		const upper = at === "current" ? Number.MAX_SAFE_INTEGER : at;
-		const base = getRow<RevisionRow>(
-			this.db.prepare(`SELECT seq, kind, version, content FROM document_revisions
-				WHERE document_id = ? AND kind = 'base' AND seq <= ? ORDER BY seq DESC LIMIT 1`),
-			id,
-			upper,
-		);
-		if (base === undefined) throw new Error(`Document ${id} is missing a required base`);
-		let value = parseJson<JsonObject>(base.content);
-		const tail = allRows<RevisionRow>(
-			this.db.prepare(`SELECT seq, kind, version, content FROM document_revisions
-				WHERE document_id = ? AND seq > ? AND seq <= ? ORDER BY seq`),
-			id,
-			base.seq,
-			upper,
-		);
-		for (const revision of tail) {
-			if (revision.kind !== "delta" || revision.version !== base.version) {
-				throw new Error(`Document ${id} crosses a stored version boundary without a base`);
-			}
-			value = apply(value, parseJson<readonly Op[]>(revision.content)) as JsonObject;
-		}
-		return { record, version: base.version, value };
+		return this.materializeDocument(id, at);
 	}
 
 	async scanDocuments(
@@ -496,6 +481,39 @@ export class SqliteStorage implements Storage {
 		return row === undefined ? undefined : parseJson<ConversationRecord>(row.record);
 	}
 
+	private materializeDocument(id: Id, at: DocumentPoint): StoredDocument | undefined {
+		const row = getRow<JsonRow>(this.db.prepare("SELECT record FROM documents WHERE id = ?"), id);
+		if (row === undefined) return undefined;
+		const record = parseJson<DocumentRecord>(row.record);
+		if (at !== "current" && isCurrentOnly(record)) {
+			throw new Error(`Document ${id} does not retain historical content`);
+		}
+		if (!isAliveAt(record, at)) return undefined;
+		const upper = at === "current" ? Number.MAX_SAFE_INTEGER : at;
+		const base = getRow<RevisionRow>(
+			this.db.prepare(`SELECT seq, kind, version, content FROM document_revisions
+				WHERE document_id = ? AND kind = 'base' AND seq <= ? ORDER BY seq DESC LIMIT 1`),
+			id,
+			upper,
+		);
+		if (base === undefined) throw new Error(`Document ${id} is missing a required base`);
+		let value = parseJson<JsonObject>(base.content);
+		const tail = allRows<RevisionRow>(
+			this.db.prepare(`SELECT seq, kind, version, content FROM document_revisions
+				WHERE document_id = ? AND seq > ? AND seq <= ? ORDER BY seq`),
+			id,
+			base.seq,
+			upper,
+		);
+		for (const revision of tail) {
+			if (revision.kind !== "delta" || revision.version !== base.version) {
+				throw new Error(`Document ${id} crosses a stored version boundary without a base`);
+			}
+			value = apply(value, parseJson<readonly Op[]>(revision.content)) as JsonObject;
+		}
+		return { record, version: base.version, value };
+	}
+
 	private candidateNextId(writes: readonly StorageWrite[]): Id {
 		let nextId = this.nextId;
 		for (const write of writes) {
@@ -510,8 +528,9 @@ export class SqliteStorage implements Storage {
 		const lookup = this.db.prepare("SELECT record_type FROM record_ids WHERE id = ?");
 		for (const write of writes) {
 			if (write.type === "document.change" || write.type === "document.retire") continue;
-			const table: TableName = write.type === "document.create" ? "document" : write.type;
-			const id = write.type === "document.create" ? write.record.id : write.value.id;
+			const document = write.type === "document.create" || write.type === "document.copy";
+			const table: TableName = document ? "document" : write.type;
+			const id = document ? write.record.id : write.value.id;
 			const existing = getRow<RecordIdRow>(lookup, id)?.record_type;
 			const earlier = claimed.get(id);
 			if (table === "conversation" || table === "entry" || table === "document") {
@@ -529,10 +548,15 @@ export class SqliteStorage implements Storage {
 	private prepareDocumentActions(writes: readonly StorageWrite[]): Map<Id, DocumentAction> {
 		const actions = new Map<Id, DocumentAction>();
 		for (const write of writes) {
-			if (write.type !== "document.create" && write.type !== "document.change" && write.type !== "document.retire") {
+			if (
+				write.type !== "document.create" &&
+				write.type !== "document.copy" &&
+				write.type !== "document.change" &&
+				write.type !== "document.retire"
+			) {
 				continue;
 			}
-			const id = write.type === "document.create" ? write.record.id : write.id;
+			const id = write.type === "document.create" || write.type === "document.copy" ? write.record.id : write.id;
 			let action = actions.get(id);
 			if (action === undefined) {
 				action = { retire: false };
@@ -540,14 +564,23 @@ export class SqliteStorage implements Storage {
 			}
 			switch (write.type) {
 				case "document.create":
-					if (action.create !== undefined || action.content !== undefined) {
+					if (action.create !== undefined || action.content !== undefined || action.copy !== undefined) {
 						throw new Error(`Document ${id} has more than one content command`);
 					}
 					action.create = write.record;
 					action.content = write.content;
 					break;
+				case "document.copy":
+					if (action.create !== undefined || action.content !== undefined || action.copy !== undefined) {
+						throw new Error(`Document ${id} has more than one content command`);
+					}
+					action.create = write.record;
+					action.copy = write.source;
+					break;
 				case "document.change":
-					if (action.content !== undefined) throw new Error(`Document ${id} has more than one content command`);
+					if (action.content !== undefined || action.copy !== undefined) {
+						throw new Error(`Document ${id} has more than one content command`);
+					}
 					action.content = write.content;
 					break;
 				case "document.retire":
@@ -562,6 +595,9 @@ export class SqliteStorage implements Storage {
 	private checkDocumentActions(actions: ReadonlyMap<Id, DocumentAction>): void {
 		const liveCounts = new Map<string, number>();
 		for (const [id, action] of actions) {
+			if (action.copy !== undefined && actions.has(action.copy.id)) {
+				throw new StorageRejected(`Document copy ${id} source is changed in the copy batch`);
+			}
 			const row = getRow<JsonRow>(this.db.prepare("SELECT record FROM documents WHERE id = ?"), id);
 			const existing = row === undefined ? undefined : parseJson<DocumentRecord>(row.record);
 			if (action.create === undefined && existing === undefined) throw new Error(`Unknown document: ${id}`);
@@ -611,8 +647,15 @@ export class SqliteStorage implements Storage {
 			case "conversation":
 				this.claimId(write.value.id, "conversation");
 				this.db
-					.prepare("INSERT INTO conversations (id, record) VALUES (?, ?)")
-					.run(write.value.id, encodeJson(write.value));
+					.prepare(
+						"INSERT INTO conversations (id, owner_conversation_id, owner_task_id, record) VALUES (?, ?, ?, ?)",
+					)
+					.run(
+						write.value.id,
+						write.value.owner?.conversationId ?? null,
+						write.value.owner?.taskId ?? null,
+						encodeJson(write.value),
+					);
 				break;
 			case "entry":
 				this.claimId(write.value.id, "entry");
@@ -652,6 +695,7 @@ export class SqliteStorage implements Storage {
 					);
 				break;
 			case "document.create":
+			case "document.copy":
 			case "document.change":
 			case "document.retire":
 				break;
@@ -664,6 +708,28 @@ export class SqliteStorage implements Storage {
 
 	private applyDocumentActions(actions: ReadonlyMap<Id, DocumentAction>, seq: Seq): void {
 		for (const [id, action] of actions) {
+			let content = action.content;
+			if (action.copy !== undefined) {
+				try {
+					const stored = this.materializeDocument(action.copy.id, action.copy.at);
+					if (stored === undefined) throw new Error(`Fork source document ${action.copy.id} cannot be read`);
+					const create = action.create!;
+					if (
+						stored.record.scope.kind !== "conversation" ||
+						create.scope.kind !== "conversation" ||
+						stored.record.kind !== create.kind ||
+						stored.record.key !== create.key ||
+						stored.record.history !== create.history ||
+						stored.record.fork !== create.fork
+					) {
+						throw new Error(`Fork source document ${action.copy.id} does not match the copied record`);
+					}
+					content = { kind: "base", version: stored.version, value: stored.value };
+				} catch (error) {
+					if (error instanceof StorageRejected) throw error;
+					throw new StorageRejected(`Document copy ${id} was rejected`, { cause: error });
+				}
+			}
 			let record: DocumentRecord;
 			if (action.create !== undefined) {
 				record = {
@@ -693,17 +759,16 @@ export class SqliteStorage implements Storage {
 				record = parseJson<DocumentRecord>(row.record);
 			}
 
-			if (action.content !== undefined) {
-				if (action.content.kind === "base" && isCurrentOnly(record)) {
+			if (content !== undefined) {
+				if (content.kind === "base" && isCurrentOnly(record)) {
 					this.db.prepare("DELETE FROM document_revisions WHERE document_id = ?").run(id);
 				}
-				const encodedContent =
-					action.content.kind === "base" ? encodeJson(action.content.value) : encodeJson(action.content.ops);
+				const encodedContent = content.kind === "base" ? encodeJson(content.value) : encodeJson(content.ops);
 				this.db
 					.prepare(
 						"INSERT INTO document_revisions (document_id, seq, kind, version, content) VALUES (?, ?, ?, ?, ?)",
 					)
-					.run(id, seq, action.content.kind, action.content.version, encodedContent);
+					.run(id, seq, content.kind, content.version, encodedContent);
 			}
 
 			if (action.retire) {

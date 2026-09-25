@@ -624,12 +624,7 @@ describe("Session historical document snapshots", () => {
 		});
 
 		const childId = await session.commit(
-			async (tx) =>
-				(
-					await tx.createConversation({
-						parent: { conversationId, at: secondEntry },
-					})
-				).id,
+			async (tx) => (await tx.forkConversation(conversationId, secondEntry)).id,
 			context,
 		);
 		expect(await session.snapshotAsOf(V3, childId, firstEntry, context)).toEqual({ count: 1, version: 3 });

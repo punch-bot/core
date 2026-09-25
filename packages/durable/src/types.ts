@@ -143,7 +143,7 @@ export type ConversationRecord = {
 		readonly conversationId: Id;
 		readonly at: Id;
 	};
-	/** Creator edge used for authorization, subtree abort, and subtree idle waits. */
+	/** Creator edge used for attribution, subtree abort, and subtree idle waits. */
 	readonly owner?: {
 		readonly conversationId: Id;
 		readonly taskId: Id;
@@ -426,6 +426,12 @@ export type Page<T, C> = {
 /** Backend-owned JSON continuation state that callers only round-trip to the same scan. */
 export type Cursor = Readonly<Record<string, JsonValue>>;
 
+/** Optional filters for an ordered conversation scan. */
+export type ConversationQuery = {
+	readonly ownerConversationId?: Id;
+	readonly ownerTaskId?: Id;
+};
+
 /** Inclusive ID bounds for a newest-first scan of one conversation's fork-aware history. */
 export type EntryQuery = {
 	readonly conversationId: Id;
@@ -475,6 +481,12 @@ export type DocumentContent =
 			readonly ops: readonly Op[];
 	  };
 
+/** Exact persisted source selected for a definition-free document copy. */
+export type DocumentCopySource = {
+	readonly id: Id;
+	readonly at: DocumentPoint;
+};
+
 /** Detached materialized value and stored definition version at a selected point. */
 export type StoredDocument = {
 	readonly record: DocumentRecord;
@@ -493,6 +505,7 @@ export type StorageWrite =
 			readonly record: DocumentCreate;
 			readonly content: Extract<DocumentContent, { readonly kind: "base" }>;
 	  }
+	| { readonly type: "document.copy"; readonly record: DocumentCreate; readonly source: DocumentCopySource }
 	| {
 			readonly type: "document.change";
 			readonly id: Id;
@@ -508,7 +521,11 @@ export interface Tx {
 	conversation(id: Id): Promise<ConversationRecord | undefined>;
 	entry(id: Id): Promise<EntryRecord | undefined>;
 	task(id: Id): Promise<TaskRecord<JsonValue, JsonValue, JsonValue> | undefined>;
-	scanConversations(limit: number, cursor?: Cursor): Promise<Page<ConversationRecord, Cursor>>;
+	scanConversations(
+		query: ConversationQuery,
+		limit: number,
+		cursor?: Cursor,
+	): Promise<Page<ConversationRecord, Cursor>>;
 	scanEntries(query: EntryQuery, limit: number, cursor?: Cursor): Promise<Page<EntryRecord, Cursor>>;
 	scanTasks(
 		query: TaskQuery,
@@ -516,8 +533,10 @@ export interface Tx {
 		cursor?: Cursor,
 	): Promise<Page<TaskRecord<JsonValue, JsonValue, JsonValue>, Cursor>>;
 
-	/** Returned records are Session-owned immutable values and may be shared with commit listeners. */
-	createConversation(value: Omit<ConversationRecord, "id">): Promise<ConversationRecord>;
+	/** Create an independent ownerless conversation. */
+	createConversation(): Promise<ConversationRecord>;
+	/** Create an ownerless history fork at one concrete visible entry. */
+	forkConversation(parentConversationId: Id, at: Id): Promise<ConversationRecord>;
 	/** Returned records are Session-owned immutable values and may be shared with commit listeners. */
 	appendEntry(conversationId: Id, value: EntryDraft): Promise<EntryRecord>;
 	createTask<I, S extends { phase: string }, R, H extends object>(
@@ -638,6 +657,7 @@ export interface Storage {
 
 	/** Scan conversations in ascending ID order. */
 	scanConversations(
+		query: ConversationQuery,
 		limit: number,
 		cursor: Cursor | undefined,
 		context: Context,

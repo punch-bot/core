@@ -1,6 +1,7 @@
 import type { Context, JsonValue } from "@punch-bot/chord";
 import type { FileError, FileSystem } from "../../env/index.ts";
 import type {
+	ConversationQuery,
 	Cursor,
 	DocumentAddress,
 	DocumentContent,
@@ -305,8 +306,8 @@ export class JsonlStorage implements Storage {
 		return this.store.conversation(id, context);
 	}
 
-	async scanConversations(limit: number, cursor: Cursor | undefined, context: Context) {
-		return this.store.scanConversations(limit, cursor, context);
+	async scanConversations(query: ConversationQuery, limit: number, cursor: Cursor | undefined, context: Context) {
+		return this.store.scanConversations(query, limit, cursor, context);
 	}
 
 	entry(id: Id, context: Context): ReturnType<Storage["entry"]>;

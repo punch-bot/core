@@ -285,13 +285,63 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 				context,
 			);
 
-			const first = await storage.scanConversations(2, undefined, context);
+			const first = await storage.scanConversations({}, 2, undefined, context);
 			expect(first.items.map(({ id }) => id)).toEqual([rootId, secondId]);
 			expect(first.next).toBeDefined();
 			const roundTrippedCursor = JSON.parse(JSON.stringify(first.next)) as NonNullable<typeof first.next>;
-			const second = await storage.scanConversations(2, roundTrippedCursor, context);
+			const second = await storage.scanConversations({}, 2, roundTrippedCursor, context);
 			expect(second.items.map(({ id }) => id)).toEqual([thirdId]);
 			expect(second.next).toBeUndefined();
+		}),
+
+		createCase(options, "filters and pages conversations by durable owner edges", async (storage) => {
+			const rootId = await createRoot(storage);
+			const otherOwnerId = await storage.mintId();
+			const firstTaskId = await storage.mintId();
+			const secondTaskId = await storage.mintId();
+			const firstId = await storage.mintId();
+			const secondId = await storage.mintId();
+			const thirdId = await storage.mintId();
+			await storage.commit(
+				[
+					{ type: "conversation", value: { id: otherOwnerId } },
+					{
+						type: "conversation",
+						value: { id: firstId, owner: { conversationId: rootId, taskId: firstTaskId } },
+					},
+					{
+						type: "conversation",
+						value: { id: secondId, owner: { conversationId: rootId, taskId: secondTaskId } },
+					},
+					{
+						type: "conversation",
+						value: { id: thirdId, owner: { conversationId: otherOwnerId, taskId: firstTaskId } },
+					},
+				],
+				context,
+			);
+
+			const first = await storage.scanConversations({ ownerConversationId: rootId }, 1, undefined, context);
+			expect(first.items.map(({ id }) => id)).toEqual([firstId]);
+			expect(first.next).toBeDefined();
+			const second = await storage.scanConversations({ ownerConversationId: rootId }, 1, first.next, context);
+			expect(second.items.map(({ id }) => id)).toEqual([secondId]);
+			expect(second.next).toBeUndefined();
+			expect(
+				(await storage.scanConversations({ ownerTaskId: firstTaskId }, 10, undefined, context)).items.map(
+					({ id }) => id,
+				),
+			).toEqual([firstId, thirdId]);
+			expect(
+				(
+					await storage.scanConversations(
+						{ ownerConversationId: rootId, ownerTaskId: firstTaskId },
+						10,
+						undefined,
+						context,
+					)
+				).items.map(({ id }) => id),
+			).toEqual([firstId]);
 		}),
 
 		createCase(options, "scans deep fork history newest-first through every ancestor cap", async (storage) => {
@@ -789,6 +839,206 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 			(read.value.rows as Array<{ value: number }>)[0]!.value = -1_000;
 			expect((await storage.document(id, "current", context))?.value).toEqual(current);
 		}),
+
+		createCase(
+			options,
+			"copies stored document bases independently and rejects ambiguous sources",
+			async (storage) => {
+				const rootId = await createRoot(storage);
+				const childId = await storage.mintId();
+				const secondChildId = await storage.mintId();
+				await storage.commit(
+					[
+						{ type: "conversation", value: { id: childId } },
+						{ type: "conversation", value: { id: secondChildId } },
+					],
+					context,
+				);
+				const sourceId = await storage.mintId();
+				const sourceRecord = {
+					id: sourceId,
+					kind: "copy.source",
+					scope: { kind: "conversation", conversationId: rootId },
+					history: "rewindable",
+					fork: "asOf",
+				} satisfies DocumentCreate;
+				const createdAt = await storage.commit(
+					[
+						{
+							type: "document.create",
+							record: sourceRecord,
+							content: { kind: "base", version: 2, value: { count: 1, rows: [{ value: "base" }] } },
+						},
+					],
+					context,
+				);
+				await storage.commit(
+					[
+						{
+							type: "document.change",
+							id: sourceId,
+							content: {
+								kind: "delta",
+								version: 2,
+								ops: [
+									["s", ["count"], 2],
+									["p", ["rows"], 1, 0, [{ value: "current" }]],
+								],
+							},
+						},
+					],
+					context,
+				);
+				const historicalCopyId = await storage.mintId();
+				const currentCopyId = await storage.mintId();
+				const retiredCopyId = await storage.mintId();
+				const childRecord = (id: Id, conversationId: Id): DocumentCreate => ({
+					id,
+					kind: sourceRecord.kind,
+					scope: { kind: "conversation", conversationId },
+					history: "rewindable",
+					fork: "asOf",
+				});
+				await storage.commit(
+					[
+						{
+							type: "document.copy",
+							record: childRecord(historicalCopyId, childId),
+							source: { id: sourceId, at: createdAt },
+						},
+						{
+							type: "document.copy",
+							record: childRecord(currentCopyId, secondChildId),
+							source: { id: sourceId, at: "current" },
+						},
+						{
+							type: "document.copy",
+							record: childRecord(retiredCopyId, rootId),
+							source: { id: sourceId, at: "current" },
+						},
+						{ type: "document.retire", id: retiredCopyId },
+					],
+					context,
+				);
+				expect(await storage.document(historicalCopyId, "current", context)).toMatchObject({
+					version: 2,
+					value: { count: 1, rows: [{ value: "base" }] },
+				});
+				expect(await storage.document(currentCopyId, "current", context)).toMatchObject({
+					version: 2,
+					value: { count: 2, rows: [{ value: "base" }, { value: "current" }] },
+				});
+				expect(await storage.document(retiredCopyId, "current", context)).toBeUndefined();
+
+				await storage.commit(
+					[
+						{
+							type: "document.change",
+							id: sourceId,
+							content: { kind: "base", version: 2, value: { count: 99, rows: [] } },
+						},
+						{ type: "document.retire", id: sourceId },
+					],
+					context,
+				);
+				expect((await storage.document(currentCopyId, "current", context))?.value).toEqual({
+					count: 2,
+					rows: [{ value: "base" }, { value: "current" }],
+				});
+
+				const latestSourceId = await storage.mintId();
+				const latestCopyId = await storage.mintId();
+				const latestSource = {
+					id: latestSourceId,
+					kind: "copy.latest",
+					scope: { kind: "conversation", conversationId: rootId },
+					history: "latest",
+					fork: "current",
+				} satisfies DocumentCreate;
+				await storage.commit(
+					[
+						{
+							type: "document.create",
+							record: latestSource,
+							content: { kind: "base", version: 4, value: { retained: "copy" } },
+						},
+					],
+					context,
+				);
+				await storage.commit(
+					[
+						{
+							type: "document.copy",
+							record: {
+								...latestSource,
+								id: latestCopyId,
+								scope: { kind: "conversation", conversationId: childId },
+							},
+							source: { id: latestSourceId, at: "current" },
+						},
+					],
+					context,
+				);
+				await storage.commit(
+					[
+						{
+							type: "document.change",
+							id: latestSourceId,
+							content: { kind: "base", version: 4, value: { retained: "source-only" } },
+						},
+						{ type: "document.retire", id: latestSourceId },
+					],
+					context,
+				);
+				expect(await storage.document(latestCopyId, "current", context)).toMatchObject({
+					version: 4,
+					value: { retained: "copy" },
+				});
+
+				const conflictId = await storage.mintId();
+				let conflictError: unknown;
+				try {
+					await storage.commit(
+						[
+							{
+								type: "document.copy",
+								record: childRecord(conflictId, childId),
+								source: { id: currentCopyId, at: "current" },
+							},
+							{ type: "document.retire", id: currentCopyId },
+						],
+						context,
+					);
+				} catch (error) {
+					conflictError = error;
+				}
+				expect((conflictError as Error | undefined)?.name).toBe("StorageRejected");
+				expect(await storage.document(conflictId, "current", context)).toBeUndefined();
+				expect((await storage.document(currentCopyId, "current", context))?.value).toEqual({
+					count: 2,
+					rows: [{ value: "base" }, { value: "current" }],
+				});
+
+				const mismatchId = await storage.mintId();
+				let mismatchError: unknown;
+				try {
+					await storage.commit(
+						[
+							{
+								type: "document.copy",
+								record: { ...childRecord(mismatchId, childId), kind: "copy.mismatch" },
+								source: { id: currentCopyId, at: "current" },
+							},
+						],
+						context,
+					);
+				} catch (error) {
+					mismatchError = error;
+				}
+				expect((mismatchError as Error | undefined)?.name).toBe("StorageRejected");
+				expect(await storage.document(mismatchId, "current", context)).toBeUndefined();
+			},
+		),
 
 		createCase(
 			options,

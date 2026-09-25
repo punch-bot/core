@@ -205,7 +205,7 @@ type SubmissionCreate = SubmissionRecord extends infer Record
 Conversation history parenting and task ownership are separate:
 
 - `parent` controls inherited entries and historical documents.
-- `owner` controls task authorization, subtree abort, and subtree idle waits.
+- `owner` records task attribution and connects scopes for subtree abort and idle traversal. It is not an access-control capability.
 
 A conversation's owner remains recorded after the owning task becomes terminal.
 
@@ -277,7 +277,6 @@ type SectionSeed =
   | { readonly key: string; readonly remove: true };
 
 type ConversationSpec = {
-  readonly parent?: { readonly conversationId: Id; readonly at: Id };
   readonly model?: ModelRef;
   readonly sections?: readonly SectionSeed[];
   readonly activeTools?: readonly string[];
@@ -301,7 +300,7 @@ type HarnessOptions = {
   readonly taskKinds?: readonly AnyTask[];
   readonly sections?: readonly SystemSection<JsonValue>[];
   readonly now?: () => number;
-  readonly root?: Omit<ConversationSpec, "parent">;
+  readonly root?: ConversationSpec;
   readonly onReport?: (error: unknown) => void;
 };
 
@@ -372,7 +371,7 @@ interface Conversation {
   ): Promise<Page<EntryRecord, Cursor>>;
   fork(
     at: Id,
-    spec: Omit<ConversationSpec, "parent">,
+    spec: ConversationSpec,
     context: Context,
   ): Promise<Conversation>;
   collapse(instructions: string | undefined, context: Context): Promise<Id>;
@@ -525,16 +524,17 @@ handoff write and then resolves; while busy, placement follows section 6 and may
 occur later. Observe its placement through the conversation watch. An idle wait
 does not guarantee placement of queued passive writes.
 
-`markTask()` only commits `abortRequested`; it neither signals nor joins an
-active invocation. The scheduler notices the mark on its next drain.
-`abortTask()` also signals and joins an active run before starting the abort
-invocation. `Conversation.abort()` withdraws queued input submissions, marks
-non-background tasks in the conversation and owned subtree, signals them, and
-resolves only after that subtree is ordinarily idle. Passive writes and
-background tasks survive. Conversation idle means no non-background live task
-in that conversation or its ownership subtree; Harness idle applies the same
-rule Session-wide. Pending dependency- or deadline-blocked work is still live
-and therefore not idle. Cancelling an idle wait aborts only that waiter.
+`markTask()` commits `abortRequested` and the durable foreground-subtree
+cascade; it neither signals nor joins active invocations. The scheduler notices
+the marks on its next drain. `abortTask()` also signals and joins the active run
+before starting the abort invocation. `Conversation.abort()` withdraws queued
+input submissions, marks non-background tasks selected by ordinary ownership
+traversal, signals them, and resolves only after that scope is ordinarily idle.
+Passive writes and background subtrees survive. Conversation idle means no live
+non-background task selected from that conversation. Harness idle applies the
+same traversal from every ownerless conversation root. Pending dependency- or
+deadline-blocked work is still live and therefore not idle. Cancelling an idle
+wait aborts only that waiter.
 
 `onConversation()` synchronously visits the currently loaded committed
 conversations in ascending ID order, then reports each later creation after its
@@ -804,11 +804,12 @@ interface Tx {
   conversation(id: Id): Promise<ConversationRecord | undefined>;
   entry(id: Id): Promise<EntryRecord | undefined>;
   task(id: Id): Promise<TaskRecord<JsonValue, JsonValue, JsonValue> | undefined>;
-  scanConversations(limit: number, cursor?: Cursor): Promise<Page<ConversationRecord, Cursor>>;
+  scanConversations(query: ConversationQuery, limit: number, cursor?: Cursor): Promise<Page<ConversationRecord, Cursor>>;
   scanEntries(query: EntryQuery, limit: number, cursor?: Cursor): Promise<Page<EntryRecord, Cursor>>;
   scanTasks(query: TaskQuery, limit: number, cursor?: Cursor): Promise<Page<TaskRecord<JsonValue, JsonValue, JsonValue>, Cursor>>;
 
-  createConversation(value: Omit<ConversationRecord, "id">): Promise<ConversationRecord>;
+  createConversation(): Promise<ConversationRecord>;
+  forkConversation(parentConversationId: Id, at: Id): Promise<ConversationRecord>;
   appendEntry(conversationId: Id, value: EntryDraft): Promise<EntryRecord>;
   createTask<I, S extends { phase: string }, R, H extends object>(
     task: Task<I, S, R, H>, input: I, options?: TaskOptions,
@@ -831,7 +832,7 @@ interface Tx {
 }
 ```
 
-ID-creating transaction methods are asynchronous because remote storage may allocate globally unique IDs durably. Only public typed `tx.doc()` is get-or-create. Internal fork copying may create
+ID-creating transaction methods are asynchronous because remote storage may allocate globally unique IDs durably. `createConversation()` creates an independent ownerless scope; `forkConversation()` validates one visible entry and applies section 3.7. Task-bound transactions later inject their executing task as owner without accepting raw owner IDs from callers. Only public typed `tx.doc()` is get-or-create. Internal fork copying may create
 new incarnations directly from stored values without a definition. `tx.doc()`
 receives the definition token that supplies
 its static type, initializer, migration, and checkpoint policy. Scope-preserving
@@ -1084,7 +1085,7 @@ Each conversation document follows the history/fork policy persisted in its
 | conversation setting | child value |
 |---|---|
 | `fork: "asOf"` | parent value at `E`'s commit |
-| `fork: "current"` | parent value when the fork commit runs |
+| `fork: "current"` | committed parent value selected when the fork commit runs |
 | `fork: "initial"` | no copied instance; initializer on first child access |
 
 `current` and `asOf` copy logically present conversation singleton and family
@@ -1093,6 +1094,32 @@ values become independent child instances with new IDs and initial bases.
 `initial` copies no instance; first access in the child creates it from the
 supplied definition. Task documents and tasks are never copied. Session documents
 remain shared and are not rewindable.
+
+Fork copying reads committed stored values rather than typed tracker caches. A
+transaction that creates a fork therefore rejects if it also writes one of the
+parent's `fork: "current"` documents; commit the parent change first so the fork
+has one unambiguous stored source revision.
+
+Forks stage backend-side `document.copy` commands carrying the child create
+record and an exact source incarnation/point. Storage materializes each source
+and persists its stored value/version as the child's independent initial base;
+remote Storage performs this server-side. Every copy reads committed pre-batch
+source state independent of write-array order. A selected source may not be
+created, changed, or retired in the same batch. Copying remains atomic with the
+conversation, overrides, registry writes, and other mutations.
+
+An unaccessed copy retains only its descriptor in Session memory. Typed access
+inside the creating transaction lazily reads the detached source, migrates when
+required, and replaces the copy with one ordinary child create containing the
+final prepared value. Definition-free copies publish explicit `document.copy`
+metadata rather than a value. That metadata announces Storage-backed initial
+state and is never interpreted as a document value. Document sources, watches,
+and mounted views hydrate by capturing their baseline and subscription
+atomically on the Session line: a later commit already present becomes the
+baseline, while one committed after registration is delivered. Publications
+and watches are convergence mechanisms, not audit streams. A mounted aggregate
+must acquire all of its document baselines and commit subscription in one
+Session-line operation so it never exposes a mixture from one commit.
 
 ## 4. Transactions and storage ownership
 
@@ -1329,10 +1356,35 @@ the durable mark on reopen. Cancelling one caller's `Context` only cancels
 that call or wait; it does not durably abort shared work unless the invoked API
 commits an abort mark.
 
-A task may create owned conversations. Abort and idle operations traverse the
-conversation ownership tree. History parents are irrelevant to this traversal.
-Background tasks do not block ordinary idle waits and survive ordinary
-conversation abort unless explicitly included.
+A task may create owned conversations. Conversations are durable scopes; tasks
+are the units of live work counted by idle and marked by abort. History parents
+are irrelevant to ownership traversal.
+
+Ordinary traversal starts at an explicitly addressed conversation, visits its
+tasks, and follows conversations owned by each non-background task. It follows
+owner edges after the owner becomes terminal, but a background owner is a
+boundary: ordinary traversal skips that task and its complete owned subtree.
+Direct conversation operations start inside that conversation regardless of its
+owner. Directly aborting a live background task includes that task and follows
+its ordinary owned subtree; nested background owners remain boundaries. Full
+teardown crosses every boundary, marks every live task, and must seal new
+admission while it gathers the complete indexed ownership subtree.
+
+`Conversation.abort()` withdraws queued inputs and marks live non-background
+tasks selected by ordinary traversal. `Conversation.waitForIdle()` waits until
+that traversal contains no live non-background task. Harness idle performs the
+same traversal from every ownerless conversation root rather than globally
+counting tasks, so ordinary work below a background owner does not block it.
+Explicit `waitForTask()` waits for its referenced task regardless of the task's
+background flag.
+
+An abort mark atomically and idempotently cascades to foreground-owned work,
+including conversations, tasks, and submissions staged in the same transaction.
+Terminal outcomes `failed`, `faulted`, `orphaned`, and `aborted` record the same
+durable cancellation intent; `completed` does not. Conversation records and
+owner edges are never retired with the task. Active invocations are signalled
+after commit, and a terminal receipt guarantees durable cancellation intent,
+not descendant quiescence.
 
 Initial task definitions are registered before open performs live-task migration
 and orphan reconciliation. Dynamic registration begins only after that pass.
@@ -1472,9 +1524,10 @@ interface ToolExecutionApi extends DocumentObserver {
   getTask<R>(ref: TaskRef<R>, context: Context): Promise<TaskRecord<JsonValue, JsonValue, R> | undefined>;
   waitForTask<R>(ref: TaskRef<R>, context: Context): Promise<SettledTask<R>>;
   createConversation(
-    spec: Omit<ConversationSpec, "parent"> & { readonly inherit?: boolean },
+    spec: ConversationSpec & { readonly inherit?: boolean },
     context: Context,
   ): Promise<OwnedConversation>;
+  conversation(id: Id, context: Context): Promise<OwnedConversation | undefined>;
 }
 
 type ToolRegistration = Tool & {
@@ -1540,9 +1593,12 @@ A tool executes in a durable task. It may:
 
 Tool operations use the invoking task's admission and
 invocation-lifetime gates. Task creation defaults to that task's conversation.
-Trusted document access follows sections 3.3 and 9.2; there is no additional
-document subtree authorization layer. `createConversation()` records the
-invoking task as owner and returns an invocation-bound handle. `inherit` defaults
+Trusted document and conversation access follows sections 3.3 and 9.2; there is
+no additional subtree authorization layer. Possession of a Session-global ID is
+sufficient in trusted code. `createConversation()` records the invoking task as
+owner and returns an invocation-bound handle. `conversation(id)` reacquires the
+same handle shape for status, steering, explicit abort, and idle waits without
+changing ownership. `inherit` defaults
 to `false`. When true, creation atomically selects the invoking conversation's
 newest committed visible entry as `parent.at`; if no entry exists, it creates no
 history parent. Conversation documents then apply section 3.7 at that entry, and
@@ -1552,6 +1608,34 @@ operations reject after the invocation ends. A `Submission` returned by its
 `submit()` is invocation-bound in the same way; the admitted submission remains
 durable after those methods reject. Invocation-owned document watches stop when
 the invocation ends.
+
+A foreground subagent conversation is created directly by its tool task; the
+tool waits for the admitted submission/result, and aborting or abnormally
+terminalizing that task cascades through the owned scope. A background subagent
+is created by a background provisioning task. The tool may explicitly
+`waitForTask()` only until that task durably returns the child conversation and
+submission IDs, then return while the child continues. The provisioner may
+complete after setup: its terminal record retains `background`, so ancestor
+ordinary abort and idle traversal continue to stop at its owned scope. Provision
+the conversation and its durable name-to-conversation/request mapping atomically,
+then call `Conversation.submit()` with that application-minted request ID. A
+crash before submission retries the durable request; a crash after admission
+recovers the existing deduplicated `Submission`. A replay-safe tool must never
+create a child in one commit and record its identity only in a later memo commit.
+
+Applications may maintain a conversation document mapping semantic subagent
+names to durable conversation IDs and application-minted submission request IDs.
+Such a live registry uses `fork: "initial"` so children do not inherit the
+parent's agent list and its update is not a selected fork source. Conversation
+creation/forking and its registry mapping commit atomically. Initial or later
+input then uses the registered stable request ID with the full
+`Conversation.submit()` state machine. A crash before admission leaves a durable
+request to submit; a crash after admission retries the same request and receives
+the existing `Submission`. A read-only lookup by conversation/request ID can
+report absence or return the durable queued/placed/done/unanswered receipt.
+Submission admission therefore needs no private transaction shortcut and does
+not move onto `Tx`. Kernel ownership indexes independently drive abort and idle
+traversal.
 
 A tool result may request `addTools`, `terminate`, or `handoff`. Post-tools
 applies added tool names to configured loadout, uses a final boundary for
@@ -1973,6 +2057,11 @@ type Page<T, C> = {
 
 type Cursor = Readonly<Record<string, JsonValue>>;
 
+type ConversationQuery = {
+  readonly ownerConversationId?: Id;
+  readonly ownerTaskId?: Id;
+};
+
 type EntryQuery = {
   readonly conversationId: Id;
   readonly minEntryId?: Id; // inclusive
@@ -2022,6 +2111,11 @@ type StorageWrite =
       readonly content: Extract<DocumentContent, { kind: "base" }>;
     }
   | {
+      readonly type: "document.copy";
+      readonly record: DocumentCreate;
+      readonly source: { readonly id: Id; readonly at: DocumentPoint };
+    }
+  | {
       readonly type: "document.change";
       readonly id: Id;
       readonly content: DocumentContent;
@@ -2040,7 +2134,7 @@ interface Storage {
   mintId(): Promise<Id>;
 
   conversation(id: Id, context: Context): Promise<ConversationRecord | undefined>;
-  scanConversations(limit: number, cursor: Cursor | undefined, context: Context): Promise<Page<ConversationRecord, Cursor>>;
+  scanConversations(query: ConversationQuery, limit: number, cursor: Cursor | undefined, context: Context): Promise<Page<ConversationRecord, Cursor>>;
 
   entry(id: Id, context: Context): Promise<{ readonly entry: EntryRecord; readonly commitSeq: Seq } | undefined>;
   entry(conversationId: Id, id: Id, context: Context): Promise<{ readonly entry: EntryRecord; readonly commitSeq: Seq } | undefined>;
@@ -2061,6 +2155,19 @@ interface Storage {
 }
 ```
 
+`StorageRejected` means a batch was rejected before any durable effect and is
+guaranteed not to have committed. Session rolls such a batch back normally;
+unknown failures after Storage admission remain fatal because their commit state
+is uncertain. Backends use `StorageRejected` for deterministic `document.copy`
+source, replay, and consistency failures only when rollback is guaranteed.
+
+A `document.copy` reads committed pre-batch source state independent of command
+order. The source must be an alive conversation document at the selected point,
+and kind/key/history/fork must match the child create record. Storage persists
+one independent complete child base at the source's stored version. A batch may
+not create, change, or retire a selected source. Later source changes,
+reclamation, retirement, or backend reopen cannot affect the child.
+
 Cursors are backend-owned JSON objects. Callers only round-trip them to the same
 scan on the same storage; cross-storage or cross-query use is unsupported. The
 Session owns the mutation line, so storage implementations do not add a second
@@ -2073,6 +2180,10 @@ inclusive ID range in newest-first order while applying every conversation
 ancestry cap. With no bounds it pages complete visible history. To read context
 through entry `E`, find the marker at or before `E`, then scan from
 `marker?.head` through `E`. For current context the upper bound is omitted.
+Conversation owner filters are indexed and conjunctive. They support ownership
+traversal without an all-conversation scan; application-maintained registries
+are not a substitute for these kernel indexes.
+
 `entry(id)` combines exact global lookup with the commit sequence required by
 historical document reads. `entry(conversationId, id)` returns that pair only
 when the entry is visible through the requested conversation's ancestry. `limit`

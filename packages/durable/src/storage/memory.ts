@@ -1,6 +1,8 @@
 import type { Context, JsonValue } from "@punch-bot/chord";
 import { applyImmutableBatches, type Op } from "@punch-bot/chord/delta";
+import { StorageRejected } from "../errors.ts";
 import type {
+	ConversationQuery,
 	ConversationRecord,
 	Cursor,
 	DocumentAddress,
@@ -60,6 +62,8 @@ type DocumentAddressIndex = {
 type State = {
 	conversations: Map<Id, ConversationRecord>;
 	conversationIds: Id[];
+	conversationIdsByOwnerConversation: Map<Id, Id[]>;
+	conversationIdsByOwnerTask: Map<Id, Id[]>;
 	entries: Map<Id, EntryRecord>;
 	entryIds: Map<Id, Id[]>;
 	headEntryIds: Map<Id, Id[]>;
@@ -137,6 +141,15 @@ const removeSorted = (ids: Id[], id: Id): void => {
 	if (ids[index] === id) ids.splice(index, 1);
 };
 
+const insertMapId = (index: Map<Id, Id[]>, key: Id, id: Id): void => {
+	let ids = index.get(key);
+	if (ids === undefined) {
+		ids = [];
+		index.set(key, ids);
+	}
+	insertSorted(ids, id);
+};
+
 const scopeKey = (scope: DocumentRecord["scope"]): string => {
 	switch (scope.kind) {
 		case "session":
@@ -199,6 +212,8 @@ export class MemoryStorage implements Storage {
 	private readonly state: State = {
 		conversations: new Map(),
 		conversationIds: [],
+		conversationIdsByOwnerConversation: new Map(),
+		conversationIdsByOwnerTask: new Map(),
 		entries: new Map(),
 		entryIds: new Map(),
 		headEntryIds: new Map(),
@@ -226,7 +241,7 @@ export class MemoryStorage implements Storage {
 		if (!Number.isSafeInteger(seq) || seq < this.nextSeq) {
 			throw new Error(`Commit sequence ${seq} does not strictly increase`);
 		}
-		const detachedWrites = freeze(writes.map((write) => clone(write)));
+		const detachedWrites = freeze(this.resolveDocumentCopies(writes.map((write) => clone(write))));
 		this.checkGlobalIds(detachedWrites);
 		const documentActions = this.prepareDocumentActions(detachedWrites);
 		this.checkDocumentActions(documentActions);
@@ -244,6 +259,46 @@ export class MemoryStorage implements Storage {
 		};
 	}
 
+	private resolveDocumentCopies(writes: StorageWrite[]): StorageWrite[] {
+		if (!writes.some((write) => write.type === "document.copy")) return writes;
+		const changedDocumentIds = new Set<Id>();
+		for (const write of writes) {
+			if (write.type === "document.create" || write.type === "document.copy") {
+				changedDocumentIds.add(write.record.id);
+			} else if (write.type === "document.change" || write.type === "document.retire") {
+				changedDocumentIds.add(write.id);
+			}
+		}
+		return writes.map((write) => {
+			if (write.type !== "document.copy") return write;
+			try {
+				if (changedDocumentIds.has(write.source.id)) {
+					throw new Error(`Fork source document ${write.source.id} is changed in the copy batch`);
+				}
+				const stored = this.materializeDocument(write.source.id, write.source.at);
+				if (stored === undefined) throw new Error(`Fork source document ${write.source.id} cannot be read`);
+				if (
+					stored.record.scope.kind !== "conversation" ||
+					write.record.scope.kind !== "conversation" ||
+					stored.record.kind !== write.record.kind ||
+					stored.record.key !== write.record.key ||
+					stored.record.history !== write.record.history ||
+					stored.record.fork !== write.record.fork
+				) {
+					throw new Error(`Fork source document ${write.source.id} does not match the copied record`);
+				}
+				return {
+					type: "document.create",
+					record: write.record,
+					content: { kind: "base", version: stored.version, value: stored.value },
+				};
+			} catch (error) {
+				if (error instanceof StorageRejected) throw error;
+				throw new StorageRejected(`Document copy ${write.record.id} was rejected`, { cause: error });
+			}
+		});
+	}
+
 	private applyPreparedCommit(
 		prepared: readonly StorageWrite[],
 		documentActions: ReadonlyMap<Id, DocumentAction>,
@@ -251,11 +306,17 @@ export class MemoryStorage implements Storage {
 	): Seq {
 		for (const write of prepared) {
 			switch (write.type) {
-				case "conversation":
+				case "conversation": {
 					this.state.conversations.set(write.value.id, write.value);
 					insertSorted(this.state.conversationIds, write.value.id);
+					const owner = write.value.owner;
+					if (owner !== undefined) {
+						insertMapId(this.state.conversationIdsByOwnerConversation, owner.conversationId, write.value.id);
+						insertMapId(this.state.conversationIdsByOwnerTask, owner.taskId, write.value.id);
+					}
 					this.nextId = Math.max(this.nextId, write.value.id + 1);
 					break;
+				}
 				case "entry": {
 					this.state.entries.set(write.value.id, write.value);
 					this.state.entryCommitSeqs.set(write.value.id, seq);
@@ -310,6 +371,8 @@ export class MemoryStorage implements Storage {
 					this.nextId = Math.max(this.nextId, write.value.id + 1);
 					break;
 				}
+				case "document.copy":
+					throw new Error("Prepared document copy was not resolved");
 				case "document.create":
 				case "document.change":
 				case "document.retire":
@@ -335,16 +398,28 @@ export class MemoryStorage implements Storage {
 	}
 
 	async scanConversations(
+		query: ConversationQuery,
 		limit: number,
 		cursor: Cursor | undefined,
 		_context: Context,
 	): Promise<Page<ConversationRecord, Cursor>> {
 		this.assertOpen();
+		const ids =
+			query.ownerTaskId !== undefined
+				? (this.state.conversationIdsByOwnerTask.get(query.ownerTaskId) ?? [])
+				: query.ownerConversationId !== undefined
+					? (this.state.conversationIdsByOwnerConversation.get(query.ownerConversationId) ?? [])
+					: this.state.conversationIds;
 		const after = cursorId(cursor);
-		const start = after === undefined ? 0 : upperBound(this.state.conversationIds, after);
-		const values = this.state.conversationIds
-			.slice(start, start + limit + 1)
-			.map((id) => this.state.conversations.get(id)!);
+		const start = after === undefined ? 0 : upperBound(ids, after);
+		const values: ConversationRecord[] = [];
+		for (let index = start; index < ids.length && values.length <= limit; index++) {
+			const value = this.state.conversations.get(ids[index]!)!;
+			if (query.ownerConversationId !== undefined && value.owner?.conversationId !== query.ownerConversationId) {
+				continue;
+			}
+			values.push(value);
+		}
 		return page(values, limit);
 	}
 
@@ -476,22 +551,10 @@ export class MemoryStorage implements Storage {
 
 	async document(id: Id, at: DocumentPoint, _context: Context): Promise<StoredDocument | undefined> {
 		this.assertOpen();
-		const stored = this.state.documents.get(id);
-		if (stored === undefined) return undefined;
-		if (at !== "current" && isCurrentOnly(stored.record)) {
-			throw new Error(`Document ${id} does not retain historical content`);
-		}
-		if (!isAliveAt(stored.record, at)) return undefined;
-		const revisions = at === "current" ? stored.revisions : stored.revisions.filter((revision) => revision.seq <= at);
-		let baseIndex = revisions.length - 1;
-		while (baseIndex >= 0 && revisions[baseIndex]!.kind !== "base") baseIndex--;
-		const base = revisions[baseIndex];
-		if (base?.kind !== "base") throw new Error(`Document ${id} is missing a required base`);
-		const value = applyImmutableBatches(
-			base.value,
-			documentDeltaBatches(id, base.version, revisions, baseIndex + 1),
-		) as JsonObject;
-		return { record: clone(stored.record), version: base.version, value: clone(value) };
+		const stored = this.materializeDocument(id, at);
+		return stored === undefined
+			? undefined
+			: { record: clone(stored.record), version: stored.version, value: clone(stored.value) };
 	}
 
 	async scanDocuments(
@@ -515,6 +578,25 @@ export class MemoryStorage implements Storage {
 
 	async close(_context: Context): Promise<void> {
 		this.closed = true;
+	}
+
+	private materializeDocument(id: Id, at: DocumentPoint): StoredDocument | undefined {
+		const stored = this.state.documents.get(id);
+		if (stored === undefined) return undefined;
+		if (at !== "current" && isCurrentOnly(stored.record)) {
+			throw new Error(`Document ${id} does not retain historical content`);
+		}
+		if (!isAliveAt(stored.record, at)) return undefined;
+		const revisions = at === "current" ? stored.revisions : stored.revisions.filter((revision) => revision.seq <= at);
+		let baseIndex = revisions.length - 1;
+		while (baseIndex >= 0 && revisions[baseIndex]!.kind !== "base") baseIndex--;
+		const base = revisions[baseIndex];
+		if (base?.kind !== "base") throw new Error(`Document ${id} is missing a required base`);
+		const value = applyImmutableBatches(
+			base.value,
+			documentDeltaBatches(id, base.version, revisions, baseIndex + 1),
+		) as JsonObject;
+		return { record: stored.record, version: base.version, value };
 	}
 
 	private *visibleEntries(
@@ -546,8 +628,9 @@ export class MemoryStorage implements Storage {
 		const claimed = new Map<Id, TableName>();
 		for (const write of writes) {
 			if (write.type === "document.change" || write.type === "document.retire") continue;
-			const table: TableName = write.type === "document.create" ? "document" : write.type;
-			const id = write.type === "document.create" ? write.record.id : write.value.id;
+			const document = write.type === "document.create" || write.type === "document.copy";
+			const table: TableName = document ? "document" : write.type;
+			const id = document ? write.record.id : write.value.id;
 			const existing = tableContaining(this.state, id);
 			const earlier = claimed.get(id);
 			if (table === "conversation" || table === "entry" || table === "document") {

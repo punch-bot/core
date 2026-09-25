@@ -1,12 +1,13 @@
 export { defineDoc, defineDocFamily } from "./documents.ts";
+export { ReadAfterWrite, StorageRejected } from "./errors.ts";
 export { createSession } from "./session/session.ts";
-export { ReadAfterWrite } from "./session/transaction.ts";
 export { MemoryStorage } from "./storage/memory.ts";
 export type {
 	CommonDocDefinition,
 	ContextEdit,
 	ConversationDocFamilyToken,
 	ConversationDocToken,
+	ConversationQuery,
 	ConversationRecord,
 	Cursor,
 	DocDefinition,
@@ -15,6 +16,7 @@ export type {
 	DocToken,
 	DocumentAddress,
 	DocumentContent,
+	DocumentCopySource,
 	DocumentCreate,
 	DocumentPoint,
 	DocumentQuery,

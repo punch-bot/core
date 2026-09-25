@@ -8,6 +8,7 @@ import {
 	materializeDocument,
 	resolveAddress,
 } from "../documents.ts";
+import { StorageRejected } from "../errors.ts";
 import type {
 	ConversationDocFamilyToken,
 	ConversationDocToken,
@@ -208,7 +209,8 @@ export class SessionKernel implements Session {
 			seq = await this.#storage.commit(writes, withoutAbortSignal(context));
 		} catch (error) {
 			tx.discard();
-			this.#poison = { error };
+			// Callback errors never reach this branch; StorageRejected alone guarantees that no batch effect committed.
+			if (!(error instanceof StorageRejected)) this.#poison = { error };
 			throw error;
 		}
 		let documents: DocumentCommitChange[];

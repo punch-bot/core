@@ -55,8 +55,8 @@ class ReopeningStorage implements Storage {
 
 	mintId: Storage["mintId"] = () => this.current.mintId();
 	conversation: Storage["conversation"] = (id, readContext) => this.current.conversation(id, readContext);
-	scanConversations: Storage["scanConversations"] = (limit, cursor, readContext) =>
-		this.current.scanConversations(limit, cursor, readContext);
+	scanConversations: Storage["scanConversations"] = (query, limit, cursor, readContext) =>
+		this.current.scanConversations(query, limit, cursor, readContext);
 	entry(id: number, readContext: Context): ReturnType<Storage["entry"]>;
 	entry(conversationId: number, id: number, readContext: Context): ReturnType<Storage["entry"]>;
 	entry(idOrConversationId: number, idOrContext: number | Context, readContext?: Context) {

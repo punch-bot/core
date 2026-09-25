@@ -1,5 +1,6 @@
 import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
 import { describe, expect, it } from "vitest";
+import { StorageRejected } from "../src/errors.ts";
 import type { SqliteDatabase, SqliteStatement } from "../src/storage/sqlite/index.ts";
 import { SqliteStorage } from "../src/storage/sqlite/index.ts";
 import { type NodeSqliteDatabase, openNodeSqliteDatabase } from "../src/storage/sqlite/node.ts";
@@ -104,6 +105,20 @@ describe("portable SQLite facade settlement", () => {
 			"SQLite transaction callbacks must be synchronous",
 		);
 		database.close();
+		database.close();
+	});
+
+	it("does not preserve a guaranteed rejection when rollback itself fails", async () => {
+		const database = await openNodeSqliteDatabase(":memory:");
+		database.exec("CREATE TABLE rollback_probe (value INTEGER)");
+		expect(() =>
+			database.transaction(() => {
+				database.exec("INSERT INTO rollback_probe (value) VALUES (1)");
+				database.exec("COMMIT");
+				throw new StorageRejected("rejected after an escaped commit");
+			}),
+		).toThrow(AggregateError);
+		expect(database.prepare("SELECT value FROM rollback_probe").get()).toEqual({ value: 1 });
 		database.close();
 	});
 
