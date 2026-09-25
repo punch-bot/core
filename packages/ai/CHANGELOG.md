@@ -23,6 +23,7 @@
 ### Fixed
 
 - Fixed 1-hour Anthropic cache writes reported by Vercel AI Gateway in streaming deltas being priced at the 5-minute rate ([#9210](https://github.com/earendil-works/pi/issues/9210)).
+- Fixed model-level `samplingParams` being dropped by direct `stream()`/`complete()` calls on OpenAI-compatible APIs ([#9506](https://github.com/earendil-works/pi/issues/9506)).
 
 ## [0.87.1] - 2026-09-22
 
