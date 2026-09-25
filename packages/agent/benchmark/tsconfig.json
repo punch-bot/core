@@ -1,11 +1,10 @@
 {
 	"extends": "../../../tsconfig.base.json",
 	"compilerOptions": {
-		"baseUrl": "../../..",
 		"noEmit": true,
 		"paths": {
-			"@punch-bot/ai": ["packages/ai/src/index.ts"],
-			"@punch-bot/ai/*": ["packages/ai/src/*"]
+			"@punch-bot/ai": ["../../ai/src/index.ts"],
+			"@punch-bot/ai/*": ["../../ai/src/*"]
 		}
 	},
 	"include": ["./**/*.ts", "../src/**/*.ts"]

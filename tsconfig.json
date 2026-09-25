@@ -5,7 +5,6 @@
 		"module": "NodeNext",
 		"moduleResolution": "NodeNext",
 		"paths": {
-			"*": ["./*"],
 			"@punch-bot/chord": ["./packages/chord/src/index.ts"],
 			"@punch-bot/chord/bundler": ["./packages/chord/src/bundler.ts"],
 			"@punch-bot/chord/context": ["./packages/chord/src/context/index.ts"],
