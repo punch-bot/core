@@ -7,6 +7,7 @@
 - Added `ctx.modelRegistry.stream()` and `streamSimple()` for extension model calls through configured providers with resolved authentication ([#8964](https://github.com/earendil-works/pi/issues/8964)).
 - Added per-model `reserveTokens` and `keepRecentTokens` settings through `compaction.modelOverrides`, with ordinary compaction settings as fallback ([#8133](https://github.com/earendil-works/pi-mono/issues/8133)).
 - Punch sandboxes on the same machine advertise an A2A listener and can list or message peers with the `a2a` tool ([#20](https://github.com/punch-bot/core/pull/20)).
+- Added the `propose_plan` tool to the Punch extension: the model proposes a plan, the host decides, and pending/denied decisions end the turn via `AgentToolResult.terminate`. Also added `createDeferredApprovalHook`, a reference `tool_call` handler for "defer execution pending external decision" so hosts can enforce the gate policy-side.
 
 ### Changed
 

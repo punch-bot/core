@@ -8,6 +8,7 @@ import { installA2a, isPunchA2aEnabled } from "./a2a.ts";
 import { startPunchA2aListener, stopPunchA2aListener } from "./a2a-listen.ts";
 import { getAuthHeader, isAuthConfigured } from "./auth.ts";
 import { validateCollabWorkspace } from "./collabs.ts";
+import { installPlanGate } from "./plan-gate.ts";
 import { startPunchServer } from "./server.ts";
 import { installTodos } from "./todos.ts";
 
@@ -78,6 +79,7 @@ export default function punchExtension(pi: ExtensionAPI): void {
 		startPunchServer();
 	}
 	installTodos(pi);
+	installPlanGate(pi);
 	installA2a(pi);
 	if (isPunchA2aEnabled()) {
 		void startPunchA2aListener();
