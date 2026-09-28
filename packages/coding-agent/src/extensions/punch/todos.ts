@@ -46,8 +46,8 @@ function emptyState(): TodoState {
 	return { todos: [], nextId: 1, log: [] };
 }
 
-export function todosFile(): string {
-	return join(process.env.PI_DATA_DIR || join(process.cwd(), ".pi"), "todos.json");
+export function todosFile(cwd = process.cwd()): string {
+	return join(process.env.PI_DATA_DIR || join(cwd, ".pi"), "todos.json");
 }
 
 export function loadTodos(file = todosFile()): TodoState {
@@ -207,7 +207,7 @@ export function installTodos(pi: ExtensionAPI, store: TodoStore): void {
 
 	pi.on("session_start", (_event, ctx) => {
 		try {
-			store.migrateLegacy(ctx.sessionManager.getSessionId());
+			store.migrateLegacy(ctx.sessionManager.getSessionId(), todosFile(ctx.cwd));
 		} catch (error) {
 			console.warn(`Could not import legacy Punch todos: ${error instanceof Error ? error.message : String(error)}`);
 		}
