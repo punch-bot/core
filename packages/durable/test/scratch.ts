@@ -1,8 +1,29 @@
-// A tour of the durable Session API in six small examples.
+// A tour of the durable Session and Harness APIs in twelve small examples.
 // Run from packages/durable:
 //   node --conditions=source --experimental-strip-types test/scratch.ts
 import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
-import { type ConversationId, createSession, defineDoc, MemoryStorage, type Task } from "../src/index.ts";
+import {
+	type AssistantMessage,
+	createModels,
+	type Message,
+	type StopReason,
+	type ToolResultMessage,
+	Type,
+} from "@punch-bot/ai";
+import {
+	ConversationConfig,
+	type ConversationId,
+	createRegistry,
+	createSession,
+	defineDoc,
+	defineEntry,
+	type EntryRecord,
+	Harness,
+	MemoryStorage,
+	type PromptInput,
+	type Task,
+	type ToolRegistration,
+} from "../src/index.ts";
 
 // A Session stores conversations, transcript entries, tasks, and documents.
 // MemoryStorage keeps everything in memory; other storage backends keep it on disk.
@@ -170,3 +191,291 @@ await delivered;
 await notesWatch.stop();
 
 await session.close(context);
+
+// ─── 7. Open a Harness with a registry ──────────────────────────────────────
+// A Harness is a Session plus conversation handles. Extension code (tools,
+// hooks, tasks, system prompt sections) lives in a registry the
+// application owns. Nothing in the registry is saved; it is this process's code.
+// Apps may attach their own metadata to tools, such as a prompt snippet.
+type AppTool = ToolRegistration & { readonly snippet?: string };
+
+function exampleTool(name: string, description: string): AppTool {
+	return {
+		name,
+		description,
+		parameters: Type.Object({ path: Type.String() }),
+		snippet: `Use ${name} for files.`,
+		execute: async (args) => ({ content: [{ type: "text", text: `${name} ${JSON.stringify(args)}` }] }),
+	};
+}
+
+const registry = createRegistry<AppTool>();
+registry.tools.add(exampleTool("read", "Read a file"));
+const writeRegistration = registry.tools.add(exampleTool("write", "Write a file"));
+const grepRegistration = registry.tools.add(exampleTool("grep", "Search files"));
+
+// `models` is pi-ai's model access; generation uses it in later packages.
+const harness = await Harness.open(new MemoryStorage(), { models: createModels(), registry }, context);
+
+// The root conversation always has ID 1. The first root() call creates it,
+// its configuration, and whatever `init` writes, all in one commit. Later
+// calls, including after a restart, return it and ignore `init`.
+const root = await harness.root(context, {
+	init: async (tx, rootId) => {
+		(await tx.doc(Notes, rootId)).text = "root notes";
+		(await tx.doc(ConversationConfig, rootId)).thinkingLevel = "low";
+	},
+});
+console.log("7. root:", root.id, await harness.snapshot(Notes, root.id, context));
+console.log("7. root config:", root.id, await harness.snapshot(ConversationConfig, root.id, context));
+
+// ─── 8. Conversation configuration ──────────────────────────────────────────
+// Model, thinking level, and active tool names live in the built-in
+// ConversationConfig document. New conversations start with every registered
+// tool active. Each setter is one commit.
+console.log("8. active tools:", await root.getActiveTools(context));
+await root.setModel({ provider: "anthropic", modelId: "claude-sonnet-4-5" }, context);
+await root.setThinkingLevel("high", context);
+await root.setActiveTools(["write", "read"], context);
+console.log("8. snippet kept on the app tool:", registry.tools.list()[0]!.snippet);
+console.log("8. model:", await root.getModel(context), "thinking:", await root.getThinkingLevel(context));
+
+// Adding a name that is not registered is rejected, and nothing is written.
+await root
+	.setActiveTools(["read", "find"], context)
+	.catch((error: Error) => console.log("8. rejected:", error.message));
+
+// Names that were already active are never rechecked. After "write" is
+// unregistered it stays in the configuration; requests just stop offering it
+// until it is registered again.
+writeRegistration.dispose();
+await root.setActiveTools(["write", "read", "grep"], context);
+console.log("8. active tools without a registered write:", await root.getActiveTools(context));
+console.log(
+	"8. registered tools:",
+	registry.tools.list().map((entry) => entry.name),
+);
+
+// ─── 9. Conversations and forks ─────────────────────────────────────────────
+// Conversation handles are stateless; compare them by id. They bind commits
+// to their conversation.
+const MessageEntry = defineEntry<EntryRecord & { readonly kind: "message" }>("message");
+const hello = await root.commit(
+	(tx) => tx.appendEntry(root.id, { kind: "message", model: [{ role: "user", content: "hello", timestamp: 1 }] }),
+	context,
+);
+console.log("9. typed entry:", MessageEntry.is(hello));
+
+// createConversation() and fork() run `init` in the creating commit. A fork
+// starts with the configuration the parent had at the fork entry.
+const helper = await harness.createConversation(
+	{
+		ownership: { kind: "ownerless" },
+		init: async (tx, id) => {
+			(await tx.doc(ConversationConfig, id)).activeTools = ["read"];
+		},
+	},
+	context,
+);
+const retry = await root.fork(hello.id, { ownership: { kind: "ownerless" } }, context);
+console.log("9. helper tools:", await helper.getActiveTools(context));
+console.log("9. fork thinking:", await retry.getThinkingLevel(context));
+console.log("9. lookup:", (await harness.conversation(retry.id, context))?.id === retry.id);
+
+// ─── 10. Transcript history and model context ───────────────────────────────
+// Entries are immutable. `model` holds the messages an entry contributes to
+// the next model request; `data` is for the app only. context() turns the
+// stored transcript into those request messages:
+//   - an entry with `head` starts a new context; older entries stay stored,
+//   - `edits` replace or omit what an earlier entry contributes,
+//   - aborted, error, and deferred assistant messages are not sent,
+//   - tool results are sent right after their call, in call order,
+//   - a call without a result gets a synthesized error result.
+function assistantMessage(text: string, calls: readonly string[] = [], stopReason?: StopReason): AssistantMessage {
+	return {
+		role: "assistant",
+		content: [
+			{ type: "text", text },
+			...calls.map((id) => ({ type: "toolCall" as const, id, name: "read", arguments: {} })),
+		],
+		api: "example",
+		provider: "example",
+		model: "example",
+		usage: {
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			totalTokens: 0,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+		},
+		stopReason: stopReason ?? (calls.length > 0 ? "toolUse" : "stop"),
+		timestamp: 2,
+	};
+}
+
+function toolResultMessage(id: string): ToolResultMessage {
+	return {
+		role: "toolResult",
+		toolCallId: id,
+		toolName: "read",
+		content: [{ type: "text", text: `file ${id}` }],
+		isError: false,
+		timestamp: 3,
+	};
+}
+
+function show(message: Message): string {
+	switch (message.role) {
+		case "user":
+			return `user: ${message.content as string}`;
+		case "system":
+			return `system: ${JSON.stringify(message.sections)}`;
+		case "assistant":
+			return `assistant: ${message.content
+				.map((part) => (part.type === "text" ? part.text : part.type === "toolCall" ? `call(${part.id})` : ""))
+				.join(" ")}`;
+		case "toolResult":
+			return `result(${message.toolCallId})${message.isError ? " error" : ""}`;
+	}
+}
+
+const transcript = await harness.createConversation({ ownership: { kind: "ownerless" } }, context);
+const say = (kind: string, ...model: Message[]) =>
+	transcript.commit((tx) => tx.appendEntry(transcript.id, { kind, model }), context);
+
+const question = await say("message", { role: "user", content: "read a and b", timestamp: 1 });
+await say("message", assistantMessage("I crashed", [], "aborted")); // stored, never sent
+const calls = await say("message", assistantMessage("reading", ["a", "b"]));
+await say("message", toolResultMessage("b")); // results finish out of order
+await say("pi.system", { role: "system", content: "", sections: { cwd: "<cwd>/repo</cwd>" }, timestamp: 4 });
+await say("message", toolResultMessage("a"));
+await say("message", assistantMessage("a and b look fine"));
+await transcript.commit(
+	(tx) =>
+		tx.appendEntry(transcript.id, {
+			kind: "edit",
+			data: "user fixed a typo",
+			edits: [
+				{
+					target: question.id,
+					action: "replace",
+					messages: [{ role: "user", content: "read files a and b", timestamp: 1 }],
+				},
+			],
+		}),
+	context,
+);
+await transcript.commit((tx) => tx.appendEntry(transcript.id, { kind: "note", data: "display only" }), context);
+
+let transcriptView = await transcript.context(context);
+console.log(
+	"10. raw active entries:",
+	transcriptView.entries.map((entry) => entry.kind),
+);
+console.log("10. request messages:", transcriptView.messages.map(show));
+
+// A fork at the tool call has no results yet; context() fills them in.
+const cut = await transcript.fork(calls.id, { ownership: { kind: "ownerless" } }, context);
+console.log("10. fork messages:", (await cut.context(context)).messages.map(show));
+
+// A headed summary replaces everything before the entry it points at.
+// "self" points the head at the summary entry itself.
+await transcript.commit(
+	(tx) =>
+		tx.appendEntry(transcript.id, {
+			kind: "summary",
+			head: "self",
+			model: [{ role: "user", content: "Summary: a and b are fine.", timestamp: 5 }],
+		}),
+	context,
+);
+transcriptView = await transcript.context(context);
+console.log("10. after summary:", transcriptView.head?.kind, transcriptView.messages.map(show));
+
+// entries() pages the stored transcript, newest first, including inherited
+// parent entries. Nothing is ever deleted by heads or edits.
+const history = await transcript.entries({}, 3, undefined, context);
+console.log(
+	"10. newest stored entries:",
+	history.items.map((entry) => entry.kind),
+	"more:",
+	history.next !== undefined,
+);
+
+// ─── 11. Reload extension code ──────────────────────────────────────────────
+// batch() publishes a replacement at once, so no snapshot ever sees the tool
+// missing. Work that already started keeps using the snapshot it took.
+registry.batch(() => {
+	grepRegistration.dispose();
+	registry.tools.add(exampleTool("grep", "Search files, faster"));
+});
+console.log(
+	"11. tools after reload:",
+	registry.tools.list().map((entry) => `${entry.name}: ${entry.description}`),
+);
+
+// ─── 12. Register system prompt sections ────────────────────────────────────
+// Pico stores no prompt state. Before each model request, the registry's
+// sections render the desired prompt, and only the difference to what the
+// model already saw is appended to the transcript as a `pi.system` entry.
+// Sections read per-conversation data through `input.read`; here a coding
+// agent keeps its own profile document.
+const AgentProfile = defineDoc<{ role: "main" | "subagent"; cwd: string }>({
+	kind: "example.agent-profile",
+	version: 1,
+	scope: "conversation",
+	history: "rewindable",
+	fork: "asOf",
+	initial: () => ({ role: "main", cwd: "/" }),
+});
+await root.commit(async (tx) => {
+	(await tx.doc(AgentProfile, root.id)).cwd = "/repo";
+}, context);
+
+const prompt = registry.batch(() => {
+	// `tag: false` sends the text as is; by default it is wrapped in <key>...</key>.
+	registry.systemPrompt.section("preamble", () => "You are a coding agent.", { tag: false });
+	registry.systemPrompt.section("cwd", async (input, renderContext) => {
+		return (await input.read.snapshot(AgentProfile, input.conversationId, renderContext))?.cwd;
+	});
+	// Returning undefined omits the section, here for subagents.
+	registry.systemPrompt.section("agents_md", async (input, renderContext) => {
+		const profile = await input.read.snapshot(AgentProfile, input.conversationId, renderContext);
+		return profile?.role === "subagent" ? undefined : "Run npm run check after changes.";
+	});
+	// Sections see the offered tools, including the app's own metadata.
+	registry.systemPrompt.section("tools", (input) =>
+		input.tools.length === 0
+			? undefined
+			: input.tools.map((entry) => `- ${entry.name}: ${entry.snippet ?? entry.description}`).join("\n"),
+	);
+});
+
+// Another extension decorates a section without replacing it.
+registry.systemPrompt.wrap("preamble", "tone", (section) => ({
+	...section,
+	render: async (input, renderContext) => `${await section.render(input, renderContext)} Be terse.`,
+}));
+
+// Package 15's request preparation runs these for every request. This loop
+// only stands in for it to show the output.
+const promptSnapshot = registry.snapshot();
+const input: PromptInput<AppTool> = {
+	conversationId: root.id,
+	tools: promptSnapshot.tools(),
+	shown: {},
+	thinkingLevel: await root.getThinkingLevel(context),
+	read: harness,
+};
+const rendered: string[] = [];
+for (const section of promptSnapshot.sections()) {
+	const text = await section.render(input, context);
+	if (text === undefined) continue;
+	rendered.push(section.tag === false ? text : `<${section.key}>\n${text}\n</${section.key}>`);
+}
+console.log(`12. rendered prompt:\n${rendered.join("\n")}`);
+
+prompt.dispose();
+
+await harness.close(context);

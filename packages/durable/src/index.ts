@@ -1,5 +1,43 @@
 export { defineDoc, defineDocFamily } from "./documents.ts";
+export { defineEntry } from "./entries.ts";
 export { ReadAfterWrite, StorageRejected } from "./errors.ts";
+export { ConversationConfig, type ConversationConfigState } from "./harness/config.ts";
+export { Harness } from "./harness/harness.ts";
+export { createRegistry } from "./harness/registry.ts";
+export type {
+	AnyTask,
+	ContextView,
+	Conversation,
+	ConversationCreateOptions,
+	ConversationHandle,
+	ConversationInit,
+	DocumentReader,
+	Entry,
+	HarnessOptions,
+	HookRegistration,
+	HookScope,
+	HooksOf,
+	InputSubmissionDraft,
+	ModelRef,
+	PromptInput,
+	PromptSection,
+	PromptSectionWrapper,
+	Registration,
+	Registry,
+	RegistryFailure,
+	RegistryReader,
+	RegistrySnapshot,
+	SettledSubmissionRecord,
+	SettledTask,
+	Submission,
+	SubmissionDraft,
+	ToolControl,
+	ToolExecutionApi,
+	ToolExecutionResult,
+	ToolRegistration,
+	ToolWrapper,
+	UserInput,
+} from "./harness/types.ts";
 export { createSession } from "./session/session.ts";
 export { MemoryStorage } from "./storage/memory.ts";
 export type {

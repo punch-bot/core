@@ -126,10 +126,10 @@ async function runCanvasExample(session: Session): Promise<void> {
 The application owns the open Session. Acquire the document state asynchronously
 before synchronous `setup`, then transfer its disposal to the facet;
 `env.provide` cannot run in `onActivate`. Install one provider per
-Session host. Chord may reload presentation facets independently, but v1 does
-not use facet reload to replace Session-side task or hook implementations. A
-host extension code change closes and reopens the Harness with the new
-definition set.
+Session host. Chord may reload presentation facets independently. Session-side
+tools, hooks, tasks, and prompt sections reload through the Harness
+registry: publish the replacement in one `batch()`. Work already running keeps
+the old code, so the facet manages its old resources' lifetime itself.
 
 Remote clients supply a `RemoteServiceTransport` connected to the host's `services`
 provider; Chord prescribes no socket protocol. `CanvasConsumer` also works unchanged
@@ -338,7 +338,7 @@ dynamic service should then withdraw its instance rather than expose stale data.
 
 ```text
 addStroke -> hold Session mutation line -> await tx.doc -> mutate tracker change draft
-callback succeeds -> tracker prepare: immutable candidate + frozen ops
+callback succeeds -> tracker prepare: immutable candidate + immutable ops
 Session checkpoint predicate selects a base or delta exactly once
 atomic storage commit: persist selected document and record writes
 storage succeeds -> adopt candidate + enqueue candidate/ops, still on line

@@ -60,6 +60,8 @@ export type LoadedDocument = {
 	readonly record: DocumentRecord;
 	/** Persisted definition version; older while the tracked value is migrated only in memory. */
 	storedVersion: number;
+	/** Definition version whose shape the tracked value has; access with another version reloads from Storage. */
+	readonly valueVersion: number;
 	/** Stored deltas after the newest base; advanced by adoption so the next predicate call needs no read. */
 	deltasSinceBase: number;
 	readonly tracker: Tracker<JsonObject>;
@@ -550,6 +552,7 @@ export class Transaction implements Tx {
 							addressId: document.addressId,
 							record,
 							storedVersion: target.version,
+							valueVersion: target.version,
 							deltasSinceBase: 0,
 							tracker: target.tracker,
 						});

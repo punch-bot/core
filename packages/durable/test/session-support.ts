@@ -13,7 +13,7 @@ import {
 	type Seq,
 	type StorageWrite,
 } from "@punch-bot/durable";
-import { SessionKernel } from "../src/session/session.ts";
+import { SessionImpl } from "../src/session/session.ts";
 
 export const context: Context = BACKGROUND_CONTEXT;
 
@@ -110,11 +110,11 @@ export class ControlledStorage extends MemoryStorage {
 /** Session kernel plus its controlled storage and every committed publication. */
 export function openTestSession(): {
 	readonly storage: ControlledStorage;
-	readonly session: SessionKernel;
+	readonly session: SessionImpl;
 	readonly publications: CommitPublication[];
 } {
 	const storage = new ControlledStorage();
-	const session = new SessionKernel(storage);
+	const session = new SessionImpl(storage);
 	const publications: CommitPublication[] = [];
 	session.subscribeCommits((publication) => {
 		publications.push(publication);
@@ -140,7 +140,7 @@ export function documentCopyChanges(
 }
 
 /** Create one conversation and return its ID. */
-export async function createConversation(session: SessionKernel): Promise<ConversationId> {
+export async function createConversation(session: SessionImpl): Promise<ConversationId> {
 	return session.commit(async (tx) => (await tx.createConversation({ ownership: { kind: "ownerless" } })).id, context);
 }
 

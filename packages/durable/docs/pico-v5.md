@@ -120,11 +120,14 @@ interface SystemMessage {
 }
 ```
 
-`content` is the base prompt on the leading message and additional instruction
-text on later messages. `sections` is an ordered named patch: a string adds or
-replaces a section, while `null` removes it. `toolsRemoved` is applied before
-`toolsAdded` within one message. Replaying every system message in transcript
-order yields the effective prompt and tool set.
+In pi-ai, `content` is the base prompt on the leading message and additional
+instruction text on later messages. `sections` is an ordered named patch: a
+string adds or replaces a section, while `null` removes it. `toolsRemoved` is
+applied before `toolsAdded` within one message. Replaying every system message
+in transcript order yields the effective prompt and tool set.
+
+Pico always writes `content: ""`. Every prompt part, including the preamble, is
+a named section produced by the registry's system prompt slot (section 7.4).
 
 ```ts
 type ContextEdit = {
@@ -256,9 +259,11 @@ Context derivation:
 5. If `H` exists, context entries are `H` followed by non-head entries in the
    range. Otherwise they are the range.
 6. Keep every positional system message and its tool/section changes.
-7. Order tool results by assistant tool-call order.
-8. Synthesize missing tool results after a fork when required by the provider
-   message protocol.
+7. Move each assistant's tool results, found before the next assistant message,
+   directly after it in tool-call order, ahead of any intervening user or system
+   message. The provider protocol requires results to follow their call.
+8. Synthesize an error result for every call without one, for example after a
+   fork cut or at an interrupted tail. Drop tool results with no preceding call.
 9. Exclude model-less entries and assistant messages with `aborted`, `error`, or
    `deferred` stop reasons from future provider requests.
 
@@ -299,18 +304,12 @@ type SubmissionDraft = {
 
 type InputSubmissionDraft = Extract<SubmissionDraft, { readonly type: "input" }>;
 
-type SectionSeed =
-  | { readonly key: string; readonly value: JsonValue }
-  | { readonly key: string; readonly remove: true };
+/** Runs inside the creating commit, after the conversation and its configuration exist. */
+type ConversationInit = (tx: Tx, conversationId: ConversationId) => void | Promise<void>;
 
-type ConversationSpec = {
-  readonly model?: ModelRef;
-  readonly sections?: readonly SectionSeed[];
-  readonly activeTools?: readonly string[];
-};
-
-type ConversationCreateSpec = ConversationSpec & {
+type ConversationCreateOptions = {
   readonly ownership: ConversationOwnership;
+  readonly init?: ConversationInit;
 };
 
 type AnyTask = {
@@ -325,15 +324,21 @@ type AnyTask = {
   };
 };
 
-type HarnessOptions = {
+type HarnessOptions<Tool extends ToolRegistration = ToolRegistration> = {
   readonly models: Models; // the pi-ai Models interface
-  readonly tools?: readonly ToolRegistration[];
-  readonly taskKinds?: readonly AnyTask[];
-  readonly sections?: readonly SystemSection<JsonValue>[];
+  readonly registry: RegistryReader<Tool>; // section 7.1
   readonly now?: () => number;
-  readonly root?: ConversationSpec;
   readonly onReport?: (error: unknown) => void;
 };
+
+type ConversationConfigState = {
+  model?: ModelRef;
+  thinkingLevel: ModelThinkingLevel;
+  activeTools: string[];
+};
+
+/** Built-in rewindable configuration document; see below. */
+declare const ConversationConfig: RewindableConversationDocToken<ConversationConfigState>;
 
 interface Entry<E extends EntryRecord = EntryRecord> {
   readonly kind: string;
@@ -379,15 +384,6 @@ interface Conversation {
   setThinkingLevel(level: ModelThinkingLevel, context: Context): Promise<void>;
   getActiveTools(context: Context): Promise<readonly string[]>;
   setActiveTools(names: readonly string[], context: Context): Promise<void>;
-  getSection<T extends JsonValue>(
-    section: SystemSection<T>,
-    context: Context,
-  ): Promise<T | undefined>;
-  setSection<T extends JsonValue>(
-    section: SystemSection<T>,
-    value: T | undefined,
-    context: Context,
-  ): Promise<void>;
 
   commit<T>(
     change: (tx: Tx) => T | Promise<T>,
@@ -402,19 +398,13 @@ interface Conversation {
   ): Promise<Page<EntryRecord, Cursor>>;
   fork(
     at: EntryId,
-    spec: ConversationCreateSpec,
+    options: ConversationCreateOptions,
     context: Context,
   ): Promise<Conversation>;
   collapse(instructions: string | undefined, context: Context): Promise<TaskId>;
   reset(handoff: string | undefined, context: Context): Promise<void>;
   abort(context: Context): Promise<void>;
   waitForIdle(context: Context): Promise<void>;
-  hooks<K extends AnyTask>(
-    owner: string,
-    task: K,
-    handlers: Partial<HooksOf<K>>,
-    options?: { readonly subtree?: boolean },
-  ): () => void;
   viewState(context: Context): Promise<AttachedReplicatedState<ConversationView>>;
   watch(context: Context): Promise<ConversationWatch>;
 }
@@ -425,20 +415,13 @@ interface Harness extends Session {
   quiescent(): boolean;
   hold(): () => void;
 
-  registerTaskKind(task: AnyTask): () => void;
-  registerTool(tool: ToolRegistration): () => void;
-  registerSection(section: SystemSection<JsonValue>): () => void;
-  hooks<K extends AnyTask>(
-    owner: string,
-    task: K,
-    handlers: Partial<HooksOf<K>>,
-  ): () => void;
-
-  root(context: Context): Promise<Conversation>;
-  onConversation(listener: (conversation: Conversation) => void): () => void;
+  root(
+    context: Context,
+    options?: { readonly init?: ConversationInit },
+  ): Promise<Conversation>;
   conversation(id: ConversationId, context: Context): Promise<Conversation | undefined>;
   createConversation(
-    spec: ConversationCreateSpec & { readonly input?: UserInput },
+    options: ConversationCreateOptions & { readonly input?: UserInput },
     context: Context,
   ): Promise<Conversation>;
 
@@ -456,9 +439,9 @@ interface Harness extends Session {
 }
 
 declare const Harness: {
-  open(
+  open<Tool extends ToolRegistration>(
     storage: Storage,
-    options: HarnessOptions,
+    options: HarnessOptions<Tool>,
     context: Context,
   ): Promise<Harness>;
 };
@@ -471,20 +454,23 @@ conversation watch replace those surfaces. `submit()` durably admits either a
 user input or passive entry write and returns one `Submission` that tracks its
 settlement.
 
-`Harness.open()` installs built-in task, tool, and section definitions followed
-by supplied task kinds, tools, and sections. It changes
-surviving `running` tasks to `pending`, migrates task records, and settles unknown
-or unmigratable live task kinds as `orphaned` before resolving. Any built-in
-document touched by that recovery migrates through its ordinary typed access
-path. Open does not scan or migrate other documents. IDs and names in registries must be unique. No
-handler dispatches during open. Dynamic registration is available after open and
-does not resurrect a task already settled by that pass.
+`Harness.open()` binds the Session to one application-owned registry (section
+7.1). Built-in task definitions live outside that registry.
+Open changes surviving `running` tasks to `pending` and does nothing else to
+task records: it never migrates or terminalizes a task because its definition
+is missing or unmigratable. Such a task stays `pending` and is **blocked**: the
+scheduler skips it and reconsiders it whenever the registry changes (section
+5.4). Any built-in document touched by recovery migrates through its ordinary
+typed access path. Open does not scan or migrate other documents. No handler
+dispatches during open. Applications should register tasks before open so
+recovered work can resume immediately; registration after open also unblocks it.
 
-The root conversation always has reserved ID `ROOT_CONVERSATION_ID` (`1`). Empty
-storage creates that conversation from `options.root` as ownerless; reopen looks
-it up by the reserved ID. `options.root` never overwrites existing state. `root()` returns
-that handle. A conversation with no configured model produces a durable
-`no_model` generation failure.
+The root conversation always has reserved ID `ROOT_CONVERSATION_ID` (`1`).
+`root(context, { init })` creates it lazily: when the root is absent, one commit
+on the Session line creates the ownerless root, its default configuration, and
+runs `init(tx, rootId)`. When the root already exists, `init` is ignored and no
+write occurs. Reopen finds the same root by its reserved ID. A conversation with
+no configured model produces a durable `no_model` generation failure.
 
 `resume()` is idempotent while running and only enables scheduling. It does not
 repeat open-time reconciliation. `suspend()` is terminal for that Harness
@@ -493,57 +479,78 @@ rejects. `quiescent()` means no task invocation is currently executing; eligible
 or delayed durable tasks may still exist. `hold()` is available only while
 quiescent and pauses reservation until its idempotent release function runs.
 
-Runtime registration rejects duplicate IDs/names and returns an idempotent
-function that unregisters only that exact token. It supports declaration
-movement during normal operation, not replacement of executing extension code;
-section 7.4 governs code reload.
+`createConversation({ ownership, init, input })` and
+`fork(at, { ownership, init })` commit atomically: the conversation, its
+explicitly selected ownership, its configuration, every write made by `init`,
+and an optional input submission. Host callers must choose ownerless or task
+ownership; neither the Harness nor a conversation handle infers ownership from
+call context. A new independent conversation receives the default configuration
+before `init` runs. A fork receives the configuration visible at `at` through
+the ordinary `asOf` fork policy; `init` may then override it with
+`tx.doc(ConversationConfig, id)`. Other documents follow their own definitions
+without special handling.
 
-Conversation creation atomically commits the conversation, its explicitly
-selected ownership, built-in configuration and section/tool seeds, and an
-optional input submission. Host callers must choose ownerless or task ownership
-in `ConversationCreateSpec`; neither the Harness nor a conversation handle
-infers ownership from call context. For a fork, omitted model, section, and
-active-tool values follow their document definition's fork policy; provided
-values override those forked built-in values in the same commit. Other documents
-follow their own definitions without special handling.
+Raw `tx.createConversation()` and `tx.forkConversation()` remain available.
+They write no configuration of their own; a conversation without a configuration
+document reads as `ConversationConfig.definition.initial()` until something
+writes it. Callers that want Harness defaults use the Harness conveniences or
+write the document in the same commit.
 
-The built-in conversation configuration document contains the selected model,
-thinking level, an ordered array of section key/value records, and active tool
-names. Its initial thinking level
-is `"off"`. It is rewindable with `fork: "asOf"`, so a child starts from the
-configuration visible at its selected entry unless explicit creation seeds
-override it. Conversation creation eagerly
-creates it, so `getModel()`, `getThinkingLevel()`, `getActiveTools()`, and
-`getSection()` return immutable committed snapshots without a get-or-create
-write. Each setter performs one ordinary Session commit against that document;
-`setSection(section, undefined)` removes the value. A setter does not start
+The built-in conversation configuration document is final at version 1:
+
+| field | value |
+|---|---|
+| kind | `pi.conversation.config` |
+| version | `1` (no migration) |
+| scope/history/fork | conversation, `rewindable`, `asOf` |
+| schema | `ConversationConfigState` |
+| `initial()` | `{ thinkingLevel: "off", activeTools: [] }` |
+| checkpoint | complete base on every change |
+| view mount | `docs["pi.conversation.config"]` |
+
+It has no prompt sections: prompt text is produced per request by the registry
+(section 7.4). Any code may edit it with
+`tx.doc(ConversationConfig, id)`, including in the same commit as a create or
+fork. The getters return immutable committed values, falling back to
+`initial()` when the document is absent; they never write. Each setter performs
+one ordinary Session commit against the document. A setter does not start
 generation or append a system entry. Request preparation later compares the
-desired committed configuration with transcript history and appends the required
+desired configuration with transcript history and appends the required
 positional system baseline or delta.
 
-Tool declarations and executable functions are process-local Harness registry
-entries, supplied through `HarnessOptions.tools` or `registerTool()`. The durable
-configuration document stores only active tool names. A new independent
-conversation defaults to every tool registered when its creation is admitted;
-`ConversationSpec.activeTools` overrides that default. A fork with no explicit
-`activeTools` uses the configuration document's `asOf` value.
+Default active tools for a root or independent conversation are the names of
+every tool registered when its creation commit runs, in registry order.
+`setActiveTools()` rejects the whole operation without a write when a name is
+duplicated or when a name that was not already active in that conversation is
+not registered. The create/fork conveniences check only one thing about `init`
+writes: names that `init` newly activates must be registered. Names that were
+already active are never revalidated, so stale unregistered names survive every
+edit. All other raw document writes are trusted and unchecked, so other writers,
+such as post-tools `addTools`, never fault because of registry movement. Readers tolerate what raw
+writes can produce: request preparation offers the first occurrence of a
+duplicated name, and post-tools `addTools` appends only names not already
+active.
 
-`registerTool()` changes only the runtime registry. It does not activate the tool
-in existing conversations or write a document. `setActiveTools()` is the only
-host operation that replaces one existing conversation's durable active set.
-Explicit `ConversationSpec.activeTools` and `setActiveTools()` values must contain
-unique names that are registered when their commit is admitted; otherwise the
-whole operation rejects without a write. Inherited historical names are not
-revalidated during a fork and may later be unavailable after registry movement.
-Unregistering a tool does not rewrite any conversation.
+`init` runs after the conversation creation, which is a table write, so table
+reads inside it throw `ReadAfterWrite` (section 4). Document access remains
+available.
 
-If request preparation finds unavailable active names, it performs no provider
-request. It atomically terminalizes the generation task as `failed` with
-`detail: { code: "missing_active_tool", names }`, makes its placed input submissions
-`unanswered` with reason `missing_active_tool`, clears matching turn control, and
-appends a visible model-less diagnostic entry. It does not silently change the
-durable loadout. Historical system entries remain replayable because they store
-the exact declarations actually offered to prior requests.
+The configuration document records the desired loadout; the registry records
+what this process can execute now. An active name may therefore be unregistered,
+for example during extension reload, after restart before registration, or in a
+fork opened by a process that lacks an extension. The document is never
+rewritten because of registry movement, so a re-registered tool becomes available
+again without host action. Hosts derive current availability as active names
+that are currently registered.
+
+A missing tool implementation never fails a request. Request preparation offers
+only active names that are currently registered. If the replayed tool state still
+offers an unregistered name, the appended system delta lists it in
+`toolsRemoved`; when the name is registered again, a later delta adds its current
+declaration. When the model calls a tool that is not offered or whose
+implementation is unavailable at execution time, the tool task appends an error
+tool result with `details: { code: "tool_unavailable" }` stating that the tool is
+not available, and the turn continues so the model can react.
 
 A `Conversation.commit()` is a Session commit bound to that conversation.
 `tx.createTask()` defaults `TaskOptions.conversationId` to the bound conversation.
@@ -572,11 +579,11 @@ same traversal from every ownerless conversation root. Pending dependency- or
 deadline-blocked work is still live and therefore not idle. Cancelling an idle
 wait aborts only that waiter.
 
-`onConversation()` synchronously visits the currently loaded committed
-conversations in ascending ID order, then reports each later creation after its
-commit. Listener failures go to `onReport` and do not stop other listeners. Its
-idempotent disposer removes the listener; Harness close removes all remaining
-listeners.
+Conversation handles are stateless; compare them by `id`. Hosts discover
+conversations through lookups and scans. An activity view that lists active
+conversations and reports conversations becoming active or idle, plus Harness
+quiescence, is specified with the task runtime and turn control (Packages 14
+and 17); there is no creation listener.
 
 `submit()` returns after durable admission, not settlement. An input submission
 creates a user message with the admission timestamp; `whenBusy` defaults to
@@ -590,7 +597,8 @@ reopen; records remain queryable after settlement.
 
 `abortTask()` durably requests cancellation and returns `marked` after the mark
 is committed, any active run invocation has joined, and an abort invocation has
-been scheduled; it does not await terminal settlement. `waitForTask()` observes
+been scheduled, or a blocked task has been settled as `orphaned` (section 5.4);
+it does not await terminal settlement. `waitForTask()` observes
 the terminal receipt. Aborting an already terminal task returns `terminal`; an
 unknown ID rejects. Explicit task abort includes a background task. Cancelling a
 task or idle wait does not abort work.
@@ -1127,7 +1135,10 @@ Harness open does not sweep ordinary documents.
 - Read-only access migrates only in memory and never writes. It may cache a
   tracker over that migrated immutable revision together with the older stored
   version marker; the next successful `tx.doc()` access still writes the required
-  current-version base. Migration always starts from a detached stored value.
+  current-version base. A cached tracker serves only tokens of the version its value was
+  materialized for. Access with any other version, such as a token from reloaded
+  extension code, drops it and reloads the stored value, so each token migrates
+  from the stored version or rejects a newer one. Migration always starts from a detached stored value.
   `tx.doc()` stages migration in its enclosing transaction; callback failure
   persists nothing, and later draft edits coalesce into one final required base.
 - Rewindable history is not rewritten. Current and historical reconstructed
@@ -1362,9 +1373,11 @@ settles, the scheduler rereads the task and applies the first matching rule:
    was made.
 
 On open, running-task reconciliation changes surviving `running` tasks back to
-`pending`, preserving their checkpoint and abort mark. Task migration then runs
-before dispatch. One callback handles every supported older version; newer or
-unmigratable live tasks become orphaned.
+`pending`, preserving their checkpoint and abort mark. Task migration runs at
+reservation, atomically with `pending -> running`. One callback handles every
+supported older version. A task whose definition is missing, older than the
+stored version, or fails migration stays `pending` and blocked until a fitting
+definition is registered or the task is aborted (section 5.4).
 `close()` marks the runtime closing, seals admission and reservation, signals
 invocations, and stops watches. Outside the Session line it settles admitted
 commits and joins invocations before closing storage. Already-running watch callbacks remain
@@ -1412,7 +1425,8 @@ A terminal transition atomically:
 The execution checkpoint and memos disappear from the terminal representation.
 Terminal records remain queryable for dependencies, waiters, inspection, and
 reopen. A normal run becomes eligible when every `after` task is terminal. An abort
-mark bypasses dependencies so pending work can always reach its abort handler.
+mark bypasses dependencies so pending work can always reach its abort handler,
+or its `orphaned` settlement when its definition is unavailable.
 
 ### 5.4 Scheduler, abort, and ownership
 
@@ -1467,14 +1481,53 @@ owner edges are never retired with the task. Active invocations are signalled
 after commit, and a terminal receipt guarantees durable cancellation intent,
 not descendant quiescence.
 
-Initial task definitions are registered before open performs live-task migration
-and orphan reconciliation. Dynamic registration begins only after that pass.
-Document migration remains access-driven. Unknown or unmigratable live task kinds
-become terminal `orphaned`;
-affected input submissions become unanswered, any matching active turn control is cleared,
-task-scoped documents retire, and a visible notice entry is appended in one
-commit. Faulting a turn task performs the same control/submission cleanup with a
+Every run invocation start resolves the task's definition by `TaskRecord.kind`
+from the scheduler's current registry snapshot:
+
+```text
+definition missing                 -> stay pending, blocked: missing_task
+stored version newer than it       -> stay pending, blocked: task_too_old
+stored version older than it       -> migrate(input, checkpoint, storedVersion)
+  failure                           -> stay pending, blocked: migration_failed
+  success                           -> commit migrated record + running atomically
+equal version                       -> commit running
+```
+
+An abort invocation resolves the definition the same way. When the definition
+can take the task, its abort handler runs; otherwise the task is orphaned as
+described below.
+
+The Harness never terminalizes a task merely because registry code is missing or
+incompatible, neither at open nor later. A blocked task without an abort mark
+keeps its durable record unchanged, remains live, still blocks ordinary idle
+waits, and is reconsidered whenever the registry changes. The blocked reason is derived
+runtime state, not a persisted task status. Document migration remains
+access-driven.
+
+Aborting a blocked task cannot run its abort handler, because that code is
+missing or cannot take the task. The Harness therefore settles it as terminal
+`orphaned` instead of `aborted`: `aborted` means the task's own abort handler
+ran and decided the outcome, while `orphaned` means no task code ran, so external
+effects the task started may remain uncleaned. Only an abort (direct, by
+conversation, or by cascade) orphans a task; a missing definition alone never
+does. The orphaning commit performs the cleanup the task's code cannot: affected
+input submissions become unanswered with the reason, any matching active turn
+control is cleared, and task-scoped documents retire. No transcript entry is
+written; the terminal task record and unanswered submissions carry the reason.
+Faulting a turn task performs the same control/submission cleanup with a
 `faulted` outcome.
+
+At every normal phase boundary (section 5.1, rule 5), after rereading the task
+and applying the precedence rules, the scheduler refreshes the invocation's
+registry snapshot. If the task definition resolved by name is a different object
+than the one the invocation started with and the new definition can reserve the
+task (same version, or a higher version with `migrate`), the invocation hands
+over: it commits the task back to `pending` with its checkpoint, memos, and abort
+mark, ends, and the next reservation starts a fresh invocation under the new
+definition, applying the reservation rules above. When the definition is missing
+or cannot reserve the task, the invocation keeps running under its old
+definition, reports once, and reconsiders at its next boundary. A handler that
+never settles never hands over.
 
 ## 6. Submissions and inbox
 
@@ -1541,18 +1594,193 @@ preserved. Chord's Astra operation generator must express scattered removals
 without carrying retained values; IDs are not substituted for positional inbox
 semantics.
 
-## 7. Hooks, tools, and system sections
+## 7. Registry, hooks, tools, and system prompt
 
-### 7.1 Hooks
+### 7.1 Registry
+
+Extension code reaches the Harness through one application-owned registry. The
+registry is process-local, may outlive a Harness, and is the only place tools,
+tool wrappers, hooks, tasks, and the system prompt are registered. Nothing
+in it is persisted; durable state stays in conversations, entries, tasks, and
+documents.
+
+```ts
+type DocumentReader = Pick<Session, "snapshot" | "snapshotAsOf">;
+
+interface Registration {
+  /** Idempotent; removes exactly the registrations this token covers. */
+  dispose(): void;
+}
+
+type ToolWrapper<Tool extends ToolRegistration> = (tool: Tool) => Tool;
+
+type HookScope = {
+  readonly conversationId: ConversationId;
+  /** Also match conversations owned, transitively, by tasks of this conversation. */
+  readonly subtree?: boolean;
+};
+
+type PromptInput<Tool extends ToolRegistration> = {
+  readonly conversationId: ConversationId;
+  /** Active and registered tools in configured order, as offered in this request. */
+  readonly tools: readonly Tool[];
+  /** Sections already in effect after replaying the active transcript. */
+  readonly shown: Readonly<Record<string, string>>;
+  readonly model?: ModelRef;
+  readonly thinkingLevel: ModelThinkingLevel;
+  /** Committed document reads. */
+  readonly read: DocumentReader;
+};
+
+type PromptSection<Tool extends ToolRegistration> = {
+  readonly key: string;
+  render(
+    input: PromptInput<Tool>,
+    context: Context,
+  ): string | undefined | Promise<string | undefined>;
+  /** Default true: wrap the text as `<key>\n...\n</key>`. */
+  readonly tag?: boolean;
+};
+
+type PromptSectionWrapper<Tool extends ToolRegistration> = (
+  section: PromptSection<Tool>,
+) => PromptSection<Tool>;
+
+interface RegistryReader<Tool extends ToolRegistration = ToolRegistration> {
+  /** Immutable view of the whole current registry. */
+  snapshot(): RegistrySnapshot<Tool>;
+  /** Called synchronously after every publication; wakes the scheduler to reconsider blocked tasks. */
+  subscribe(listener: () => void): () => void;
+}
+
+interface RegistrySnapshot<Tool extends ToolRegistration> {
+  /** Composed tools in registry order; a tool whose wrapper failed is absent. */
+  tools(): readonly Tool[];
+  tool(name: string): Tool | undefined;
+  /** Base tool names in registry order, including tools whose wrappers fail. */
+  toolNames(): readonly string[];
+  task(name: string): AnyTask | undefined;
+  /** Hooks registered for tasks with `task`'s name, in registry order. */
+  hooks<K extends AnyTask>(task: K): readonly {
+    readonly handlers: Partial<HooksOf<K>>;
+    readonly scope?: HookScope;
+  }[];
+  /** Composed sections in registry order; a section whose wrapper failed is absent. */
+  sections(): readonly PromptSection<Tool>[];
+  /** Wrapper failures of this state; the Harness reports them where it uses them. */
+  failures(): readonly {
+    readonly kind: "tool" | "section";
+    readonly name: string;
+    readonly error: unknown;
+  }[];
+}
+
+interface Registry<Tool extends ToolRegistration = ToolRegistration> extends RegistryReader<Tool> {
+  readonly tools: {
+    add(tool: Tool): Registration;
+    wrap(name: string, key: string, wrapper: ToolWrapper<Tool>): Registration;
+    list(): readonly Tool[];
+  };
+  readonly hooks: {
+    add<K extends AnyTask>(
+      task: K,
+      handlers: Partial<HooksOf<K>>,
+      options?: { readonly scope?: HookScope; readonly key?: string },
+    ): Registration;
+  };
+  readonly tasks: {
+    add(task: AnyTask): Registration;
+    list(): readonly AnyTask[];
+  };
+  readonly systemPrompt: {
+    section(
+      key: string,
+      render: PromptSection<Tool>["render"],
+      options?: { readonly tag?: boolean },
+    ): Registration;
+    wrap(key: string, wrapperKey: string, wrapper: PromptSectionWrapper<Tool>): Registration;
+    sections(): readonly PromptSection<Tool>[];
+  };
+  batch(register: () => void): Registration;
+}
+
+function createRegistry<Tool extends ToolRegistration = ToolRegistration>(): Registry<Tool>;
+```
+
+The `Tool` parameter lets applications attach metadata such as prompt snippets to
+their tools; the Harness only relies on `ToolRegistration`. Pi-ai declarations
+derived from a registered tool keep only pi-ai `Tool` fields (`toToolDeclaration`),
+so application metadata never enters the transcript.
+
+Registration rules:
+
+- Tool names, section keys, and task names are unique among published
+  registrations. Tool wrapper keys are unique per tool name, section wrapper
+  keys per section key, and hook keys per task name. Duplicates reject.
+  Section keys match `^[a-z][a-z0-9_-]*$`.
+- Keyed slots are ordered by the position at which their key was first
+  registered. The registry remembers that position forever, so re-registering an
+  existing key, as a reload does, keeps its position; a new key appends. Hooks
+  without a key append.
+- Registered objects are immutable and wrappers are pure: a wrapper returns a
+  new object and never mutates its input.
+- Every call outside `batch()` publishes immediately. Publication is synchronous,
+  invokes no extension callback, and notifies subscribers.
+
+`batch(register)` stages every registration and disposal made while `register`
+runs and publishes once when it returns. It validates only the final staged
+state, so order inside the block does not matter: disposing an old tool and
+adding its replacement is a gapless reload. If `register` throws, returns a
+thenable, or the final state is invalid, nothing is published, staged disposals
+are rolled back, and `batch()` throws. Only registrations made synchronously
+inside `register` belong to the batch; a registration made later by a detached
+continuation is an ordinary immediate registration. Calling `batch()` inside a
+batch is a programming error and throws. The returned `Registration` covers every
+registration added in the batch that was not disposed inside it.
+
+A snapshot is a plain immutable value; nothing is released. The scheduler takes
+one per phase-handler invocation and passes it through the runtime; handlers and
+hooks read that snapshot and never take their own. At every normal phase boundary
+the scheduler takes a fresh one (section 5.4). A tool task keeps the composed tool
+it pinned until execution settles. Different phases may observe different
+registry states; nothing requires one turn to see a single registry state across
+its generation, tool, and post-tools tasks. Host operations, such as the create
+conveniences, take one snapshot inside their commit.
+
+```ts
+// ToolTask is the built-in tool task's token; its hooks are listed in section 7.2.
+const registration = registry.batch(() => {
+  registry.tools.add(grep);
+  registry.hooks.add(ToolTask, { beforeTool: audit }, { key: "audit" });
+});
+// later, reload: publish the replacement at once
+registry.batch(() => {
+  registration.dispose();
+  registry.tools.add(grepV2);
+  registry.hooks.add(ToolTask, { beforeTool: audit2 }, { key: "audit" });
+});
+```
+
+The registry does not track which running work still uses a disposed
+registration. Work that already started keeps using the code it took, so an
+extension that frees resources right after `dispose()` can make a still-running
+call fail with an ordinary error result. Extensions that need graceful disposal
+manage their resources' lifetime themselves, for example by reference counting.
+
+### 7.2 Hooks
 
 A hook is a typed question asked by a task before it commits a decision. Hooks
-are declared by task kind and registered in registration order Session-wide or
-for a conversation and its owned subtree. They run off the line; a crash before
-the consuming commit may rerun them. Abort errors always propagate.
+are declared by task definition and registered through `registry.hooks.add()`
+Session-wide or, with `scope`, for one conversation and optionally its owned
+subtree. Subtree matching follows conversation ownership, not history parents.
+Registration is typed by the task token, but dispatch matches the task's name,
+so hooks survive a reload of their task; keeping hook signatures compatible
+across task versions is the task author's responsibility. Hooks run in registry
+order off the line; a crash before the consuming commit may rerun them. Abort
+errors always propagate.
 
 | hook | composition | ordinary throw |
 |---|---|---|
-| system instructions | all; draft changes compose; last tool override wins | roll back that handler, report, continue |
 | `beforeRequest` | replacement chain | report, continue |
 | `afterResponse` | all observers | report, continue |
 | `onYield` | first continuation wins | report, continue |
@@ -1564,7 +1792,7 @@ the consuming commit may rerun them. Abort errors always propagate.
 Hooks use task memos for durable first-writer-wins decisions. There is no public
 semantic event channel; current UI status is document state.
 
-### 7.2 Tools
+### 7.3 Tools
 
 ```ts
 type ToolControl = {
@@ -1587,13 +1815,13 @@ interface ConversationHandle {
   waitForIdle(context: Context): Promise<void>;
 }
 
-interface ToolExecutionApi extends DocumentObserver {
+interface ToolExecutionApi extends DocumentObserver, DocumentReader {
   readonly taskId: TaskId;
   readonly conversationId: ConversationId;
   readonly callId: string;
-  stream(chunk: string | Uint8Array): void;
+  output(chunk: string | Uint8Array): void;
+  details(value: JsonValue, context: Context): Promise<void>;
   commit<T>(change: (tx: Tx) => T | Promise<T>, context: Context): Promise<T>;
-  progress(value: JsonObject, context: Context): Promise<void>;
   memo<T extends JsonValue>(name: string, context: Context): Promise<T | undefined>;
   memo<T extends JsonValue>(name: string, candidate: T, context: Context): Promise<T>;
   createTask<I, S extends { phase: string }, R, H extends object>(
@@ -1609,7 +1837,7 @@ interface ToolExecutionApi extends DocumentObserver {
 
 type ToolRegistration = Tool & {
   readonly replay?: "safe" | "unsafe";
-  readonly output?: {
+  readonly outputLimits?: {
     readonly maxBytes?: number;
     readonly maxLines?: number;
     readonly retain?: "head" | "tail";
@@ -1622,34 +1850,59 @@ type ToolRegistration = Tool & {
 };
 ```
 
-Omitted `replay` is `unsafe`. Omitted output bounds are 50 KiB, 2,000 lines,
-and `retain: "head"`. `stream()` synchronously accepts UTF-8 output into that
-invocation-owned bounded buffer and throws after invocation end. Throttled
-commits publish the retained output and dropped byte/line counts in the tool
-presentation document. If `execute()` omits `content`, the final retained stream
-becomes one text content item; no stream becomes an empty content list. Explicit
+Omitted `replay` is `unsafe`. Omitted `outputLimits` are 50 KiB, 2,000 lines,
+and `retain: "head"`.
+
+A running tool reports two things to the UI, mirroring the two halves of its
+final result:
+
+- `output(chunk)` appends running text output, like stdout. If `execute()` omits
+  `content`, the final retained output becomes one text content item; no output
+  becomes an empty content list.
+- `details(value)` replaces the running details with a complete JSON value; it
+  does not merge keys. If `execute()` omits `details`, the last value becomes the
+  final `details`, so a renderer handles one details shape from the first
+  update through the final result.
+
+Neither is sent to the model while the tool runs. `output()` synchronously
+accepts UTF-8 output into that invocation-owned bounded buffer and throws after
+invocation end. Throttled commits publish the retained output, dropped
+byte/line counts, and the current details in the tool presentation document. Explicit
 text in explicit result content is bounded by the same limits before transcript
 persistence; non-text content is retained as declared by its pi-ai type.
 
-`stream()` never spills complete output to a file because spilling requires a
+`output()` never spills complete output to a file because spilling requires a
 filesystem, which may be remote or unavailable. A tool that must preserve
 complete output spills through the `ExecutionEnv` or `FileSystem` it was given,
 such as shell execution with spill capture, and reports the resulting path in its
-result details or progress.
+details.
 
-`progress(value)` replaces the invocation's complete JSON `progress` payload; it
-does not merge keys. Its promise resolves after the corresponding or coalesced
-document commit. During normal settlement, accepted output updates drain before
+The `details()` promise resolves after the corresponding or coalesced document
+commit. During normal settlement, accepted output updates drain before
 the tool-result entry and terminal task record commit. Abort and close obey
 invocation and Session admission gates: uncommitted buffered updates may be
 discarded, while admitted commits settle. Cancellation, callback, tracker
 preparation, and checkpoint failures occur before Storage admission and do not
 poison the Session. An uncertain Storage failure follows the fatal Session rule.
 
-Tools are dynamically registered declarations with name, description, JSON
-schema, replay policy, and execute function. A tool call is accepted only if it
-was offered in the request's effective system/tool history. Arguments are
-validated before and after `beforeTool` hooks.
+Tools are registry entries (section 7.1) with name, description, JSON schema,
+replay policy, and execute function. `registry.tools.wrap(name, key, wrapper)`
+decorates a tool without replacing it. Each snapshot composes the current base
+tool with its wrappers in registry order; a wrapper never captures a base, so
+reloading the base keeps its wrappers. A wrapper that throws or returns a tool
+with a different name makes that tool absent from the snapshot (fail closed:
+not offered, and calls produce `tool_unavailable`) and is reported. A wrapper
+without a base contributes nothing. The composite supplies the declaration,
+argument validation, replay policy, and execution.
+
+A tool call is accepted only if it was offered in the request's effective
+system/tool history. A call to a tool that is not offered or has no registered
+implementation produces the `tool_unavailable` error result described in section
+2.2 instead of failing the turn. The tool task resolves the composed tool once
+from its snapshot before argument validation and pins it until execution
+settles, even across later snapshot refreshes. Arguments must satisfy both the offered
+declaration and the pinned implementation's schema; they are validated before
+and after `beforeTool` hooks.
 
 After hooks and validation, the tool task durably records the final call and
 resolved replay policy before execution. Recovery does not rerun `beforeTool`
@@ -1666,7 +1919,7 @@ ordinary transaction writes for passive entries.
 
 A tool executes in a durable task. It may:
 
-- write bounded progress/output to a presentation or task-scoped document;
+- publish bounded running output and details to its presentation document;
 - commit memos;
 - create and wait for tasks;
 - atomically create or fork explicitly owned conversations through `commit()`;
@@ -1736,27 +1989,19 @@ terminate/handoff, and writes a headed handoff entry when requested.
 
 On reopen, a tool reruns only when both its stored intent policy and the current
 registered declaration say `safe`. A current `unsafe` declaration may veto a
-stored-safe replay; a current-safe declaration never upgrades stored unsafe.
-Every other orphaned effect produces an interrupted result containing the
+stored-safe replay; a current-safe declaration never upgrades stored unsafe. A
+tool with no current registration is treated as `unsafe`. Every other orphaned
+effect produces an interrupted result containing the
 durable partial output. Completed, failed, and aborted
 tool terminal outcomes retain their tool-result entry ID for post-tools.
 
-### 7.3 System sections and dynamic tools
+### 7.4 System prompt and dynamic tools
 
-```ts
-interface SystemSection<T extends JsonValue = JsonValue> {
-  readonly key: string;
-  render(value: T): string;
-}
-
-function defineSystemSection<T extends JsonValue>(definition: {
-  readonly key: string;
-  render(value: T): string;
-}): SystemSection<T>;
-```
-
-Pico stores prompt and tool changes directly as PR #9548 `SystemMessage` values
-at their transcript positions:
+Pico has no durable prompt sections. The registry's system prompt slot produces
+the desired sections for each request; the transcript's `pi.system` entries are
+the only durable record of what the model saw. Pico stores prompt and tool
+changes directly as PR #9548 `SystemMessage` values at their transcript
+positions, always with empty `content`:
 
 ```ts
 type SystemEntry = EntryRecord & {
@@ -1766,8 +2011,8 @@ type SystemEntry = EntryRecord & {
 
 const baseline: SystemMessage = {
   role: "system",
-  content: basePrompt,
-  sections: { persona: renderedPersona, cwd: renderedCwd },
+  content: "",
+  sections: { preamble: renderedPreamble, cwd: renderedCwd },
   toolsAdded: allEffectiveTools,
   timestamp: now,
 };
@@ -1782,10 +2027,49 @@ const delta: SystemMessage = {
 };
 ```
 
-System sections are registered by stable, non-integer-like key. Generation
-prepares the desired rendered section values and effective tool roster, compares
-them with the state obtained by replaying the active transcript, and appends a
-positional `pi.system` baseline or delta.
+Generation preparation takes these steps against its phase snapshot:
+
+1. Read the committed configuration and replay the active transcript's system
+   messages into the shown sections and offered tools.
+2. Compute the desired tools: active names that the snapshot resolves, in
+   configured order, as composed by their wrappers.
+3. Render every registered section, in registry order, with `PromptInput`: the
+   conversation, those tools, the shown sections, the configured model and
+   thinking level, and a `DocumentReader` for committed documents. The results
+   are the desired sections.
+4. Compare desired sections and tool declarations with the replayed state and
+   append one positional `pi.system` entry when they differ.
+5. The commit appending that entry first checks that the conversation's tail
+   entry, active head, and configuration are unchanged since step 1. If any
+   changed, preparation reruns from step 1 with the same registry snapshot.
+
+Model and thinking level are request options, not prompt state.
+
+Registered sections are the only source of prompt text; there is no separate
+builder. `systemPrompt.section(key, render, { tag })` adds a section, and
+`systemPrompt.wrap(key, wrapperKey, wrapper)` decorates one, composed per
+snapshot like tool wrappers. Sections render in registry order: the position at
+which each key was first registered. A section whose `render` returns
+`undefined` is omitted, which is how a section varies by conversation. With
+`tag` omitted or true, text is wrapped as `<key>\n...\n</key>`. A section that
+throws keeps its shown text, if any, and is reported; the request is still sent.
+Abort errors propagate. With no registered sections, the desired section set is
+empty.
+
+A minimal prompt is one untagged section:
+
+```ts
+registry.systemPrompt.section("preamble", () => "You are a helpful assistant.", { tag: false });
+```
+
+Sections read per-conversation data through `input.read`. For example, a
+coding agent keeps its own conversation document with the agent kind, preamble,
+and working directory; its preamble and cwd sections render from that document,
+and its AGENTS.md and skills sections return `undefined` for subagent
+conversations.
+Renderers must be deterministic for equal inputs: any change in rendered text,
+such as an embedded timestamp, appends a system delta and invalidates provider
+prompt caches.
 
 Replay applies messages in transcript order. Non-empty `content` appends
 instructions. A section string adds or replaces that name without moving an
@@ -1793,74 +2077,60 @@ existing section; `null` removes it, and a later re-addition appends it to the
 ordered section map. Within one message, tool removals happen before additions,
 so a same-name replacement gets the new declaration and position.
 
-The built-in configuration document stores sections as an ordered array, never
-as an object whose key order must be inferred by Delta. `setSection(section,
-undefined)` removes the record; setting it later appends it at the end. Preparation compares both values and order. If values can be patched
-without changing order, it emits the minimal patch. If effective and desired
-section order differ, one commit appends two `pi.system` entries: the first
-removes every effective section with `null`, and the second re-adds every desired
-section in desired order. This makes order-only changes and deletion/re-addition
-between requests replay exactly; merely restating equal values is insufficient.
+Preparation compares both values and order. If values can be patched without
+changing order, it emits the minimal patch. If shown and desired section order
+differ, one commit appends two `pi.system` entries: the first removes every
+shown section with `null`, and the second re-adds every desired section in
+desired order. This makes order-only changes and deletion/re-addition between
+requests replay exactly; merely restating equal values is insufficient.
 
 A PR #9548 `SystemMessage` is always a patch, not a reset: it cannot remove
 previous `content` or restore section order merely by restating current values.
 Therefore, when a head removes the previous request-visible baseline, the new
 `pi.system` entry adds `ContextEdit` omissions for every earlier `pi.system`
 entry still retained after the cut. Its own message is then a complete baseline
-containing the base `content`, every desired section in order, and every effective
-tool declaration. Model-context replay sees the new baseline instead of the
-omitted retained deltas. Head rebaselining takes precedence over ordinary
-order/value patching. Without a head cut, an order mismatch uses the two-entry
-remove/re-add sequence above; only when order already matches does preparation
-emit the minimal changed values, `null` removals, and tool additions/removals.
-Same-name tool replacements remove before adding. Registry or document changes
-while preparation hooks run cause preparation to retry against a new snapshot.
+containing every desired section in order and every effective tool declaration.
+Model-context replay sees the new baseline instead of the omitted retained
+deltas. Head rebaselining takes precedence over ordinary order/value patching.
+Without a head cut, an order mismatch uses the two-entry remove/re-add sequence
+above; only when order already matches does preparation emit the minimal changed
+values, `null` removals, and tool additions/removals. A changed tool declaration
+is removed and re-added in the same message. When the offered tool order differs
+from the desired order, the message removes every offered tool and re-adds the
+desired tools in order.
 
-Conversation creation may seed section values or explicit removals. Preparation
-uses a mutable section draft with get/set/delete/wrap; each throwing hook loses
-only its own draft changes. The rendered strings stored in historical
-`SystemMessage.sections` remain authoritative even if the current renderer
-changes. Pi-ai decides whether to send the messages positionally to a capable
-provider or fold them into one leading system message; Pico does not rewrite its
-stored transcript for provider compatibility.
+The rendered strings stored in historical `SystemMessage.sections` remain
+authoritative even if the current renderer changes. Pi-ai decides whether to
+send the messages positionally to a capable provider or fold them into one
+leading system message; Pico does not rewrite its stored transcript for provider
+compatibility.
 
-### 7.4 Host extension reload
+### 7.5 Extension reload
 
-A host extension generation is the Session-side code implementing its task kinds,
-hooks, tools, sections, and document definitions. Registry APIs may
-change registered declarations during normal product operation, but they do not
-make replacement of that implementation code safe while its callbacks are
-running. Document definitions are passed explicitly to typed access rather than
-registered.
+Extension code is reloaded in process through the registry. The host publishes
+the new registrations and disposes the old ones in one `batch()`. The Harness
+keeps running; no close or reopen is required.
 
-In v1, changing host extension code is a Harness generation boundary:
+- New phase invocations and tool tasks use the new registrations immediately;
+  running invocations see them at their next phase boundary.
+- Work already running keeps its snapshot until its phase handler settles, and a
+  pinned tool keeps its implementation until its execution settles. Replacement
+  never signals or interrupts it. Resources the old code uses are the
+  extension's responsibility (section 7.1).
+- A task definition replaced by name hands over at its next normal phase boundary
+  (section 5.4). A task definition must increase its version when the meaning
+  of persisted input or checkpoint state changes and migrate supported older
+  state; a failed migration blocks the task rather than terminalizing it.
+- Keyed registrations re-registered under the same key keep their position, so a
+  reload does not reorder hooks, tools, or sections.
+- Document definitions are passed explicitly to typed access and need no
+  registration; changed tokens take effect on their next access.
 
-1. Stop new admission and task reservation.
-2. Close the Harness, signalling and joining its active task, tool, and hook
-   invocations without writing abort marks or terminal outcomes. Stop future
-   watch deliveries without joining already-running callbacks.
-3. Dispose the old facets and registrations.
-4. Construct a new Harness over the same storage and new document tokens.
-5. Register the complete task definition set before open performs live-task
-   migration and orphan reconciliation. Ordinary documents migrate on later
-   typed access.
-6. Resume scheduling from the durable checkpoints.
-
-A durable task does not need to become terminal before this restart; only its
-current invocation must settle. A task definition must increase its version when
-the meaning of persisted input or checkpoint state changes and migrate supported
-older state. Uncommitted hook work may rerun under the new generation; committed
-memos remain part of the live task.
-
-If old extension code ignores cancellation and never settles, graceful in-process
-reload cannot complete. The host must terminate that isolated worker/process
-before opening the Session under the new generation. Old and new generations
-must never own the same Session concurrently.
-
-Generation-pinned registries that drain old callbacks while routing new work to
-new code, plus explicit compatible task takeover, are possible future work. Safe
-forced takeover of arbitrary non-cooperative JavaScript requires worker/process
-isolation and is not a v1 promise.
+If old extension code ignores cancellation and never settles, new work already
+uses the replacement. Harness close still joins every invocation. Safe forced termination of arbitrary
+non-cooperative JavaScript requires worker/process isolation; that host
+terminates the process and reopens the Session from durable state. Old and new
+Harness instances must never own the same Session concurrently.
 
 ## 8. Built-in tasks
 
@@ -1868,10 +2138,10 @@ The initial implementation provides:
 
 | kind | responsibility |
 |---|---|
-| generation | prepare system/loadout, request or poll model, retry, classify response |
-| tool | validate, hook, execute, persist progress, append result |
-| post-tools | wait for tools, apply controls, run boundary, continue generation |
-| collapse | select a transcript range, summarize, append a headed summary |
+| `pi.generation` | prepare system/loadout, request or poll model, retry, classify response |
+| `pi.tool` | validate, hook, execute, persist output and details, append result |
+| `pi.post-tools` | wait for tools, apply controls, run boundary, continue generation |
+| `pi.collapse` | select a transcript range, summarize, append a headed summary |
 
 Generation uses `HarnessOptions.models` without a Pico-specific model adapter. It
 resolves `models.getModel(ref.provider, ref.modelId)`, builds a pi-ai `Context`
@@ -2424,6 +2694,17 @@ These are contracts, not invitations to add defensive machinery:
   outcome. Never reference a task-scoped document retired by that same outcome.
 - **Raw transcript:** view entries are not model context. Rendering edits,
   display-only entries, and model filtering require the appropriate reducer.
+- **Reserved `pi.` names:** task names, document kinds, and entry kinds starting
+  with `pi.` belong to built-ins by convention. Nothing enforces it; reusing one
+  collides with Harness behavior, such as `pi.system` entries being replayed as
+  system messages.
+- **Early resource disposal:** disposing a `Registration` only stops new use.
+  Freeing resources immediately can fail calls that are still running.
+- **Async batches:** `batch()` callbacks are synchronous. A callback that returns
+  a promise publishes nothing and throws.
+- **Unstable prompt text:** a section renderer whose output changes without a
+  real content change, for example by embedding the time, appends system deltas
+  and defeats provider prompt caching.
 - **Fatal storage errors:** after an uncertain storage failure the Session is
   poisoned. Do not catch the error and continue using it.
 - **JSONL durability:** default JSONL ordering handles ordinary process crashes;
@@ -2444,4 +2725,4 @@ Pico5 initially has no:
 - SQL translation of arbitrary Chord operations;
 - JSONL global compaction or automatic corruption repair;
 - compatibility layer for removed Pico prototypes;
-- in-process hot replacement of Session-side extension implementations.
+- forced termination of non-cooperative extension code inside one process.
