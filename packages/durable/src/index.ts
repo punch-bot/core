@@ -3,6 +3,7 @@ export { ReadAfterWrite, StorageRejected } from "./errors.ts";
 export { createSession } from "./session/session.ts";
 export { MemoryStorage } from "./storage/memory.ts";
 export type {
+	CheckpointInfo,
 	CommitChange,
 	CommitPublication,
 	CommonDocDefinition,

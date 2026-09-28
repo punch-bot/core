@@ -188,7 +188,7 @@ in one transaction; internal candidate validation must not trigger
 
 ## 8. Checkpoints and migration
 
-After tracker preparation, Session evaluates `checkpointWhen(value, ops)` exactly once
+After tracker preparation, Session evaluates `checkpointWhen(value, ops, { deltasSinceBase })` exactly once
 for ordinary mutations and sends Storage only the selected base or delta.
 Implement required creation/version bases and lazy all-older-version migration
 on typed access; Harness open does not scan ordinary documents.

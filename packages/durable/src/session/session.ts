@@ -83,6 +83,20 @@ export class SessionKernel implements Session {
 		return this.#enqueue(() => this.#runCommit(change, context));
 	}
 
+	/** Internal conversation-bound commit used by the public Conversation handle. */
+	commitForConversation<T>(
+		conversationId: ConversationId,
+		change: (tx: Tx) => T | Promise<T>,
+		context: Context,
+	): Promise<T> {
+		try {
+			this.#assertUsable();
+		} catch (error) {
+			return Promise.reject(error);
+		}
+		return this.#enqueue(() => this.#runCommit(change, context, conversationId));
+	}
+
 	snapshot<T extends JsonObject>(token: SessionDocToken<T>, context: Context): Promise<Readonly<T> | undefined>;
 	snapshot<T extends JsonObject>(
 		token: ConversationDocToken<T>,
@@ -362,10 +376,14 @@ export class SessionKernel implements Session {
 		});
 	}
 
-	async #runCommit<T>(change: (tx: Tx) => T | Promise<T>, context: Context): Promise<T> {
+	async #runCommit<T>(
+		change: (tx: Tx) => T | Promise<T>,
+		context: Context,
+		defaultConversationId?: ConversationId,
+	): Promise<T> {
 		this.#assertHealthy();
 		context.abortSignal?.throwIfAborted();
-		const tx = new Transaction(this.#host, context);
+		const tx = new Transaction(this.#host, context, defaultConversationId);
 		let result: T;
 		try {
 			result = await change(tx);
@@ -439,6 +457,7 @@ export class SessionKernel implements Session {
 			addressId,
 			record: stored.record,
 			storedVersion: stored.version,
+			deltasSinceBase: stored.deltasSinceBase,
 			tracker: track(value),
 		};
 		this.#documents.set(addressId, loaded);

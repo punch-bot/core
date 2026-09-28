@@ -635,12 +635,17 @@ type DocumentSemantics =
   | RewindableConversationSemantics
   | { readonly scope: "task" };
 
+type CheckpointInfo = {
+  /** Deltas already stored after the newest base, excluding this change. */
+  readonly deltasSinceBase: number;
+};
+
 type CommonDocDefinition<T extends JsonObject> = {
   readonly kind: string;
   readonly version: number;
   initial(): T;
   migrate?(value: JsonObject, fromVersion: number): T;
-  checkpointWhen?(value: Readonly<T>, ops: readonly Op[]): boolean;
+  checkpointWhen?(value: Readonly<T>, ops: readonly Op[], info: CheckpointInfo): boolean;
 };
 
 type DocDefinition<T extends JsonObject> =
@@ -1059,10 +1064,14 @@ For an ordinary later mutation, the definition alone decides whether the
 storage record is a base:
 
 ```ts
-const useBase = definition.checkpointWhen?.(candidateValue, ops) ?? false;
+const useBase = definition.checkpointWhen?.(candidateValue, ops, { deltasSinceBase }) ?? false;
 ```
 
 The Session evaluates this predicate exactly once after tracker preparation.
+`deltasSinceBase` counts the deltas already stored after the incarnation's newest
+base, excluding the change being evaluated. Storage reports it when it
+materializes the current value; the Session advances it after each adopted write
+and resets it after every base, so evaluation performs no Storage read.
 Creation and version transitions require bases and do not call it. The Session
 then gives Storage only the selected representation:
 
@@ -1084,6 +1093,12 @@ code and never receives an unused complete candidate with a selected delta.
   is a definition bug, not a backend heuristic.
 - Storage does not count encoded bytes, compare against `initial()`, or invent
   checkpoints.
+
+A definition can bound replay directly:
+
+```ts
+checkpointWhen: (_value, _ops, info) => info.deltasSinceBase >= 31
+```
 
 A high-churn live document can checkpoint when it becomes empty:
 
@@ -2157,6 +2172,8 @@ type StoredDocument = {
   readonly record: DocumentRecord;
   readonly version: number;
   readonly value: JsonObject;
+  /** Deltas replayed after the selected base to materialize `value`. */
+  readonly deltasSinceBase: number;
 };
 
 type StorageWrite =
@@ -2259,8 +2276,8 @@ background status.
 `document(id, at)` materializes one specific incarnation and never follows a
 replacement at the same logical address. Callers resolve an address with
 `findDocument()` when they do not already hold an incarnation ID. It selects the
-newest applicable base, applies its ordered Chord delta tail, and returns the detached materialized value plus stored
-definition version. Base/delta records are backend-private. The lookup never
+newest applicable base, applies its ordered Chord delta tail, and returns the detached materialized value, stored
+definition version, and number of replayed deltas after that base. Base/delta records are backend-private. The lookup never
 scans unrelated documents. An unknown ID returns `undefined`. At `"current"`, a
 retired incarnation returns `undefined`. A numeric lookup of a rewindable
 conversation incarnation returns `undefined` outside its half-open lifetime and

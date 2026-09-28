@@ -45,6 +45,7 @@ import type {
 	TaskRecord,
 	Tx,
 } from "../types.ts";
+import { ROOT_CONVERSATION_ID } from "../types.ts";
 import { prepareForkDocumentCopies } from "./forks.ts";
 
 type AnyTaskRecord = TaskRecord<JsonValue, JsonValue, JsonValue>;
@@ -59,6 +60,8 @@ export type LoadedDocument = {
 	readonly record: DocumentRecord;
 	/** Persisted definition version; older while the tracked value is migrated only in memory. */
 	storedVersion: number;
+	/** Stored deltas after the newest base; advanced by adoption so the next predicate call needs no read. */
+	deltasSinceBase: number;
 	readonly tracker: Tracker<JsonObject>;
 };
 
@@ -116,6 +119,8 @@ type DocumentEntry = {
 	change?: Change<JsonObject>;
 	prepared?: Prepared<JsonObject>;
 	retireOnCommit: boolean;
+	/** Content kind selected for a loaded incarnation's write; absent when no content is written. */
+	writtenContent?: "base" | "delta";
 	/** Resolved before Storage admission so adoption performs no reads. */
 	conversationId?: ConversationId;
 };
@@ -129,6 +134,7 @@ type DocumentEntry = {
 export class Transaction implements Tx {
 	readonly #host: TransactionHost;
 	readonly #context: Context;
+	readonly #defaultConversationId: ConversationId | undefined;
 	readonly #pendingOperations = new Set<Promise<unknown>>();
 	#sealed = false;
 	#hasTableWrite = false;
@@ -146,9 +152,10 @@ export class Transaction implements Tx {
 	/** Latest transaction-local incarnation or retirement marker at each logical address. */
 	readonly #latestDocumentByAddress = new Map<string, DocumentEntry>();
 
-	constructor(host: TransactionHost, context: Context) {
+	constructor(host: TransactionHost, context: Context, defaultConversationId?: ConversationId) {
 		this.#host = host;
 		this.#context = context;
+		this.#defaultConversationId = defaultConversationId;
 	}
 
 	// ─── Table reads ────────────────────────────────────────────────────────
@@ -185,6 +192,17 @@ export class Transaction implements Tx {
 		return this.#write(() => this.#stageConversation(undefined, options.ownership));
 	}
 
+	/** Internal final-form bootstrap path for the reserved root identity. */
+	createRootConversation(): Promise<ConversationRecord> {
+		return this.#write(async () => {
+			if ((await this.#host.storage.conversation(ROOT_CONVERSATION_ID, this.#context)) !== undefined) {
+				throw new Error(`Root conversation ${ROOT_CONVERSATION_ID} already exists`);
+			}
+			this.#assertOpen();
+			return this.#stageConversation(undefined, { kind: "ownerless" }, ROOT_CONVERSATION_ID);
+		});
+	}
+
 	forkConversation(
 		parentConversationId: ConversationId,
 		at: EntryId,
@@ -198,9 +216,10 @@ export class Transaction implements Tx {
 	async #stageConversation(
 		parent: NonNullable<ConversationRecord["parent"]> | undefined,
 		ownership: ConversationOwnership,
+		reservedId?: ConversationId,
 	): Promise<ConversationRecord> {
 		const ownerTaskId = ownership.kind === "task" ? ownership.taskId : undefined;
-		const id = await this.#host.storage.mintId<ConversationId>();
+		const id = reservedId ?? (await this.#host.storage.mintId<ConversationId>());
 		this.#assertOpen();
 		let owner: ConversationRecord["owner"];
 		if (ownerTaskId !== undefined) {
@@ -260,7 +279,7 @@ export class Transaction implements Tx {
 		options?: TaskOptions,
 	): Promise<TaskId<R>> {
 		return this.#write(async () => {
-			const conversationId = options?.conversationId;
+			const conversationId = options?.conversationId ?? this.#defaultConversationId;
 			if (conversationId === undefined) throw new TypeError("Tx.createTask() requires options.conversationId");
 			await this.#requireConversation(conversationId);
 			this.#assertOpen();
@@ -531,6 +550,7 @@ export class Transaction implements Tx {
 							addressId: document.addressId,
 							record,
 							storedVersion: target.version,
+							deltasSinceBase: 0,
 							tracker: target.tracker,
 						});
 					}
@@ -575,6 +595,8 @@ export class Transaction implements Tx {
 					if (target.document.storedVersion < document.definition!.version) {
 						target.document.storedVersion = document.definition!.version;
 					}
+					if (document.writtenContent === "base") target.document.deltasSinceBase = 0;
+					else if (document.writtenContent === "delta") target.document.deltasSinceBase++;
 					if (!document.retireOnCommit && !changed) break;
 					if (document.retireOnCommit) {
 						this.#host.evict(target.document.addressId, target.document.record.id);
@@ -704,13 +726,18 @@ export class Transaction implements Tx {
 					const definition = document.definition!;
 					const prepared = document.prepared!;
 					if (target.document.storedVersion < definition.version) {
+						document.writtenContent = "base";
 						writes.push({
 							type: "document.change",
 							id: target.document.record.id,
 							content: { version: definition.version, kind: "base", value: prepared.value },
 						});
 					} else if (prepared.ops.length > 0) {
-						const useBase = definition.checkpointWhen?.(prepared.value, prepared.ops) ?? false;
+						const useBase =
+							definition.checkpointWhen?.(prepared.value, prepared.ops, {
+								deltasSinceBase: target.document.deltasSinceBase,
+							}) ?? false;
+						document.writtenContent = useBase ? "base" : "delta";
 						writes.push({
 							type: "document.change",
 							id: target.document.record.id,

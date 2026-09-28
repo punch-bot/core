@@ -10,6 +10,7 @@
 - Replaced untyped numeric record IDs and the `TaskRef` wrapper with erased branded numeric ID types, including result-typed `TaskId<R>`, separately branded commit sequences, and generic `Storage.mintId()`.
 - Made task conversation membership immutable after task creation.
 - Added `ConversationQuery` to Storage and transaction conversation scans.
+- Added required `StoredDocument.deltasSinceBase` to Storage document reads.
 
 ### Added
 
@@ -18,6 +19,7 @@
 - Added policy-driven backend-side conversation document copying when creating forks.
 - Added indexed conversation ownership queries and guaranteed no-effect Storage rejection handling.
 - Added incarnation-bound read-only Chord document states and serialized asynchronous document watches with bounded exact-frame buffering.
+- Added `deltasSinceBase` checkpoint predicate information so definitions can bound replay without value counters.
 
 ## [0.87.1] - 2026-09-22
 

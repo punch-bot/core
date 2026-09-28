@@ -50,6 +50,12 @@ export type DocumentSemantics =
 	| RewindableConversationSemantics
 	| { readonly scope: "task"; readonly history?: never; readonly fork?: never };
 
+/** Stored replay state supplied to a document's checkpoint predicate. */
+export type CheckpointInfo = {
+	/** Deltas already stored after the newest base, excluding the change being evaluated. */
+	readonly deltasSinceBase: number;
+};
+
 /** Definition fields shared by singleton documents and document families. */
 export type CommonDocDefinition<T extends JsonObject> = {
 	/** Stable persisted kind; part of the public protocol. */
@@ -58,7 +64,8 @@ export type CommonDocDefinition<T extends JsonObject> = {
 	readonly version: number;
 	initial(): T;
 	migrate?(value: JsonObject, fromVersion: number): T;
-	checkpointWhen?(value: Readonly<T>, ops: readonly Op[]): boolean;
+	/** Return true to store this ordinary change as a complete base instead of a delta. */
+	checkpointWhen?(value: Readonly<T>, ops: readonly Op[], info: CheckpointInfo): boolean;
 };
 
 /** Singleton document definition. */
@@ -507,6 +514,8 @@ export type StoredDocument = {
 	readonly record: DocumentRecord;
 	readonly version: number;
 	readonly value: JsonObject;
+	/** Deltas replayed after the selected base to materialize `value`. */
+	readonly deltasSinceBase: number;
 };
 
 /** One record or document mutation in an atomic storage commit. */
