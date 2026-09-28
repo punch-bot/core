@@ -22,6 +22,7 @@ import {
 	normalizeBuildSystemPromptOptions,
 } from "../system-prompt.ts";
 import { type Theme, theme } from "../theme/theme.ts";
+import type { VirtualModelDefinition } from "../virtual-models.ts";
 import type {
 	AgentBeforeSettleEvent,
 	BeforeAgentStartEvent,
@@ -349,6 +350,8 @@ export class ExtensionRunner {
 			registerProvider?: (name: string, config: ProviderConfig) => void;
 			registerNativeProvider?: (provider: Provider) => void;
 			unregisterProvider?: (name: string) => void;
+			registerVirtualModel?: (definition: VirtualModelDefinition) => void;
+			unregisterVirtualModel?: (provider: string, id: string) => void;
 		},
 	): void {
 		// Copy actions into the shared runtime (all extension APIs reference this)
@@ -366,6 +369,7 @@ export class ExtensionRunner {
 		this.runtime.setModel = actions.setModel;
 		this.runtime.getThinkingLevel = actions.getThinkingLevel;
 		this.runtime.setThinkingLevel = actions.setThinkingLevel;
+		this.runtime.createContext = () => this.createContext();
 
 		// Context actions (required)
 		this.getModel = contextActions.getModel;
@@ -417,6 +421,23 @@ export class ExtensionRunner {
 			}
 		}
 		this.runtime.pendingNativeProviderRegistrations = [];
+		const registerVirtualModel = (definition: VirtualModelDefinition) => {
+			if (providerActions?.registerVirtualModel) providerActions.registerVirtualModel(definition);
+			else this.modelRegistry.registerVirtualModel(definition);
+		};
+		for (const { definition, extensionPath } of this.runtime.pendingVirtualModelRegistrations) {
+			try {
+				registerVirtualModel(definition);
+			} catch (err) {
+				this.emitError({
+					extensionPath,
+					event: "register_virtual_model",
+					error: err instanceof Error ? err.message : String(err),
+					stack: err instanceof Error ? err.stack : undefined,
+				});
+			}
+		}
+		this.runtime.pendingVirtualModelRegistrations = [];
 
 		// From this point on, provider registration/unregistration takes effect immediately
 		// without requiring a /reload.
@@ -440,6 +461,11 @@ export class ExtensionRunner {
 				return;
 			}
 			this.modelRegistry.unregisterProvider(name);
+		};
+		this.runtime.registerVirtualModel = registerVirtualModel;
+		this.runtime.unregisterVirtualModel = (provider, id) => {
+			if (providerActions?.unregisterVirtualModel) providerActions.unregisterVirtualModel(provider, id);
+			else this.modelRegistry.unregisterVirtualModel(provider, id);
 		};
 	}
 
