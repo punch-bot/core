@@ -1,11 +1,12 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import type { AgentMessage } from "@punch-bot/agent";
 import { StringEnum } from "@punch-bot/ai";
 import { Type } from "typebox";
 
 import type { ExtensionAPI, ExtensionContext } from "../../core/extensions/types.ts";
+import type { TodoStore } from "./todo-store.ts";
 
 const MAX_LOG = 10;
 
@@ -96,13 +97,6 @@ export function loadTodos(file = todosFile()): TodoState {
 	} catch {
 		return emptyState();
 	}
-}
-
-export function saveTodos(state: TodoState, file = todosFile()): void {
-	mkdirSync(dirname(file), { recursive: true });
-	const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
-	writeFileSync(tmp, JSON.stringify(state, null, 2), { mode: 0o600 });
-	renameSync(tmp, file);
 }
 
 function appendLog(state: TodoState, summary: string): TodoState {
@@ -196,11 +190,10 @@ export function applyTodoAction(state: TodoState, action: TodoAction): TodoActio
 	}
 }
 
-export function installTodos(pi: ExtensionAPI): void {
-	let state = loadTodos();
-
+export function installTodos(pi: ExtensionAPI, store: TodoStore): void {
 	const syncWidget = (ctx: ExtensionContext): void => {
 		if (!ctx.hasUI) return;
+		const state = store.load(ctx.sessionManager.getSessionId());
 		if (state.todos.length === 0) {
 			ctx.ui.setWidget("punch-todos", undefined);
 			return;
@@ -213,11 +206,12 @@ export function installTodos(pi: ExtensionAPI): void {
 	};
 
 	pi.on("session_start", (_event, ctx) => {
-		state = loadTodos();
+		store.migrateLegacy(ctx.sessionManager.getSessionId());
 		syncWidget(ctx);
 	});
 
-	pi.on("context", (event) => {
+	pi.on("context", (event, ctx) => {
+		const state = store.load(ctx.sessionManager.getSessionId());
 		if (state.todos.length === 0) return;
 		const message: AgentMessage = {
 			role: "custom",
@@ -272,10 +266,8 @@ export function installTodos(pi: ExtensionAPI): void {
 					action = { action: "clear" };
 					break;
 			}
-			const result = applyTodoAction(state, action);
-			state = result.state;
+			const result = store.apply(ctx.sessionManager.getSessionId(), action);
 			if (result.changed) {
-				saveTodos(state);
 				syncWidget(ctx);
 			}
 			const changes = formatRecentChanges(result.state);
