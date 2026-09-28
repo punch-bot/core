@@ -13,6 +13,7 @@ import type {
 	ExtensionHandler,
 	SessionStartEvent,
 } from "../src/core/extensions/index.ts";
+import { issueToken } from "../src/extensions/punch/auth.ts";
 import { handlePunchRequest } from "../src/extensions/punch/server.ts";
 import { TodoStore } from "../src/extensions/punch/todo-store.ts";
 import { applyTodoAction, installTodos, loadTodos, type TodoState } from "../src/extensions/punch/todos.ts";
@@ -45,9 +46,11 @@ function stateWith(items: Array<{ id: number; text: string; done?: boolean }>): 
 
 const stores: TodoStore[] = [];
 
-afterEach(() => {
+function closeStores(): void {
 	for (const store of stores.splice(0)) store.close();
-});
+}
+
+afterEach(closeStores);
 
 function setup(store = new TodoStore(":memory:")) {
 	stores.push(store);
@@ -292,6 +295,7 @@ describe("TodoStore", () => {
 	});
 
 	afterEach(() => {
+		closeStores();
 		rmSync(dir, { recursive: true, force: true });
 	});
 
@@ -309,7 +313,7 @@ describe("TodoStore", () => {
 		expect(reopened.load("thread-two").todos[0]?.id).toBe(1);
 	});
 
-	it("serializes read-modify-write actions from independent connections", () => {
+	it("shares committed actions across independent connections", () => {
 		const path = join(dir, "todos.sqlite");
 		const first = new TodoStore(path);
 		const second = new TodoStore(path);
@@ -418,6 +422,10 @@ describe("todo API", () => {
 			expect(before.status).toBe(200);
 			const body = (await before.json()) as { todos: Array<{ text: string }> };
 			expect(body.todos[0]?.text).toBe("first task");
+			const otherHeaders = { authorization: `Bearer ${issueToken("other-user").token}` };
+			expect((await fetch(`${base}/todos/first`, { headers: otherHeaders })).status).toBe(403);
+			expect((await fetch(`${base}/todos/first`, { method: "DELETE", headers: otherHeaders })).status).toBe(403);
+			expect(store.load("first").todos[0]?.text).toBe("first task");
 			expect((await fetch(`${base}/todos/first`, { method: "DELETE", headers })).status).toBe(200);
 			expect(store.load("first")).toEqual(emptyState());
 			expect(store.load("second").todos[0]?.text).toBe("second task");
@@ -438,8 +446,28 @@ describe("installTodos", () => {
 	});
 
 	afterEach(() => {
+		closeStores();
 		delete process.env.PI_DATA_DIR;
 		rmSync(dir, { recursive: true, force: true });
+	});
+
+	it("keeps session startup usable when a legacy file is malformed", () => {
+		const legacy = join(dir, "todos.json");
+		writeFileSync(legacy, "{broken");
+		const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+		try {
+			const { sessionStartHandler, ctx, store } = setup(new TodoStore(":memory:", legacy));
+			expect(() => sessionStartHandler?.({ type: "session_start", reason: "startup" }, ctx)).not.toThrow();
+			expect(warning).toHaveBeenCalledWith(expect.stringContaining("Could not import legacy Punch todos"));
+			writeFileSync(
+				legacy,
+				JSON.stringify({ todos: [{ id: 1, text: "repaired", done: false, createdAt: 1 }], nextId: 2, log: [] }),
+			);
+			sessionStartHandler?.({ type: "session_start", reason: "startup" }, ctx);
+			expect(store.load("session-one").todos[0]?.text).toBe("repaired");
+		} finally {
+			warning.mockRestore();
+		}
 	});
 
 	it("registers a todo tool with guidelines", () => {

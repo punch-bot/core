@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 
-import { authenticate, authenticateBasic, isAuthConfigured, issueToken } from "./auth.ts";
+import { authenticate, authenticateBasic, isAuthConfigured, isSandboxOwner, issueToken } from "./auth.ts";
 import { create as createCollab, getFor, listFor, propose, review } from "./collabs.ts";
 import { addRoutine, listRoutines, parseRecurrence, pauseRoutine, removeRoutine, resumeRoutine } from "./routines.ts";
 import { getTodoStore, type TodoStore } from "./todo-store.ts";
@@ -68,6 +68,10 @@ export async function handlePunchRequest(
 		}
 
 		if (path.startsWith("/todos/")) {
+			if (!isSandboxOwner(actor)) {
+				sendJson(res, 403, { error: "Forbidden" });
+				return;
+			}
 			const encodedId = path.slice("/todos/".length);
 			if (!encodedId || encodedId.includes("/")) {
 				sendJson(res, 400, { error: "Invalid session ID" });
