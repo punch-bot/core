@@ -1,6 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+
+import { DatabaseSync } from "#punch-sqlite";
 
 import { getAgentDir } from "../../config.ts";
 import { applyTodoAction, loadTodos, type TodoAction, type TodoActionResult, type TodoState } from "./todos.ts";
@@ -16,10 +17,11 @@ export class TodoStore {
 
 	constructor(path = todoDatabasePath()) {
 		if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-		this.#db = new DatabaseSync(path, { timeout: 5_000 });
+		this.#db = new DatabaseSync(path);
 		if (path !== ":memory:") chmodSync(path, 0o600);
 		this.#databaseDir = path === ":memory:" ? process.cwd() : dirname(resolve(path));
 		this.#db.exec(`
+			PRAGMA busy_timeout = 5000;
 			PRAGMA journal_mode = WAL;
 			PRAGMA foreign_keys = ON;
 			CREATE TABLE IF NOT EXISTS todo_states (

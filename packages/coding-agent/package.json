@@ -3,6 +3,13 @@
 	"version": "0.85.1",
 	"description": "Headless coding agent SDK, RPC, and print modes with read, bash, edit, write tools and session management",
 	"type": "module",
+	"imports": {
+		"#punch-sqlite": {
+			"types": "./src/extensions/punch/sqlite-driver.d.mts",
+			"bun": "./src/extensions/punch/sqlite-bun.mjs",
+			"default": "./src/extensions/punch/sqlite-node.mjs"
+		}
+	},
 	"piConfig": {
 		"configDir": ".pi"
 	},
@@ -28,6 +35,9 @@
 	},
 	"files": [
 		"dist",
+		"src/extensions/punch/sqlite-bun.mjs",
+		"src/extensions/punch/sqlite-driver.d.mts",
+		"src/extensions/punch/sqlite-node.mjs",
 		"!dist/client",
 		"!dist/experimental",
 		"!dist/cli/experimental",

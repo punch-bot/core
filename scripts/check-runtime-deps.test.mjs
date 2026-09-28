@@ -54,6 +54,13 @@ export { type OtherType } from "export-inline-type-only";
 	assert.equal(result.status, 0, result.stderr);
 });
 
+test("accepts declared package imports and rejects undeclared ones", async (t) => {
+	const result = await check(t, { imports: { "#driver": "./src/driver.ts" } }, 'import "#driver"; import "#missing";');
+	assert.equal(result.status, 1);
+	assert.doesNotMatch(result.stderr, /#driver is not declared/);
+	assert.match(result.stderr, /#missing is not declared/);
+});
+
 test("rejects dev-only dependencies, side-effect imports, mixed exports, and literal runtime loads", async (t) => {
 	const result = await check(t, { devDependencies: { dev: "1.0.0" } }, `
 import "dev";
