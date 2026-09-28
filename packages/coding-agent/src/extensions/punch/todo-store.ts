@@ -1,33 +1,24 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import { getAgentDir } from "../../config.ts";
-import {
-	applyTodoAction,
-	loadTodos,
-	type TodoAction,
-	type TodoActionResult,
-	type TodoState,
-	todosFile,
-} from "./todos.ts";
+import { applyTodoAction, loadTodos, type TodoAction, type TodoActionResult, type TodoState } from "./todos.ts";
 
 export function todoDatabasePath(): string {
 	return join(process.env.PI_DATA_DIR || getAgentDir(), "todos.sqlite");
 }
 
-/** One database per sandbox. Every mutation reads and writes under the same SQLite write transaction. */
+/** One database per PI_DATA_DIR or user agent directory. Mutations use SQLite write transactions. */
 export class TodoStore {
 	readonly #db: DatabaseSync;
-	readonly #legacyFile: string;
-	readonly #legacyMarker: string;
+	readonly #databaseDir: string;
 
-	constructor(path = todoDatabasePath(), legacyFile = todosFile()) {
+	constructor(path = todoDatabasePath()) {
 		if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
 		this.#db = new DatabaseSync(path, { timeout: 5_000 });
 		if (path !== ":memory:") chmodSync(path, 0o600);
-		this.#legacyFile = legacyFile;
-		this.#legacyMarker = `legacy_migrated:${resolve(legacyFile)}`;
+		this.#databaseDir = path === ":memory:" ? process.cwd() : dirname(resolve(path));
 		this.#db.exec(`
 			PRAGMA journal_mode = WAL;
 			PRAGMA foreign_keys = ON;
@@ -54,6 +45,11 @@ export class TodoStore {
 			);
 			CREATE TABLE IF NOT EXISTS todo_deleted (session_id TEXT PRIMARY KEY);
 			CREATE TABLE IF NOT EXISTS todo_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+			CREATE TABLE IF NOT EXISTS todo_session_sources (
+				session_id TEXT NOT NULL,
+				marker TEXT NOT NULL,
+				PRIMARY KEY (session_id, marker)
+			);
 		`);
 	}
 
@@ -113,19 +109,24 @@ export class TodoStore {
 		}
 	}
 
-	/** Import the former sandbox-wide list once, into the first session that opens it. Keep the source file. */
-	migrateLegacy(sessionId: string): void {
+	/** Import each former working-directory list once, into the first empty session that opens it. */
+	migrateLegacy(sessionId: string, legacyFile: string): void {
 		if (!sessionId) throw new Error("Session ID is required");
-		if (!existsSync(this.#legacyFile)) return;
+		const marker = `legacy_migrated:${relative(this.#databaseDir, resolve(legacyFile))}`;
+		this.#db
+			.prepare("INSERT OR IGNORE INTO todo_session_sources (session_id, marker) VALUES (?, ?)")
+			.run(sessionId, marker);
+		if (!existsSync(legacyFile)) return;
 		this.#db.exec("BEGIN IMMEDIATE");
 		try {
-			const migrated = this.#db.prepare("SELECT value FROM todo_meta WHERE key = ?").get(this.#legacyMarker);
+			const migrated = this.#db.prepare("SELECT value FROM todo_meta WHERE key = ?").get(marker);
 			if (!migrated) {
-				if (
-					!this.#db.prepare("SELECT 1 FROM todo_deleted WHERE session_id = ?").get(sessionId) &&
-					!this.#db.prepare("SELECT 1 FROM todo_states WHERE session_id = ?").get(sessionId)
-				) {
-					const parsed = JSON.parse(readFileSync(this.#legacyFile, "utf8")) as unknown;
+				if (this.#db.prepare("SELECT 1 FROM todo_states WHERE session_id = ?").get(sessionId)) {
+					this.#db.exec("COMMIT");
+					return;
+				}
+				if (!this.#db.prepare("SELECT 1 FROM todo_deleted WHERE session_id = ?").get(sessionId)) {
+					const parsed = JSON.parse(readFileSync(legacyFile, "utf8")) as unknown;
 					if (
 						typeof parsed !== "object" ||
 						parsed === null ||
@@ -134,10 +135,10 @@ export class TodoStore {
 					) {
 						throw new Error("Invalid legacy todo file");
 					}
-					const state = loadTodos(this.#legacyFile);
+					const state = loadTodos(legacyFile);
 					if (state.todos.length > 0 || state.log.length > 0) this.#write(sessionId, state);
 				}
-				this.#db.prepare("INSERT INTO todo_meta (key, value) VALUES (?, ?)").run(this.#legacyMarker, sessionId);
+				this.#db.prepare("INSERT INTO todo_meta (key, value) VALUES (?, ?)").run(marker, sessionId);
 			}
 			this.#db.exec("COMMIT");
 		} catch (error) {
@@ -152,10 +153,13 @@ export class TodoStore {
 		try {
 			this.#db.prepare("INSERT OR IGNORE INTO todo_deleted (session_id) VALUES (?)").run(sessionId);
 			this.#db.prepare("DELETE FROM todo_states WHERE session_id = ?").run(sessionId);
-			if (existsSync(this.#legacyFile)) {
+			const sources = this.#db
+				.prepare("SELECT marker FROM todo_session_sources WHERE session_id = ?")
+				.all(sessionId) as Array<{ marker: string }>;
+			for (const source of sources) {
 				this.#db
 					.prepare("INSERT OR IGNORE INTO todo_meta (key, value) VALUES (?, ?)")
-					.run(this.#legacyMarker, sessionId);
+					.run(source.marker, sessionId);
 			}
 			this.#db.exec("COMMIT");
 		} catch (error) {
