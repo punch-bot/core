@@ -1,5 +1,5 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import { getAgentDir } from "../../config.ts";
@@ -20,12 +20,14 @@ export function todoDatabasePath(): string {
 export class TodoStore {
 	readonly #db: DatabaseSync;
 	readonly #legacyFile: string;
+	readonly #legacyMarker: string;
 
 	constructor(path = todoDatabasePath(), legacyFile = todosFile()) {
 		if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
 		this.#db = new DatabaseSync(path, { timeout: 5_000 });
 		if (path !== ":memory:") chmodSync(path, 0o600);
 		this.#legacyFile = legacyFile;
+		this.#legacyMarker = `legacy_migrated:${resolve(legacyFile)}`;
 		this.#db.exec(`
 			PRAGMA journal_mode = WAL;
 			PRAGMA foreign_keys = ON;
@@ -117,7 +119,7 @@ export class TodoStore {
 		if (!existsSync(this.#legacyFile)) return;
 		this.#db.exec("BEGIN IMMEDIATE");
 		try {
-			const migrated = this.#db.prepare("SELECT value FROM todo_meta WHERE key = 'legacy_migrated'").get();
+			const migrated = this.#db.prepare("SELECT value FROM todo_meta WHERE key = ?").get(this.#legacyMarker);
 			if (!migrated) {
 				if (
 					!this.#db.prepare("SELECT 1 FROM todo_deleted WHERE session_id = ?").get(sessionId) &&
@@ -135,7 +137,7 @@ export class TodoStore {
 					const state = loadTodos(this.#legacyFile);
 					if (state.todos.length > 0 || state.log.length > 0) this.#write(sessionId, state);
 				}
-				this.#db.prepare("INSERT INTO todo_meta (key, value) VALUES ('legacy_migrated', ?)").run(sessionId);
+				this.#db.prepare("INSERT INTO todo_meta (key, value) VALUES (?, ?)").run(this.#legacyMarker, sessionId);
 			}
 			this.#db.exec("COMMIT");
 		} catch (error) {
@@ -152,8 +154,8 @@ export class TodoStore {
 			this.#db.prepare("DELETE FROM todo_states WHERE session_id = ?").run(sessionId);
 			if (existsSync(this.#legacyFile)) {
 				this.#db
-					.prepare("INSERT OR IGNORE INTO todo_meta (key, value) VALUES ('legacy_migrated', ?)")
-					.run(sessionId);
+					.prepare("INSERT OR IGNORE INTO todo_meta (key, value) VALUES (?, ?)")
+					.run(this.#legacyMarker, sessionId);
 			}
 			this.#db.exec("COMMIT");
 		} catch (error) {
