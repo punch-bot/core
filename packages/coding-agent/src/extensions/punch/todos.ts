@@ -206,7 +206,11 @@ export function installTodos(pi: ExtensionAPI, store: TodoStore): void {
 	};
 
 	pi.on("session_start", (_event, ctx) => {
-		store.migrateLegacy(ctx.sessionManager.getSessionId());
+		try {
+			store.migrateLegacy(ctx.sessionManager.getSessionId());
+		} catch (error) {
+			console.warn(`Could not import legacy Punch todos: ${error instanceof Error ? error.message : String(error)}`);
+		}
 		syncWidget(ctx);
 	});
 
