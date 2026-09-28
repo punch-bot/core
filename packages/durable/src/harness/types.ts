@@ -215,6 +215,8 @@ export interface RegistrySnapshot<Tool extends ToolRegistration = ToolRegistrati
 export interface RegistryReader<Tool extends ToolRegistration = ToolRegistration> {
 	/** Immutable view of the whole current registry. */
 	snapshot(): RegistrySnapshot<Tool>;
+	/** Called synchronously after every publication; wakes the scheduler to reconsider blocked tasks. */
+	subscribe(listener: () => void): () => void;
 }
 
 /** Application-owned registry of tools, hooks, tasks, and the system prompt. */
@@ -305,16 +307,31 @@ export interface Conversation {
 		context: Context,
 	): Promise<Page<EntryRecord, Cursor>>;
 	fork(at: EntryId, options: ConversationCreateOptions, context: Context): Promise<Conversation>;
+	/** Resolve when no live non-background task belongs to this conversation. */
+	waitForIdle(context: Context): Promise<void>;
 }
 
 // TODO: decide how Harness exposes subscribeCommits() and subscribeClose(). Their listeners run on the Session line
 // and must not throw or call Session APIs, and Harness close will also join task invocations.
 /** Durable agent harness over one Session. */
 export interface Harness extends Session {
+	/** Enable task scheduling. Idempotent; throws after close. */
+	resume(): void;
+
 	/** Return the reserved root conversation, creating it with `init` in one commit when absent. */
 	root(context: Context, options?: { readonly init?: ConversationInit }): Promise<Conversation>;
-	// Conversation activity (active/idle notifications, quiescence) is specified with the task runtime and turn
-	// control in Packages 14 and 17.
+	// Conversation activity (active/idle notifications) is specified with turn control in Package 17.
 	conversation(id: ConversationId, context: Context): Promise<Conversation | undefined>;
 	createConversation(options: ConversationCreateOptions, context: Context): Promise<Conversation>;
+
+	getTask<R>(id: TaskId<R>, context: Context): Promise<TaskRecord<JsonValue, JsonValue, R> | undefined>;
+	/**
+	 * Commit the abort mark, signal and join an active run invocation, and schedule the abort invocation. A task whose
+	 * definition cannot take it settles as `orphaned` instead.
+	 */
+	abortTask(id: TaskId, context: Context): Promise<"marked" | "terminal">;
+	/** Resolve with the terminal receipt; cancelling `context` cancels only this wait. */
+	waitForTask<R>(id: TaskId<R>, context: Context): Promise<SettledTask<R>>;
+	/** Resolve when no live non-background task exists. */
+	waitForIdle(context: Context): Promise<void>;
 }

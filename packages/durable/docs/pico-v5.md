@@ -411,9 +411,6 @@ interface Conversation {
 
 interface Harness extends Session {
   resume(): void;
-  suspend(context: Context): Promise<void>;
-  quiescent(): boolean;
-  hold(): () => void;
 
   root(
     context: Context,
@@ -433,7 +430,6 @@ interface Harness extends Session {
     conversationId?: ConversationId,
   ): Promise<"aborted" | "already_placed" | "settled" | "not_found">;
   abortTask(id: TaskId, context: Context): Promise<"marked" | "terminal">;
-  markTask(id: TaskId, context: Context): Promise<"marked" | "terminal">;
   waitForTask<R>(id: TaskId<R>, context: Context): Promise<SettledTask<R>>;
   waitForIdle(context: Context): Promise<void>;
 }
@@ -473,11 +469,9 @@ write occurs. Reopen finds the same root by its reserved ID. A conversation with
 no configured model produces a durable `no_model` generation failure.
 
 `resume()` is idempotent while running and only enables scheduling. It does not
-repeat open-time reconciliation. `suspend()` is terminal for that Harness
-instance and follows the close semantics below; `resume()` after suspend/close
-rejects. `quiescent()` means no task invocation is currently executing; eligible
-or delayed durable tasks may still exist. `hold()` is available only while
-quiescent and pauses reservation until its idempotent release function runs.
+repeat open-time reconciliation, and it throws after close. Work that must happen
+before any task runs, such as registration or seeding, happens before
+`resume()`.
 
 `createConversation({ ownership, init, input })` and
 `fork(at, { ownership, init })` commit atomically: the conversation, its
@@ -567,10 +561,10 @@ handoff write and then resolves; while busy, placement follows section 6 and may
 occur later. Observe its placement through the conversation watch. An idle wait
 does not guarantee placement of queued passive writes.
 
-`markTask()` commits `abortRequested` and the durable foreground-subtree
-cascade; it neither signals nor joins active invocations. The scheduler notices
-the marks on its next drain. `abortTask()` also signals and joins the active run
-before starting the abort invocation. `Conversation.abort()` withdraws queued
+`abortTask()` commits `abortRequested` and the durable foreground-subtree
+cascade, then signals and joins the active run; the scheduler then starts the
+abort invocation. Marking without signalling is internal: the cascade marks
+owned tasks in the same commit. `Conversation.abort()` withdraws queued
 input submissions, marks non-background tasks selected by ordinary ownership
 traversal, signals them, and resolves only after that scope is ordinarily idle.
 Passive writes and background subtrees survive. Conversation idle means no live
@@ -581,9 +575,8 @@ wait aborts only that waiter.
 
 Conversation handles are stateless; compare them by `id`. Hosts discover
 conversations through lookups and scans. An activity view that lists active
-conversations and reports conversations becoming active or idle, plus Harness
-quiescence, is specified with the task runtime and turn control (Packages 14
-and 17); there is no creation listener.
+conversations and reports conversations becoming active or idle is specified
+with turn control (Package 17); there is no creation listener.
 
 `submit()` returns after durable admission, not settlement. An input submission
 creates a user message with the admission timestamp; `whenBusy` defaults to
@@ -610,7 +603,7 @@ uses the same serialized asynchronous, bounded-buffer contract as `watchDoc()`
 in section 9.2. Neither carries semantic events or owns a second persistence
 authority.
 
-`close()` is equivalent to `suspend()` for v1. It seals mutation admission and
+`close()` seals mutation admission and
 task reservation, signals invocations, and stops future watch deliveries. Outside
 the Session line it lets already-admitted storage commits settle, joins
 task/tool/hook invocations, then closes states and storage. Already-running watch
@@ -869,7 +862,6 @@ interface Tx {
   createTask<I, S extends { phase: string }, R, H extends object>(
     task: Task<I, S, R, H>, input: I, options?: TaskOptions,
   ): Promise<TaskId<R>>;
-  setTask(value: TaskRecord<JsonValue, JsonValue, JsonValue>): void;
 
   doc<T extends JsonObject>(token: SessionDocToken<T>): Promise<Draft<T>>;
   doc<T extends JsonObject>(token: ConversationDocToken<T>, conversationId: ConversationId): Promise<Draft<T>>;
@@ -1205,23 +1197,24 @@ Session-line operation so it never exposes a mixture from one commit.
 
 A Session commit callback may be asynchronous. It owns the Session mutation
 line through callback execution, preparation, storage settlement, committed
-baseline adoption, and publication enqueue. Commit/close observers run on the
+baseline adoption, and publication enqueue. Commit observers run on the
 line; document-state and watch user callbacks run later.
 External model, process, tool, network, and human effects run outside it.
-`subscribeCommits()` observes complete immutable publications synchronously
-after adoption, and `subscribeClose()` observes Session closure synchronously.
-Both run on the Session line and return idempotent disposers; their listeners
-must not throw, block, or call Session APIs. Document-state subscribers and watch
+`subscribeCommits()` observes complete immutable publications synchronously on
+the line after adoption. `subscribeClose()` observes close synchronously when it
+begins, after admission is sealed; the Harness stops watches and signals task
+invocations there. Both return idempotent disposers; their listeners must not
+throw, block, or call Session APIs. Document-state subscribers and watch
 listeners still run later, off the line.
 
 ```ts
 await session.commit(async tx => {
-  const task = await tx.task(taskId);                // table read
+  const conversation = await tx.conversation(conversationId); // table read
   const live = await tx.doc(LiveDoc, conversationId);
 
   await tx.appendEntry(conversationId, message);     // first table write
   delete live.message;                               // document mutation remains valid
-  tx.setTask(nextTask(task));
+  await tx.createTask(Follow, { after: message.id }); // further table writes are fine
 }, context);
 ```
 
@@ -1288,6 +1281,9 @@ type RunningTask<I, S, R> = TaskRecord<I, S, R> & {
   readonly state: Extract<TaskState<S, R>, { status: "running" }>;
 };
 
+/** State a task commits for itself: a replacement checkpoint or its terminal outcome. */
+type NextTaskState<S, R> = Extract<TaskState<S, R>, { status: "running" | "terminal" }>;
+
 interface HookRunner<H extends object> {
   each<K extends keyof H>(name: K, invoke: (handler: H[K]) => void | Promise<void>): Promise<void>;
 }
@@ -1302,10 +1298,16 @@ interface TaskRuntime<I, S, R, H extends object> extends DocumentObserver {
   readonly taskId: TaskId<R>;
   readonly conversationId: ConversationId;
   readonly signal: AbortSignal;
+  /** Registry snapshot of the current phase; refreshed at every phase boundary. */
+  readonly registry: RegistrySnapshot<ToolRegistration>;
+  readonly models: Models;
   readonly hooks: HookRunner<H>;
 
   commit(
-    change: (tx: Tx, current: RunningTask<I, S, R>) => void | Promise<void>,
+    change: (
+      tx: Tx,
+      current: RunningTask<I, S, R>,
+    ) => NextTaskState<S, R> | undefined | Promise<NextTaskState<S, R> | undefined>,
     context: Context,
   ): Promise<void>;
 
@@ -1322,7 +1324,7 @@ type TaskDefinition<I, S extends { phase: string }, R, H extends object> = {
   readonly phases: {
     [P in S["phase"]]: PhaseHandler<I, Extract<S, { phase: P }>, S, R, H>;
   };
-  abort(task: TaskRecord<I, S, R>, runtime: TaskRuntime<I, S, R, H>, context: Context): Promise<void>;
+  abort(task: RunningTask<I, S, R>, runtime: TaskRuntime<I, S, R, H>, context: Context): Promise<void>;
   migrate?(input: JsonValue, checkpoint: JsonValue, fromVersion: number): {
     input: I;
     checkpoint: S;
@@ -1355,22 +1357,70 @@ Storage admission so persisted conversation-owner edges cannot become stale.
 The phase map is exhaustive and phase-narrowed. A handler may perform several
 commits around one effect, but each durable checkpoint is a full replacement.
 `TaskRuntime.commit()` rereads and gates the current durable task on the Session
-line before invoking its callback. Transaction methods replace its checkpoint
-or write its terminal outcome.
+line before invoking its callback. It rejects when the invocation has ended, the
+Harness is closing, the task is terminal, or a run invocation's task carries an
+abort mark. Its `tx.createTask()` defaults to the task's conversation. When the
+callback returns a state, the runtime replaces the task's state in the same
+commit, so the checkpoint or outcome is atomic with the callback's entries,
+documents, and child tasks and is type-checked against the task's checkpoint and
+result types. Returning nothing leaves the state unchanged. A terminal state
+drops the memos. `pending` is never returned; only reconciliation and handover
+write it.
+
+`Tx` has no task replacement operation. A task changes only its own state,
+through its runtime. The scheduler owns reservation, reconciliation, handover,
+faults, and orphaning; `abortTask()` owns abort marks. Other code
+stops a task with `abortTask()` and reads its result with `waitForTask()`.
+
+```ts
+// Intent, effect, outcome.
+prepare: async (task, runtime, context) => {
+  await runtime.commit(() => ({ status: "running", checkpoint: { phase: "charge", key: newKey() } }), context);
+},
+charge: async (task, runtime, context) => {
+  const receipt = await payments.charge(task.state.checkpoint.key); // idempotent by key
+  await runtime.commit(async (tx, current) => {
+    const entry = await tx.appendEntry(current.conversationId, receiptEntry(receipt));
+    return { status: "terminal", outcome: { status: "completed", result: { entryId: entry.id } } };
+  }, context);
+},
+// The abort handler decides the outcome; returning without one faults the task.
+abort: async (task, runtime, context) => {
+  await payments.cancel(task.state.checkpoint);
+  await runtime.commit(() => ({ status: "terminal", outcome: { status: "aborted", reason: "user" } }), context);
+},
+```
+`memo(name, candidate)` is one gated commit; `memo(name)` reads the committed
+record. `sleep(until)` compares against the Harness `now` clock and rejects when
+the invocation is signalled or its context is cancelled. Watches acquired through
+the runtime stop when the invocation ends.
 
 Reservation durably changes `pending` to `running`. One invocation runs phase
-handlers in sequence; checkpoint commits retain `running`. After a handler
-settles, the scheduler rereads the task and applies the first matching rule:
+handlers in sequence; checkpoint commits retain `running`. Before every phase,
+including the first, the scheduler runs one synchronous step callback on the
+Session line. It reads the committed task, applies the first matching rule
+below to the phase that just returned, writes any fault or handover in the same
+commit, and ends the invocation there when a rule stops it. A runtime commit the
+invocation queued earlier therefore either lands before the step and counts, or
+reaches the line after it and rejects. Before the first phase only rules 1–3
+apply:
 
 1. Terminal: stop.
 2. Session closing: stop; preserve the checkpoint and any abort mark for reopen.
 3. Run mode with a durable abort mark: end and join the run invocation, then
    dispatch a fresh abort invocation.
 4. Uncaught error: write terminal `faulted`.
-5. Checkpoint changed, including progress within the same phase: invoke its
-   phase handler in the same task invocation.
+5. Checkpoint changed, including progress within the same phase: refresh the
+   registry snapshot and either hand over (section 5.4) or invoke the phase
+   handler in the same task invocation.
 6. Checkpoint unchanged: write terminal `faulted` because no durable progress
    was made.
+
+An abort invocation runs its abort handler once. After it settles, a step
+applies rules 1, 2, and 4; a handler that returns without a terminal outcome
+faults the task. When Storage rejects a step's fault or handover write, the
+invocation still ends; the task stays `running` and the next reservation runs it
+again.
 
 On open, running-task reconciliation changes surviving `running` tasks back to
 `pending`, preserving their checkpoint and abort mark. Task migration runs at
@@ -1497,6 +1547,9 @@ An abort invocation resolves the definition the same way. When the definition
 can take the task, its abort handler runs; otherwise the task is orphaned as
 described below.
 
+A failed migration is reported once through `onReport` and retried only after
+the registry resolves a different definition object for the task's kind.
+
 The Harness never terminalizes a task merely because registry code is missing or
 incompatible, neither at open nor later. A blocked task without an abort mark
 keeps its durable record unchanged, remains live, still blocks ordinary idle
@@ -1508,7 +1561,11 @@ Aborting a blocked task cannot run its abort handler, because that code is
 missing or cannot take the task. The Harness therefore settles it as terminal
 `orphaned` instead of `aborted`: `aborted` means the task's own abort handler
 ran and decided the outcome, while `orphaned` means no task code ran, so external
-effects the task started may remain uncleaned. Only an abort (direct, by
+effects the task started may remain uncleaned. The orphaned `reason` is the
+blocked reason (`missing_task`, `task_too_old`, or `migration_failed`). When
+`abortTask()` finds no active invocation and the current snapshot
+cannot take the task, the marking commit settles it directly; otherwise the
+scheduler settles it when it would reserve the abort invocation. Only an abort (direct, by
 conversation, or by cascade) orphans a task; a missing definition alone never
 does. The orphaning commit performs the cleanup the task's code cannot: affected
 input submissions become unanswered with the reason, any matching active turn
@@ -1517,16 +1574,16 @@ written; the terminal task record and unanswered submissions carry the reason.
 Faulting a turn task performs the same control/submission cleanup with a
 `faulted` outcome.
 
-At every normal phase boundary (section 5.1, rule 5), after rereading the task
-and applying the precedence rules, the scheduler refreshes the invocation's
-registry snapshot. If the task definition resolved by name is a different object
+At every normal phase boundary (section 5.1, rule 5), the step refreshes the
+invocation's registry snapshot. If the task definition resolved by name is a different object
 than the one the invocation started with and the new definition can reserve the
 task (same version, or a higher version with `migrate`), the invocation hands
-over: it commits the task back to `pending` with its checkpoint, memos, and abort
-mark, ends, and the next reservation starts a fresh invocation under the new
+over: the step commits the task back to `pending` with its checkpoint, memos,
+and abort mark and ends the invocation, and the next reservation starts a fresh invocation under the new
 definition, applying the reservation rules above. When the definition is missing
 or cannot reserve the task, the invocation keeps running under its old
-definition, reports once, and reconsiders at its next boundary. A handler that
+definition, reports once through `onReport` per resolved definition, and
+reconsiders at its next boundary. A handler that
 never settles never hands over.
 
 ## 6. Submissions and inbox

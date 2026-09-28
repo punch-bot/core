@@ -40,6 +40,7 @@ export type {
 } from "./harness/types.ts";
 export { createSession } from "./session/session.ts";
 export { MemoryStorage } from "./storage/memory.ts";
+export { defineTask } from "./tasks.ts";
 export type {
 	CheckpointInfo,
 	CommitChange,
@@ -77,10 +78,13 @@ export type {
 	Id,
 	JsonObject,
 	LatestConversationSemantics,
+	NextTaskState,
 	Page,
+	PhaseHandler,
 	RewindableConversationDocFamilyToken,
 	RewindableConversationDocToken,
 	RewindableConversationSemantics,
+	RunningTask,
 	Seq,
 	Session,
 	SessionDocFamilyToken,
@@ -102,6 +106,7 @@ export type {
 	TaskOutcomeError,
 	TaskQuery,
 	TaskRecord,
+	TaskRuntime,
 	TaskState,
 	Tx,
 	WatchEnd,

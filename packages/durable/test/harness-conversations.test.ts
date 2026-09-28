@@ -7,10 +7,10 @@ import {
 	type ConversationId,
 	defineDoc,
 	defineEntry,
+	defineTask,
 	type EntryRecord,
 	MemoryStorage,
 	ROOT_CONVERSATION_ID,
-	type Task,
 } from "@punch-bot/durable";
 import { afterEach, describe, expect, it } from "vitest";
 import { openNodeSqliteStorage } from "../src/storage/sqlite/node.ts";
@@ -281,9 +281,13 @@ describe("Harness root and conversations", () => {
 	it("binds commits and task creation to the conversation", async () => {
 		const { harness } = await openHarness(new MemoryStorage());
 		const conversation = await harness.createConversation({ ownership: { kind: "ownerless" } }, context);
-		const task: Task<{ n: number }, { phase: "run" }, void, object> = {
-			definition: { name: "test.work", version: 1, initial: () => ({ phase: "run" }) },
-		};
+		const task = defineTask<{ n: number }, { phase: "run" }, null>({
+			name: "test.work",
+			version: 1,
+			initial: () => ({ phase: "run" }),
+			phases: { run: async () => {} },
+			abort: async () => {},
+		});
 		const taskId = await conversation.commit((tx) => tx.createTask(task, { n: 1 }), context);
 		const record = await harness.commit((tx) => tx.task(taskId), context);
 		expect(record?.conversationId).toBe(conversation.id);

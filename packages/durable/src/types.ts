@@ -1,6 +1,7 @@
 import type { AttachedReplicatedState, Context, Draft, JsonValue } from "@punch-bot/chord";
 import type { Op } from "@punch-bot/chord/delta";
-import type { Message } from "@punch-bot/ai";
+import type { Message, Models } from "@punch-bot/ai";
+import type { RegistrySnapshot } from "./harness/types.ts";
 
 /** JSON object used as the root of every durable document. */
 export type JsonObject = { [key: string]: JsonValue };
@@ -124,9 +125,59 @@ export type TaskDocFamilyToken<T extends JsonObject, I extends JsonValue> = DocF
 	DocFamilyDefinition<T, I> & { readonly scope: "task" }
 >;
 
-declare const taskResultType: unique symbol;
+/** Live task record reserved by one invocation. */
+export type RunningTask<I, S, R> = TaskRecord<I, S, R> & {
+	readonly state: Extract<TaskState<S, R>, { readonly status: "running" }>;
+};
 
-/** Task definition fields currently supported by Session task creation. */
+/** Next state a task commits for itself: a replacement checkpoint or its terminal outcome. */
+export type NextTaskState<S, R> = Extract<TaskState<S, R>, { readonly status: "running" | "terminal" }>;
+
+/**
+ * Runs one checkpoint phase. It must commit a changed checkpoint or a terminal outcome through `runtime.commit()`;
+ * returning without durable progress faults the task.
+ */
+export type PhaseHandler<I, P, S, R, H extends object> = (
+	task: RunningTask<I, P, R>,
+	runtime: TaskRuntime<I, S, R, H>,
+	context: Context,
+) => Promise<void>;
+
+/**
+ * Operations of one task invocation. Every operation rejects after the invocation ends; watches acquired through it
+ * stop at invocation end. `_H` is the task's hook map, consumed once the runtime gains its hook runner.
+ */
+export interface TaskRuntime<I, S, R, _H extends object> extends DocumentObserver {
+	readonly taskId: TaskId<R>;
+	readonly conversationId: ConversationId;
+	/** Aborted when the run is signalled by `abortTask()` or the Harness closes. */
+	readonly signal: AbortSignal;
+	/** Registry snapshot of the current phase; refreshed at every phase boundary. */
+	readonly registry: RegistrySnapshot;
+	readonly models: Models;
+
+	/**
+	 * Commit on the Session line after rereading the task. Rejects when the task is terminal, the invocation ended, the
+	 * Harness is closing, or, in a run invocation, the task carries an abort mark. A returned state replaces the task's
+	 * state in the same commit; returning nothing leaves it unchanged. `tx.createTask()` defaults to the task's
+	 * conversation.
+	 */
+	commit(
+		change: (
+			tx: Tx,
+			current: RunningTask<I, S, R>,
+		) => NextTaskState<S, R> | undefined | Promise<NextTaskState<S, R> | undefined>,
+		context: Context,
+	): Promise<void>;
+	/** Read a durable memo of this task. */
+	memo<T extends JsonValue>(name: string, context: Context): Promise<T | undefined>;
+	/** Store `candidate` unless a memo already exists; return the durable winner. */
+	memo<T extends JsonValue>(name: string, candidate: T, context: Context): Promise<T>;
+	/** Resolve once the Harness clock reaches `until`; rejects when the invocation or `context` is cancelled. */
+	sleep(until: number, context: Context): Promise<void>;
+}
+
+/** Executable durable state machine definition, registered in the registry by `name`. */
 export type TaskDefinition<I, S extends { phase: string }, R, H extends object> = {
 	/** Registered task kind persisted in `TaskRecord.kind`. */
 	readonly name: string;
@@ -134,9 +185,22 @@ export type TaskDefinition<I, S extends { phase: string }, R, H extends object> 
 	readonly version: number;
 	/** First durable checkpoint for a newly created task. */
 	initial(input: I): S;
+	/** Exhaustive phase map; each handler receives the task narrowed to its phase. */
+	readonly phases: {
+		readonly [P in S["phase"]]: PhaseHandler<I, Extract<S, { phase: P }>, S, R, H>;
+	};
+	/** Runs in a fresh invocation after an abort mark and must commit a terminal outcome. */
+	abort(task: RunningTask<I, S, R>, runtime: TaskRuntime<I, S, R, H>, context: Context): Promise<void>;
+	/** Convert a record stored by any older supported version; runs at reservation. */
+	migrate?(
+		input: JsonValue,
+		checkpoint: JsonValue,
+		fromVersion: number,
+	): {
+		input: I;
+		checkpoint: S;
+	};
 	readonly hooks?: H;
-	/** Type-only result marker until phase handlers commit typed outcomes. */
-	readonly [taskResultType]?: R;
 };
 
 /** Typed executable task definition. */
@@ -608,8 +672,6 @@ export interface Tx {
 		input: I,
 		options?: TaskOptions,
 	): Promise<TaskId<R>>;
-	/** Replace one task record completely. */
-	setTask(value: TaskRecord<JsonValue, JsonValue, JsonValue>): void;
 
 	doc<T extends JsonObject>(token: SessionDocToken<T>): Promise<Draft<T>>;
 	doc<T extends JsonObject>(token: ConversationDocToken<T>, conversationId: ConversationId): Promise<Draft<T>>;
@@ -710,7 +772,7 @@ export interface Session extends DocumentObserver {
 	close(context: Context): Promise<void>;
 	/** Observe complete commits synchronously after adoption. The listener must not throw, block, or call Session APIs. */
 	subscribeCommits(listener: (publication: CommitPublication, context: Context) => void): () => void;
-	/** Observe close synchronously on the Session line. The listener must not throw, block, or call Session APIs. */
+	/** Observe close synchronously when it begins. The listener must not throw, block, or call Session APIs. */
 	subscribeClose(listener: () => void): () => void;
 
 	snapshot<T extends JsonObject>(token: SessionDocToken<T>, context: Context): Promise<Readonly<T> | undefined>;

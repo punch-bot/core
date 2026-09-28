@@ -83,9 +83,12 @@ export class SessionImpl implements Session {
 		return this.#enqueue(() => this.#runCommit(change, context));
 	}
 
-	/** Internal commit whose `tx.createTask()` defaults to `defaultConversationId`; used by Conversation handles. */
+	/**
+	 * Internal commit exposing the concrete transaction and its internal operations, such as the reserved-ID root
+	 * bootstrap and task replacement. `tx.createTask()` defaults to `defaultConversationId`.
+	 */
 	commitWith<T>(
-		change: (tx: Tx) => T | Promise<T>,
+		change: (tx: Transaction) => T | Promise<T>,
 		context: Context,
 		defaultConversationId?: ConversationId,
 	): Promise<T> {
@@ -95,16 +98,6 @@ export class SessionImpl implements Session {
 			return Promise.reject(error);
 		}
 		return this.#enqueue(() => this.#runCommit(change, context, defaultConversationId));
-	}
-
-	/** Internal commit exposing the concrete transaction, whose reserved-ID root bootstrap is not on the public `Tx`. */
-	commitRoot<T>(change: (tx: Transaction) => T | Promise<T>, context: Context): Promise<T> {
-		try {
-			this.#assertUsable();
-		} catch (error) {
-			return Promise.reject(error);
-		}
-		return this.#enqueue(() => this.#runCommit(change, context));
 	}
 
 	/** Internal: run a read-only job on the mutation line so multi-read derivations observe one committed state. */
@@ -363,15 +356,26 @@ export class SessionImpl implements Session {
 	close(context: Context): Promise<void> {
 		if (this.#closing === undefined) {
 			const cleanup = withoutAbortSignal(context);
-			this.#closing = this.#enqueue(async () => {
-				for (const listener of [...this.#closeListeners]) listener();
-				this.#closeListeners.clear();
-				this.#commitListeners.clear();
-				this.#documents.clear();
-				await this.#storage.close(cleanup);
-			});
+			// Seal admission before anything else runs, then stop observers; admitted work settles before Storage closes.
+			this.#closing = Promise.resolve()
+				.then(() => this.beforeClose())
+				.then(() =>
+					this.#enqueue(async () => {
+						this.#commitListeners.clear();
+						this.#documents.clear();
+						await this.#storage.close(cleanup);
+					}),
+				);
+			const listeners = [...this.#closeListeners];
+			this.#closeListeners.clear();
+			for (const listener of listeners) listener();
 		}
 		return awaitWithContext(this.#closing, context);
+	}
+
+	/** Runs after close seals admission and before the line closes Storage; must not reject. */
+	protected beforeClose(): Promise<void> {
+		return Promise.resolve();
 	}
 
 	/** Register a synchronous post-adoption listener. It must not throw, block, or call Session operations. */
@@ -381,7 +385,7 @@ export class SessionImpl implements Session {
 		return () => this.#commitListeners.delete(listener);
 	}
 
-	/** Register a synchronous close listener. It must not throw, block, or call Session operations. */
+	/** Register a listener called synchronously when close begins. It must not throw, block, or call Session operations. */
 	subscribeClose(listener: () => void): () => void {
 		this.#assertUsable();
 		this.#closeListeners.add(listener);

@@ -308,6 +308,7 @@ export class Transaction implements Tx {
 		});
 	}
 
+	/** Internal: replace one task record completely. Tasks change their own state through their runtime. */
 	setTask(value: AnyTaskRecord): void {
 		this.#assertOpen();
 		this.#hasTableWrite = true;

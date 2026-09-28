@@ -158,6 +158,7 @@ class RegistryImpl<Tool extends ToolRegistration> implements Registry<Tool> {
 	#batch: Batch<Tool> | undefined;
 	/** First position of every key ever published; re-registered keys keep it. */
 	readonly #positions = new Map<string, number>();
+	readonly #listeners = new Set<() => void>();
 	#nextPosition = 0;
 
 	readonly tools: Registry<Tool>["tools"];
@@ -220,6 +221,11 @@ class RegistryImpl<Tool extends ToolRegistration> implements Registry<Tool> {
 
 	snapshot(): RegistrySnapshot<Tool> {
 		return this.#current;
+	}
+
+	subscribe(listener: () => void): () => void {
+		this.#listeners.add(listener);
+		return () => this.#listeners.delete(listener);
 	}
 
 	batch(register: () => void): Registration {
@@ -305,6 +311,7 @@ class RegistryImpl<Tool extends ToolRegistration> implements Registry<Tool> {
 		this.#current = new RegistryState(records);
 		for (const record of batch.added) record.status = "published";
 		for (const record of batch.disposed) record.status = "disposed";
+		for (const listener of [...this.#listeners]) listener();
 	}
 }
 

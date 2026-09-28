@@ -11,6 +11,10 @@
 - Made task conversation membership immutable after task creation.
 - Added `ConversationQuery` to Storage and transaction conversation scans.
 - Added required `StoredDocument.deltasSinceBase` to Storage document reads.
+- Task definitions now require an exhaustive `phases` map and an `abort` handler; define them with `defineTask()`.
+- `RegistryReader` now requires `subscribe()`.
+- Removed `Tx.setTask()`; a task changes its own state by returning the next state from its `runtime.commit()` callback.
+- `Session.subscribeClose()` listeners now run synchronously when close begins, after admission is sealed.
 
 ### Added
 
@@ -23,6 +27,7 @@
 - Added `Harness.open()` with lazy root creation, atomic conversation creation and forks with `init`, conversation-bound commits, fork-aware entry pagination, model context derivation, and the built-in `ConversationConfig` document with model, thinking level, and active tool accessors.
 - Added `createRegistry()` for tools, tool wrappers, hooks, tasks, and system prompt sections with batched publication and stable keyed ordering.
 - Added `defineEntry()` typed entry kinds.
+- Added the durable task runtime: `defineTask()`, registry-resolved phase handlers with checkpoint progress rules decided on the Session line, migration at reservation, typed runtime commits, memos, `sleep()`, and invocation-owned watches, plus `Harness.resume()`, `getTask()`, `waitForTask()`, `abortTask()`, and task-aware `waitForIdle()` on the Harness and conversations. Open reconciles running tasks to pending; tasks without a fitting definition stay blocked until registration, and aborting them settles them as `orphaned`.
 
 ### Fixed
 

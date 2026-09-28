@@ -1,6 +1,9 @@
-// A tour of the durable Session and Harness APIs in twelve small examples.
+// A tour of the durable Session and Harness APIs in fourteen small examples.
 // Run from packages/durable:
 //   node --conditions=source --experimental-strip-types test/scratch.ts
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
 import {
 	type AssistantMessage,
@@ -17,13 +20,14 @@ import {
 	createSession,
 	defineDoc,
 	defineEntry,
+	defineTask,
 	type EntryRecord,
 	Harness,
 	MemoryStorage,
 	type PromptInput,
-	type Task,
 	type ToolRegistration,
 } from "../src/index.ts";
+import { openNodeSqliteStorage } from "../src/storage/sqlite/node.ts";
 
 // A Session stores conversations, transcript entries, tasks, and documents.
 // MemoryStorage keeps everything in memory; other storage backends keep it on disk.
@@ -109,15 +113,16 @@ console.log("3. parent notes after edit:", await session.snapshot(Notes, chat.id
 // conversations. All three are created in one commit, so after a crash either
 // all of them exist or none do.
 
-// A task definition needs a name, a version, and the task's starting state.
-// This example only creates the task record; nothing runs it yet.
-const Supervisor: Task<null, { phase: "ready" }, null, object> = {
-	definition: {
-		name: "example.supervisor",
-		version: 1,
-		initial: () => ({ phase: "ready" }),
-	},
-};
+// A task definition needs a name, a version, the task's starting state, a
+// handler for every phase, and an abort handler (example 13 runs a task).
+// This example only creates the task record; a plain Session never runs it.
+const Supervisor = defineTask<null, { phase: "ready" }, null>({
+	name: "example.supervisor",
+	version: 1,
+	initial: () => ({ phase: "ready" }),
+	phases: { ready: async () => {} },
+	abort: async () => {},
+});
 
 // "latest" keeps only the current value. "initial" means forks of this
 // conversation start without a registry, so a child doesn't inherit its
@@ -478,4 +483,141 @@ console.log(`12. rendered prompt:\n${rendered.join("\n")}`);
 
 prompt.dispose();
 
+// ─── 13. Run a durable task ─────────────────────────────────────────────────
+// A task is a small state machine. Its state, the checkpoint, is saved after
+// every step, so after a crash the next open continues from the last saved
+// step. The usual pattern: save what you are about to do, do it, then save
+// the result. A crash between doing and saving reruns that step, so the step
+// must be safe to repeat; here the fake payment service ignores a repeated key.
+const payments = new Map<string, number>();
+type PaymentState = { phase: "prepare" } | { phase: "charge"; key: string };
+const Payment = defineTask<{ amount: number }, PaymentState, { receipt: number }>({
+	name: "example.payment",
+	version: 1,
+	initial: () => ({ phase: "prepare" }),
+	// One handler per phase. Each must save progress through runtime.commit():
+	// its callback returns the next checkpoint or the final outcome, and that
+	// state is saved in the same commit as everything else the callback wrote.
+	phases: {
+		prepare: async (task, runtime, taskContext) => {
+			await runtime.commit(
+				() => ({ status: "running", checkpoint: { phase: "charge", key: `payment-${task.id}` } }),
+				taskContext,
+			);
+		},
+		charge: async (task, runtime, taskContext) => {
+			const key = task.state.checkpoint.key;
+			if (!payments.has(key)) payments.set(key, task.input.amount * 100);
+			const receipt = payments.get(key)!;
+			await runtime.commit(
+				() => ({ status: "terminal", outcome: { status: "completed", result: { receipt } } }),
+				taskContext,
+			);
+		},
+	},
+	// Runs instead of the phases after harness.abortTask(); it decides the outcome.
+	abort: async (_task, runtime, taskContext) => {
+		await runtime.commit(() => ({ status: "terminal", outcome: { status: "aborted" } }), taskContext);
+	},
+});
+
+// The Harness finds task code by name in the registry. Nothing runs until
+// resume(); a host calls it once it is ready for work to start.
+registry.tasks.add(Payment);
+const paymentId = await root.commit((tx) => tx.createTask(Payment, { amount: 5 }), context);
+harness.resume();
+// The finished task record is the durable receipt; waitForTask() knows its result type.
+const paid = await harness.waitForTask(paymentId, context);
+console.log("13. payment outcome:", paid.state.outcome);
+
 await harness.close(context);
+
+// ─── 14. Close, reopen, and continue where the task stopped ─────────────────
+// Everything a task needs to continue is in storage, so a new Harness over the
+// same storage picks up where the last one stopped. This example keeps its
+// storage in a SQLite file so it survives closing.
+const directory = await mkdtemp(join(tmpdir(), "pi-durable-scratch-"));
+const databasePath = join(directory, "session.sqlite");
+
+let reachedTick = (_n: number): void => {};
+const Ticker = defineTask<{ to: number }, { phase: "tick"; n: number }, string>({
+	name: "example.ticker",
+	version: 1,
+	initial: () => ({ phase: "tick", n: 1 }),
+	phases: {
+		tick: async (task, runtime, taskContext) => {
+			const n = task.state.checkpoint.n;
+			// Save the intent before the effect. A memo keeps the first value
+			// written under its name, so if the process dies after printing but
+			// before the next checkpoint is saved, the rerun sees the memo and
+			// does not print the same tick twice.
+			if ((await runtime.memo(`printed-${n}`, taskContext)) === undefined) {
+				await runtime.memo(`printed-${n}`, true, taskContext);
+				console.log(`14. tick ${n}`);
+			}
+			reachedTick(n);
+			// Save the outcome: the next tick, or the final result.
+			await runtime.commit(
+				() =>
+					n === task.input.to
+						? { status: "terminal", outcome: { status: "completed", result: `counted to ${n}` } }
+						: { status: "running", checkpoint: { phase: "tick", n: n + 1 } },
+				taskContext,
+			);
+			// Wait a little between ticks. Closing the Harness cancels this wait;
+			// the checkpoint saved above is where the next Harness continues.
+			await runtime.sleep(Date.now() + 50, taskContext);
+		},
+	},
+	abort: async (_task, runtime, taskContext) => {
+		await runtime.commit(() => ({ status: "terminal", outcome: { status: "aborted" } }), taskContext);
+	},
+});
+registry.tasks.add(Ticker);
+
+// First run: start counting to 5, and close the Harness right after tick 2 is
+// printed, before its next checkpoint is saved. That is the same situation as
+// a crash between the effect and saving its outcome.
+const firstRun = await Harness.open(
+	await openNodeSqliteStorage(databasePath),
+	{ models: createModels(), registry },
+	context,
+);
+const tickerId = await (await firstRun.root(context)).commit((tx) => tx.createTask(Ticker, { to: 5 }), context);
+const tickTwo = new Promise<void>((resolve) => {
+	reachedTick = (n) => {
+		if (n === 2) resolve();
+	};
+});
+firstRun.resume();
+await tickTwo;
+await firstRun.close(context);
+reachedTick = () => {};
+const saved = await readTicker();
+console.log("14. closed; saved checkpoint:", saved.state, "memos:", saved.memos);
+
+// Second run: nothing to restart by hand. Opening the storage finds the
+// unfinished task and resume() continues it. Tick 2 runs again because its
+// outcome was never saved, but its memo says it was already printed.
+const secondRun = await Harness.open(
+	await openNodeSqliteStorage(databasePath),
+	{ models: createModels(), registry },
+	context,
+);
+secondRun.resume();
+const counted = await secondRun.waitForTask(tickerId, context);
+console.log("14. after reopen:", counted.state.outcome);
+await secondRun.close(context);
+await rm(directory, { recursive: true, force: true });
+
+/** Read the ticker record through a short-lived Harness over the same file. */
+async function readTicker() {
+	const reader = await Harness.open(
+		await openNodeSqliteStorage(databasePath),
+		{ models: createModels(), registry },
+		context,
+	);
+	const record = await reader.getTask(tickerId, context);
+	await reader.close(context);
+	return record!;
+}

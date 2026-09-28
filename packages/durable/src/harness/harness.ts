@@ -1,4 +1,5 @@
-import type { Context, Draft } from "@punch-bot/chord";
+import type { Context, Draft, JsonValue } from "@punch-bot/chord";
+import { withoutAbortSignal } from "@punch-bot/chord/context";
 import type { ModelThinkingLevel } from "@punch-bot/ai";
 import { SessionImpl } from "../session/session.ts";
 import type {
@@ -11,11 +12,14 @@ import type {
 	EntryRecord,
 	Page,
 	Storage,
+	TaskId,
+	TaskRecord,
 	Tx,
 } from "../types.ts";
 import { ROOT_CONVERSATION_ID } from "../types.ts";
 import { ConversationConfig, type ConversationConfigState } from "./config.ts";
 import { captureContextBounds, deriveContext } from "./context.ts";
+import { TaskScheduler } from "./scheduler.ts";
 import type {
 	ContextView,
 	Conversation,
@@ -26,6 +30,7 @@ import type {
 	ModelRef,
 	RegistryReader,
 	RegistrySnapshot,
+	SettledTask,
 	ToolRegistration,
 } from "./types.ts";
 
@@ -44,6 +49,7 @@ type ConversationHost<Tool extends ToolRegistration> = {
 	readonly harness: HarnessImpl<Tool>;
 	readonly storage: Storage;
 	readonly registry: RegistryReader<Tool>;
+	readonly tasks: TaskScheduler;
 	create(target: CreateTarget, init: ConversationInit | undefined, context: Context): Promise<Conversation>;
 };
 
@@ -121,6 +127,10 @@ class ConversationImpl<Tool extends ToolRegistration> implements Conversation {
 		);
 	}
 
+	waitForIdle(context: Context): Promise<void> {
+		return this.#host.tasks.waitForIdle(this.id, context);
+	}
+
 	async #config(context: Context): Promise<Readonly<ConversationConfigState>> {
 		return (
 			(await this.#host.harness.snapshot(ConversationConfig, this.id, context)) ??
@@ -140,18 +150,57 @@ class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements 
 	readonly #storage: Storage;
 	readonly #registry: RegistryReader<Tool>;
 	readonly #host: ConversationHost<Tool>;
+	readonly #tasks: TaskScheduler;
 	#closed = false;
 
-	constructor(storage: Storage, options: HarnessOptions<Tool>) {
+	constructor(storage: Storage, options: HarnessOptions<Tool>, context: Context) {
 		super(storage);
 		this.#storage = storage;
 		this.#registry = options.registry;
+		this.#tasks = new TaskScheduler({
+			session: this,
+			storage,
+			registry: options.registry,
+			models: options.models,
+			now: options.now ?? Date.now,
+			report: options.onReport ?? (() => {}),
+			context: withoutAbortSignal(context),
+		});
 		this.#host = {
 			harness: this,
 			storage,
 			registry: options.registry,
+			tasks: this.#tasks,
 			create: (target, init, context) => this.#create(target, init, context),
 		};
+	}
+
+	/** Reconcile surviving `running` tasks to `pending`; part of open. */
+	openTasks(context: Context): Promise<void> {
+		return this.#tasks.open(context);
+	}
+
+	resume(): void {
+		this.#assertOpen();
+		this.#tasks.resume();
+	}
+
+	getTask<R>(id: TaskId<R>, context: Context): Promise<TaskRecord<JsonValue, JsonValue, R> | undefined> {
+		return this.readOnLine(() => this.#storage.task(id, context)) as Promise<
+			TaskRecord<JsonValue, JsonValue, R> | undefined
+		>;
+	}
+
+	abortTask(id: TaskId, context: Context): Promise<"marked" | "terminal"> {
+		return this.#tasks.abort(id, context);
+	}
+
+	waitForTask<R>(id: TaskId<R>, context: Context): Promise<SettledTask<R>> {
+		return this.#tasks.waitForTask(id, context) as Promise<SettledTask<R>>;
+	}
+
+	waitForIdle(context: Context): Promise<void> {
+		return this.#tasks.waitForIdle(undefined, context);
 	}
 
 	root(context: Context, options?: { readonly init?: ConversationInit }): Promise<Conversation> {
@@ -173,11 +222,16 @@ class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements 
 		return super.close(context);
 	}
 
+	/** Join task invocations after admission is sealed and before Storage closes; writes no task outcome. */
+	protected override beforeClose(): Promise<void> {
+		return this.#tasks.join();
+	}
+
 	async #create(target: CreateTarget, init: ConversationInit | undefined, context: Context): Promise<Conversation> {
 		this.#assertOpen();
 		const id =
 			target.kind === "root"
-				? await this.commitRoot(async (tx) => {
+				? await this.commitWith(async (tx) => {
 						if ((await tx.conversation(ROOT_CONVERSATION_ID)) !== undefined) return ROOT_CONVERSATION_ID;
 						return this.#stageConfiguration(tx, await tx.createRootConversation(), false, init);
 					}, context)
@@ -239,6 +293,13 @@ export const Harness = {
 		context: Context,
 	): Promise<Harness> {
 		context.abortSignal?.throwIfAborted();
-		return new HarnessImpl(storage, options);
+		const harness = new HarnessImpl(storage, options, context);
+		try {
+			await harness.openTasks(context);
+		} catch (error) {
+			await harness.close(context);
+			throw error;
+		}
+		return harness;
 	},
 };

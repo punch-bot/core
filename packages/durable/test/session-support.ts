@@ -57,6 +57,11 @@ export class ControlledStorage extends MemoryStorage {
 		return { entered: held.entered.promise, release: () => this.#release("find", held) };
 	}
 
+	/** Simulate a crash during the held commit: it never reaches storage, and later commits proceed. */
+	crash(): void {
+		this.#commitGate = undefined;
+	}
+
 	failNextCommit(error: Error): void {
 		this.#commitFailure = error;
 	}
