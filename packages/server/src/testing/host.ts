@@ -33,7 +33,6 @@ export class TestHarness {
 	attachmentReleaseCount = 0;
 	closeCount = 0;
 	readonly serviceCalls: ServiceCall[] = [];
-	readonly attachmentTerminations: Deferred<Error>[] = [];
 	failAttachmentRelease?: Error;
 	failClose?: Error;
 	nextServiceError?: Error;
@@ -46,16 +45,12 @@ export class TestHarness {
 	}
 
 	attachClient(_context: Context): {
-		terminated: Promise<Error>;
 		invokeService: TestHarness["invokeService"];
 		release(context: Context): void;
 	} {
 		this.attachedClients += 1;
 		let released = false;
-		const termination = new Deferred<Error>();
-		this.attachmentTerminations.push(termination);
 		return {
-			terminated: termination.promise,
 			invokeService: (call) => this.invokeService(call),
 			release: (_context) => {
 				if (released) return;

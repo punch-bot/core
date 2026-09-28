@@ -1,7 +1,7 @@
-import { defineConfig, mergeConfig } from "vitest/config";
-import baseConfig from "../../vitest.base.ts";
+import { fileURLToPath } from "node:url";
+import { defineConfig } from "vitest/config";
 
-export default mergeConfig(baseConfig, defineConfig({
+export default defineConfig({
 	test: {
 		globals: true,
 		environment: "node",
@@ -9,6 +9,10 @@ export default mergeConfig(baseConfig, defineConfig({
 	},
 	resolve: {
 		conditions: ["source"],
+		alias: {
+			"@punch-bot/protocol": fileURLToPath(new URL("../protocol/src/index.ts", import.meta.url)),
+			"@punch-bot/protocol": fileURLToPath(new URL("../protocol/src/index.ts", import.meta.url)),
+		},
 	},
 	ssr: { resolve: { conditions: ["source"] } },
-}));
+});

@@ -16,8 +16,6 @@ export type MaybePromise<T> = T | Promise<T>;
 
 /** One presentation connection's live capability for a hosted Session. */
 export interface RoutedSessionAttachment {
-	/** Unexpected loss of this lease; other clients of the same Session remain attached. */
-	readonly terminated?: Promise<Error>;
 	/** Route one contract-agnostic service operation to the attached Session endpoint. */
 	invokeService(
 		call: ServiceCall,
@@ -60,8 +58,6 @@ export interface RoutedSessionHandle {
 /** Application capabilities used by server-wide management and Session routing. */
 export interface ServerHost<TMetadata extends SessionMetadata = SessionMetadata> {
 	readonly serverServices: RoutedServerServiceHost;
-	/** Checked on every attachment and invocation, including cached Session handles. */
-	authorizeSession?(sessionId: string, call: ServiceCall | undefined, context: Context): MaybePromise<void>;
 	/** Resolve one durable Session ID or throw a bounded routing error. */
 	resolveSession(sessionId: string, context: Context): Promise<TMetadata>;
 	openSession(metadata: TMetadata, context: Context): Promise<RoutedSessionHandle>;
