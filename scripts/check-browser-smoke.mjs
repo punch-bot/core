@@ -42,13 +42,6 @@ function includesNodePackage(inputs, packageName) {
 
 try {
 	await build({
-		entryPoints: ["packages/server/src/services.ts"],
-		bundle: true,
-		platform: "browser",
-		format: "esm",
-		write: false,
-	});
-	await build({
 		entryPoints: ["scripts/browser-smoke-entry.ts"],
 		bundle: true,
 		platform: "browser",
