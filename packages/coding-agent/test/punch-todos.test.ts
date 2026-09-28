@@ -1,7 +1,7 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -356,6 +356,29 @@ describe("TodoStore", () => {
 		store.delete("old-session");
 		store.migrateLegacy("new-session");
 		expect(store.load("new-session")).toEqual(emptyState());
+	});
+
+	it("migrates legacy lists from different working directories independently", () => {
+		const path = join(dir, "todos.sqlite");
+		const firstLegacy = join(dir, "first", "todos.json");
+		const secondLegacy = join(dir, "second", "todos.json");
+		mkdirSync(dirname(firstLegacy), { recursive: true });
+		mkdirSync(dirname(secondLegacy), { recursive: true });
+		writeFileSync(
+			firstLegacy,
+			JSON.stringify({ todos: [{ id: 1, text: "first", done: false, createdAt: 1 }], nextId: 2, log: [] }),
+		);
+		writeFileSync(
+			secondLegacy,
+			JSON.stringify({ todos: [{ id: 1, text: "second", done: false, createdAt: 1 }], nextId: 2, log: [] }),
+		);
+		const first = new TodoStore(path, firstLegacy);
+		const second = new TodoStore(path, secondLegacy);
+		stores.push(first, second);
+		first.migrateLegacy("first-session");
+		second.migrateLegacy("second-session");
+		expect(first.load("first-session").todos[0]?.text).toBe("first");
+		expect(second.load("second-session").todos[0]?.text).toBe("second");
 	});
 
 	it("keeps a malformed legacy file available for a later migration attempt", () => {
