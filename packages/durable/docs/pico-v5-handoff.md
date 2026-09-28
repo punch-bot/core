@@ -11,7 +11,7 @@ facades, membranes, document routing, view projection, events, or clone chains.
 
 - Obsolete `pico` and `pico4` prototypes were removed.
 - `pico3` remains.
-- Packages 1–7 are implemented in `packages/durable`; later Pico5 runtime packages remain.
+- Packages 1–12 are implemented in `packages/durable`; Package 10 was already satisfied by Chord's canonical structural diff implementation.
 
 ## 1. Records, cursors, and memory tables
 
@@ -196,7 +196,7 @@ on typed access; Harness open does not scan ordinary documents.
 Test read-only in-memory migration, `tx.doc()` migration rollback and coalescing
 with later edits, rewindable migration on current/historical read, the first
 successful `tx.doc()` version base even without a JSON change, newer-version
-rejection, migrated source/watch hydration without a write, subsequent operations
+rejection, migrated state/watch hydration without a write, subsequent operations
 against that migrated baseline, stored-version fork copying, unaccessed and unavailable-definition
 preservation, predicate failure rollback before Storage admission, and checkpoint
 starvation without backend heuristics.
@@ -226,50 +226,46 @@ previous immutable revisions, and equality between Astra's prepared candidate
 and immutable operation replay. One prepared document change remains one Session
 commit; no intermediate candidate is adopted or published.
 
-## 11. Chord document source
+## 11. Chord document state
 
-Chord's existing `ReplicatedStateSource` attachment and `replicatedState(source)`
-adoption contract already matches specification §9.1; this is Pico-side work.
+Use Chord's existing `ReplicatedStateSource` attachment contract internally, but
+expose one already-attached read-only `DocumentState` per acquisition. It must
+atomically hydrate in O(1) from the current immutable revision and publish later
+exact committed immutable value/operation frames without another tracker, value
+copy, or re-diff. Disposal unregisters that one state. Pico remains the sole
+document mutator.
 
-Implement Pico's opaque committed document source on that contract. It must
-atomically attach in O(1) to the source's current immutable revision and later
-committed immutable revision/operation frames without another tracker, value
-copy, or re-diff. Pico
-remains the sole document mutator. Trusted immutable source revisions and
-operation placement payloads may share containers.
-
-Test contiguous Chord delivery sequences, atomic hydrate/subscribe, a snapshot
-that already covers a queued publication without duplicate application,
-retirement between source acquisition and attachment hydrating `null` rather than
-a replacement, retirement ending one incarnation, recreation requiring
-reacquisition, listener isolation, and mutation footguns. Reuse the transaction
-core's immutable published value; do not materialize another document copy.
+Test contiguous Chord delivery sequences, atomic hydrate/subscribe, a baseline
+that covers queued publication without duplicate application, exact value and
+operation reference sharing, retirement to `null`, incarnation-bound recreation,
+independent state disposal, migrated hydration, definition-free fork copies,
+tracker-cache unload, and trusted mutation footguns.
 
 ## 12. Document watches
 
 Implement non-creating `watchDoc` as an incarnation-bound `WatchHandle` that
 returns `undefined` when absent and atomically captures the current immutable
-revision in O(1) while registering for later revisions. Before `start()`, its
-value remains the acquisition revision. After start, retain only the last
-delivered and newest committed immutable revisions. Off the Session line, derive
-`diffRevisions(lastDelivered, newest)` and advance the handle's value to
-`newest`. An empty diff advances silently. A nonempty diff invokes one serialized
-asynchronous listener with a watch-owned cancellation Context carrying values
-from the newest coalesced commit's Context. Do not retain operation queues,
-estimate serialized bytes, call `JSON.stringify()` for accounting, or construct
-reset frames.
+revision in O(1) while registering for later exact committed frames. Before
+`start()`, its value remains the acquisition revision. After start, invoke one
+serialized asynchronous listener with each exact value and operation batch,
+advancing `watch.value` immediately before the callback. Preserve commit Context
+values without inheriting producer cancellation.
 
-Test updates between acquisition/return/start; asynchronous initialization from
-a stable immutable revision; no callback overlap; listener-initiated commits;
-commits during an in-flight callback; coalescing many revisions directly to the
-latest; an empty net diff silently advancing without a callback; replayable
-redundant structural commits coalescing away when state is unchanged; delivery
-Context cancellation ownership; retained earlier revision stability; trusted
-mutation footguns; bounded revision-reference retention; retirement before start
-and while active; recreation; idempotent stop; second-start rejection;
-cancellation during acquisition; cancellation/close during a callback; diff and
-listener-error settlement; `closed` self-join misuse; and invocation-owned
-cleanup in package 15.
+Retain at most 100 pending frames, excluding the in-flight callback. Adding frame
+101 replaces the complete undelivered suffix with one root replacement carrying
+the newest exact immutable revision and Context. Do not estimate serialized
+bytes, call `JSON.stringify()` for accounting, copy values, replay operations, or
+re-diff revisions.
+
+Test updates between acquisition/return/start; exact values and operation
+references; no callback overlap; listener-initiated commits; commits during an
+in-flight callback; overflow before start and behind an active callback;
+retirement folded into an overflow reset; replayable redundant structural
+commits; delivery Context value preservation; retained earlier revision
+stability; trusted mutation footguns; retirement before start and while active;
+recreation; idempotent stop; second-start rejection; cancellation during
+acquisition; cancellation/close during a callback without aborting or joining it;
+listener-error settlement; and invocation-owned cleanup in package 15.
 
 ## 13. Conversations and entries
 
@@ -351,8 +347,8 @@ revisions produced by the optimized immutable applier. Build the first revision
 lazily on the Session line. For every later affected Session commit, derive the
 mounted operation batch and prepare its next revision before Storage admission;
 a failure rolls back normally. After Storage succeeds, finalization only installs
-prepared pointers/cursors and enqueues publication. Conversation
-watches use Package 12's O(1) acquisition and latest-revision coalescing.
+prepared pointers/cursors and enqueues publication. Conversation views expose a read-only Chord state directly; their watches use
+Package 12's O(1) acquisition and bounded exact-frame buffering.
 
 Test direct task writes, one publication per Session commit, atomic
 entry/preview settlement, parent-linked active-entry reconstruction, head
@@ -361,7 +357,7 @@ Storage, empty mounted-batch suppression, redundant nonempty mounted revisions,
 contiguous revisions, stable public paths, immutable O(1) acquisition,
 asynchronous consumer
 initialization, serialized updates, revision/payload structural sharing,
-coalescing behind an in-flight callback, retry/collapse late-join status,
+bounded buffering and reset behind an in-flight callback, retry/collapse late-join status,
 bounded-output truncation metadata, and absence of semantic projection. Specify
 which diagnostics become entries, terminal details, or bounded document state.
 
@@ -433,8 +429,8 @@ agent-mode notification adapter directly from uncoalesced committed publication,
 without another tracker or persistence authority. Migrate TUI hydration to the
 structural conversation watch, make print await its own input `Submission`, and expose
 JSON/RPC correlated commands plus ordered committed notifications. Test that
-watch latest-revision coalescing cannot erase a separately subscribed
-notification lifecycle, late clients use structural hydration rather than event
+watch overflow resets cannot erase a separately subscribed notification
+lifecycle, late clients use structural hydration rather than event
 replay, progress notifications
 reflect durable throttled state rather than every provider frame, and stdout
 backpressure/disconnect policy stays in the mode adapter.
@@ -443,11 +439,11 @@ Implement the v1 host-extension reload path as stop admission, close/join, dispo
 rebuild with new document tokens and registered task/tool/section definitions, reopen/migrate live tasks, and resume. Ordinary documents migrate
 on later typed access. Test that closing seals commit and
 mutation admission, lets storage settlement for already-prepared admitted
-commits finish despite caller cancellation, stops watches, joins in-flight watch
-callbacks and task/tool/hook invocations outside the Session line, writes no abort
-or terminal outcome, starts no fresh abort invocation, and does not run old and
-new generations concurrently. Include cancellation during watch acquisition and
-a non-cooperative watch callback in shutdown/extension-reload quiescence tests.
+commits finish despite caller cancellation, stops future watch deliveries, joins
+task/tool/hook invocations outside the Session line, writes no abort or terminal
+outcome, starts no fresh abort invocation, and does not run old and new
+generations concurrently. Include cancellation during watch acquisition; an
+already-running watch callback remains caller-owned across shutdown.
 
 Test stable persisted root identity; atomic conversation/config/section/input-
 submission creation; default `"off"` thinking; every configuration getter/setter; explicit

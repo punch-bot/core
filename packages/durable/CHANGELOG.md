@@ -17,6 +17,7 @@
 - Added document checkpoint selection, lazy version migration, and `Session.snapshotAsOf()` for rewindable conversation documents.
 - Added policy-driven backend-side conversation document copying when creating forks.
 - Added indexed conversation ownership queries and guaranteed no-effect Storage rejection handling.
+- Added incarnation-bound read-only Chord document states and serialized asynchronous document watches with bounded exact-frame buffering.
 
 ## [0.87.1] - 2026-09-22
 

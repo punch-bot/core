@@ -3,6 +3,8 @@ export { ReadAfterWrite, StorageRejected } from "./errors.ts";
 export { createSession } from "./session/session.ts";
 export { MemoryStorage } from "./storage/memory.ts";
 export type {
+	CommitChange,
+	CommitPublication,
 	CommonDocDefinition,
 	ContextEdit,
 	ConversationDocFamilyToken,
@@ -17,14 +19,18 @@ export type {
 	DocFamilyToken,
 	DocToken,
 	DocumentAddress,
+	DocumentCommitChange,
 	DocumentContent,
 	DocumentCopySource,
 	DocumentCreate,
 	DocumentId,
+	DocumentObserver,
 	DocumentPoint,
 	DocumentQuery,
 	DocumentRecord,
 	DocumentSemantics,
+	DocumentState,
+	DocumentWatch,
 	EntryDraft,
 	EntryId,
 	EntryQuery,
@@ -46,6 +52,7 @@ export type {
 	SubmissionCreate,
 	SubmissionId,
 	SubmissionRecord,
+	TableCommitChange,
 	Task,
 	TaskDefinition,
 	TaskDocFamilyToken,
@@ -58,5 +65,7 @@ export type {
 	TaskRecord,
 	TaskState,
 	Tx,
+	WatchEnd,
+	WatchHandle,
 } from "./types.ts";
 export { ROOT_CONVERSATION_ID } from "./types.ts";

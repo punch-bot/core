@@ -21,6 +21,7 @@ import type {
 	ConversationRecord,
 	Cursor,
 	DocumentAddress,
+	DocumentCommitChange,
 	DocumentCopySource,
 	DocumentCreate,
 	DocumentId,
@@ -51,28 +52,6 @@ type AnyTaskRecord = TaskRecord<JsonValue, JsonValue, JsonValue>;
 const INTERNAL_SCAN_PAGE_SIZE = 256;
 const EMPTY_OPERATIONS: readonly Op[] = [];
 const TABLE_JSON_COPY_OPTIONS = { omitUndefinedProperties: true } as const;
-
-/** Committed change of one document incarnation. */
-export type DocumentCommitChange =
-	| {
-			readonly type: "document";
-			readonly record: DocumentRecord;
-			/** Conversation owning the document; task documents derive it from their task record. Undefined only for Session documents. */
-			readonly conversationId: ConversationId | undefined;
-			/** Definition version of `value`; absent when this commit retired the incarnation. */
-			readonly version: number | undefined;
-			/** Exact adopted immutable revision, or `null` when this commit retired the incarnation. */
-			readonly value: JsonObject | null;
-			/** Exact adopted operations for an ordinary update; empty for creation and retirement. */
-			readonly ops: readonly Op[];
-	  }
-	| {
-			/** Definition-free child initialization; consumers hydrate through a source or watch. */
-			readonly type: "document.copy";
-			readonly record: DocumentRecord;
-			readonly conversationId: ConversationId;
-			readonly source: DocumentCopySource;
-	  };
 
 /** One committed document incarnation owned by the Session tracker cache. */
 export type LoadedDocument = {
