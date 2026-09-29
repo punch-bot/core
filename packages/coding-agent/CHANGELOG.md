@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Changed the default OpenAI Codex model to GPT-6.1 Sol (`gpt-6.1-sol`).
+
 ## [0.99.0] - 2026-09-29
 
 ### New Features
