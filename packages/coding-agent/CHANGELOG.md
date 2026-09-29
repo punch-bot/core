@@ -28,6 +28,7 @@
 - Fixed the Fireworks default model pointing at the removed Kimi K2.6 model; it now defaults to Kimi K3.
 - Fixed the OpenCode Go default model pointing at the removed Kimi K2.6 model; it now defaults to Kimi K3.
 - Fixed the Together default model pointing at the removed Kimi K2.6 model; it now defaults to Kimi K3.
+- Reduced CPU use while streaming in long sessions and when previewing themes: the footer caches session usage totals, collapsed bash results cache their preview, and `sanitizeBinaryOutput()` no longer splits output into per-character arrays.
 
 ## [0.87.1] - 2026-09-22
 
