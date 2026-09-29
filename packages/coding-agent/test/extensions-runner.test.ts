@@ -86,6 +86,7 @@ describe("ExtensionRunner", () => {
 		setLabel: () => {},
 		getActiveTools: () => [],
 		getAllTools: () => [],
+		getSettings: () => ({}),
 		setActiveTools: () => {},
 		refreshTools: () => {},
 		getCommands: () => [],

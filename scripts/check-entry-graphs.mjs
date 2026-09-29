@@ -23,7 +23,9 @@ const WORKSPACE = {
 	"@punch-bot/ai": "packages/ai/src",
 	"@punch-bot/durable": "packages/durable/src",
 	"@punch-bot/agent": "packages/agent/src",
+	"@punch-bot/codemode": "packages/codemode/src",
 	"@punch-bot/telemetry": "packages/telemetry/src",
+	"@punch-bot/mcp": "packages/mcp/src",
 };
 
 /**
