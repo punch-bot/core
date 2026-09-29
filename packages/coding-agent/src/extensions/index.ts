@@ -11,14 +11,14 @@ import webfetchExtension from "./webfetch/index.ts";
 import toolSearchExtension from "./tool-search/index.ts";
 
 export const builtInExtensions: InlineExtension[] = [
-	{ name: "llama.cpp", factory: llamaExtension, hidden: true },
+	{ name: "llama.cpp", factory: llamaExtension, builtin: true },
 	{ name: "webfetch", factory: webfetchExtension },
 	{ name: "report_progress", factory: reportProgressExtension },
 	{ name: "subagent", factory: subagentExtension },
 	{ name: "context_pruning", factory: contextPruningExtension },
 	{ name: "browser", factory: browserExtension },
-	{ name: "codemode", factory: codemodeExtension, hidden: true, replaceable: true },
-	{ name: "tool-search", factory: toolSearchExtension, hidden: true, replaceable: true },
-	{ name: "mcp", factory: mcpExtension, hidden: true, replaceable: true },
+	{ name: "codemode", factory: codemodeExtension, builtin: true, replaceable: true },
+	{ name: "tool-search", factory: toolSearchExtension, builtin: true, replaceable: true },
+	{ name: "mcp", factory: mcpExtension, builtin: true, replaceable: true },
 	{ name: "punch", factory: punchExtension },
 ];
