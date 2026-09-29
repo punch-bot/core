@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### New Features
+
+- **GPT-6.1 Sol** — Available on OpenAI, Azure OpenAI, and OpenAI Codex, and now the default OpenAI Codex model. See [Select a model](docs/models.md#select-a-model).
+
+### Added
+
+- Added GPT-6.1 Sol (`gpt-6.1-sol`) to the OpenAI, Azure OpenAI Responses, and OpenAI Codex providers.
+
 ### Changed
 
 - Changed the default OpenAI Codex model to GPT-6.1 Sol (`gpt-6.1-sol`).
