@@ -709,6 +709,8 @@ export interface Tx {
 		cursor?: Cursor,
 	): Promise<Page<ConversationRecord, Cursor>>;
 	scanEntries(query: EntryQuery, limit: number, cursor?: Cursor): Promise<Page<EntryRecord, Cursor>>;
+	/** Newest visible entry of the conversation that carries a `head`. */
+	latestHeadMarker(conversationId: ConversationId): Promise<(EntryRecord & { readonly head: EntryId }) | undefined>;
 	scanTasks(
 		query: TaskQuery,
 		limit: number,
@@ -742,6 +744,11 @@ export interface Tx {
 	 * Run tasks settle the inputs they answer.
 	 */
 	settleSubmission(id: SubmissionId, settlement: SubmissionSettlement): void;
+	/**
+	 * Place a queued submission at `entry`: an input becomes `placed`, a write `done`. Resolved like
+	 * `settleSubmission()`. Inbox boundaries place the submissions they select.
+	 */
+	placeSubmission(id: SubmissionId, entry: EntryId): void;
 
 	doc<T extends JsonObject>(token: SessionDocToken<T>): Promise<Draft<T>>;
 	doc<T extends JsonObject>(token: ConversationDocToken<T>, conversationId: ConversationId): Promise<Draft<T>>;

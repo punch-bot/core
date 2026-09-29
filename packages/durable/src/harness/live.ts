@@ -3,6 +3,7 @@ import type { AssistantMessage } from "@punch-bot/ai";
 import { defineDoc } from "../documents.ts";
 import type { Transaction } from "../session/transaction.ts";
 import type { EntryId, SubmissionId, SubmissionSettlement, TaskId, TaskRecord, Tx } from "../types.ts";
+import { convertPartial } from "./generation.ts";
 import type { SchedulerOutcome } from "./scheduler.ts";
 import type { ToolDiagnostic } from "./types.ts";
 
@@ -99,7 +100,13 @@ export function clearProgress(slot: Draft<ToolSlot>): void {
 /**
  * Harness cleanup for a terminal outcome the scheduler writes itself (`faulted` or `orphaned`). A run task ends its
  * run; a tool task's slot is marked done without an entry, and context derivation synthesizes the missing result.
- * Ignores other kinds so it never creates `pi.live` elsewhere. Committed partials are discarded without an entry.
+ * Ignores other kinds so it never creates `pi.live` elsewhere. The scheduler calls this without knowing task kinds;
+ * the Harness passes it in (spec §5.4).
+ * REMINDER: a committed generation partial becomes an aborted assistant entry here, exactly as in the generation abort
+ * handler, so the transcript keeps what the model produced and `pi.usage` counts its spend. The scheduler's commit has
+ * no task scope, so that entry has no `byTaskId`. Faults come from task bugs
+ * or malformed provider data (a non-JSON value in a response), or a commit the Storage rejected without effect; an
+ * uncertain storage failure poisons the Session instead and writes no outcome.
  */
 export async function settleSchedulerOutcome(
 	tx: Transaction,
@@ -114,6 +121,7 @@ export async function settleSchedulerOutcome(
 	if (!RUN_TASK_KINDS.has(record.kind)) return;
 	const live = await tx.doc(LiveDoc, record.conversationId);
 	if (live.run?.taskId !== record.id) return;
+	await convertPartial(tx, live, record.conversationId);
 	endRun(
 		tx,
 		live,

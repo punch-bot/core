@@ -27,6 +27,9 @@
 - `TaskRuntime` now requires `env`, `hooks`, `getTask()`, `waitForTask()`, and `entry()`; `ToolExecutionApi` requires `env` and `diagnostic()` and no longer declares `conversation()` until owned-conversation handles land.
 - `createRegistry()` also pre-registers the built-in `pi.tool` and `pi.post-tools` tasks.
 - `ToolResultEntry` now carries `data: { diagnostics }`.
+- `Tx` now requires `placeSubmission()` and `latestHeadMarker()`.
+- Busy submissions no longer reject with `ConversationBusy`: they queue in the conversation's `pi.inbox`, except input with `whenBusy: "reject"`.
+- The built-in `pi` setup now also creates `pi.inbox` and `pi.usage` in every Harness conversation.
 - The environment shell no longer keeps a bounded, throttled output view: `ShellExecOptions.capture` and `onUpdate` are replaced by raw `onOutput` chunks and `spill: { afterBytes, afterLines }`, `ShellExecResult` is `{ exitCode, spillPath? }`, and `ExecutionError.spillPath` reports the spill of a timed-out or aborted command.
 
 ### Added
@@ -64,6 +67,13 @@
 - Added `ToolRegistration.prepareArguments()` to repair malformed arguments before validation; the edit tool uses it for `edits` sent as a JSON string or a single object and for top-level `oldText`/`newText`.
 - Tool output retained by `api.output()` is an exact slice of whole lines, sanitized of control characters.
 - Added the `bench:tool-output` benchmark of tool output rates, retention, backends, replay, and 1 GiB throughput.
+- Added the inbox: busy steer and follow-up inputs and passive writes queue in the `pi.inbox` document (`InboxDoc`) and are placed at post-tools and final boundaries, writes before user items, by the new `steeringMode` and `followUpMode` configuration with `get/set` accessors. Withdrawal removes the item; stale head writes settle `unanswered`; queued items survive a failed run until the next submission.
+- Added `Conversation.reset(handoff)` and the post-tools `handoff` control, which write the headed `pi.reset` entry (`ResetEntry`); a reset queued during a tool round ends the run.
+- `onYield` continuations now apply only when the final boundary places no queued user input and no reset.
+- A generation that faults or is orphaned now converts its committed partial into an aborted assistant entry, which counts in `pi.usage`, instead of discarding it.
+- Added the `pi.usage` ledger (`UsageDoc`) of assistant usage per model and tool usage per tool, `ToolExecutionResult.usage`, and `Harness.usage()` for the Session total.
+- Added the structural `ConversationView` with `Conversation.viewState()` and `Conversation.watch()`.
+- Added the experimental `watchEvents()` agent event adapter with snapshot events, translated message and tool deltas, and overflow to a snapshot.
 
 ### Fixed
 

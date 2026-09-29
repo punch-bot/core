@@ -1,6 +1,6 @@
 import type { ModelThinkingLevel } from "@punch-bot/ai";
 import { defineDoc } from "../documents.ts";
-import type { ConversationRetryPolicy, ConversationStreamOptions, ToolExecutionMode } from "./types.ts";
+import type { ConversationRetryPolicy, ConversationStreamOptions, QueueMode, ToolExecutionMode } from "./types.ts";
 
 /** Durable per-conversation model, thinking level, request options, and desired tool loadout. */
 export type ConversationConfigState = {
@@ -14,6 +14,10 @@ export type ConversationConfigState = {
 	retry?: ConversationRetryPolicy;
 	/** Whether a round's tools run at once or in call order; absent means `parallel`. */
 	toolExecution?: ToolExecutionMode;
+	/** How many queued steers a boundary places; absent means `one-at-a-time`. */
+	steeringMode?: QueueMode;
+	/** How many queued follow-ups a final boundary places; absent means `one-at-a-time`. */
+	followUpMode?: QueueMode;
 };
 
 export const DEFAULT_RETRY_POLICY: ConversationRetryPolicy = {

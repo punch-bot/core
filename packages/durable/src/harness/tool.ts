@@ -28,6 +28,7 @@ import type {
 	ToolHooks,
 	ToolRegistration,
 } from "./types.ts";
+import { recordUsage } from "./usage.ts";
 
 export type ToolTaskInput = { assistant: EntryId; callId: string };
 
@@ -409,7 +410,7 @@ function truncated(
 
 /**
  * Append a `pi.tool-result` entry. The content ends with the rendered diagnostics, so the stored message is exactly
- * what the model sees; `data` keeps the structured list.
+ * what the model sees; `data` keeps the structured list. A result's usage is added to `pi.usage` in the same commit.
  */
 export async function appendToolResult(
 	tx: Tx,
@@ -427,9 +428,11 @@ export async function appendToolResult(
 		toolName: call.name,
 		content,
 		...(result.details === undefined ? {} : { details: result.details }),
+		...(result.usage === undefined ? {} : { usage: result.usage }),
 		isError: result.isError ?? false,
 		timestamp,
 	} as ToolResultMessage;
+	if (result.usage !== undefined) await recordUsage(tx, conversationId, "tools", call.name, result.usage);
 	return tx.appendEntry(ToolResultEntry, conversationId, { model: [message], data: { diagnostics } });
 }
 

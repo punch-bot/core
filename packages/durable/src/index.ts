@@ -1,7 +1,14 @@
 export { defineDoc, defineDocFamily } from "./documents.ts";
-export { AssistantEntry, defineEntry, SystemEntry, ToolResultEntry, UserEntry } from "./entries.ts";
+export { AssistantEntry, defineEntry, ResetEntry, SystemEntry, ToolResultEntry, UserEntry } from "./entries.ts";
 export { ConversationBusy, ReadAfterWrite, StorageRejected } from "./errors.ts";
 export { ConversationConfig, type ConversationConfigState } from "./harness/config.ts";
+export {
+	type AgentEvent,
+	type AgentEventStream,
+	type MessageChange,
+	type SnapshotEvent,
+	watchEvents,
+} from "./harness/events.ts";
 export {
 	type GenerationCheckpoint,
 	type GenerationInput,
@@ -9,6 +16,7 @@ export {
 	GenerationTask,
 } from "./harness/generation.ts";
 export { Harness } from "./harness/harness.ts";
+export { InboxDoc, type InboxItem, type InboxState } from "./harness/inbox.ts";
 export { LiveDoc, type LiveState, type ToolSlot } from "./harness/live.ts";
 export {
 	type PostToolsCheckpoint,
@@ -42,6 +50,7 @@ export type {
 	PromptInput,
 	PromptSection,
 	PromptSectionWrapper,
+	QueueMode,
 	Registration,
 	Registry,
 	RegistryFailure,
@@ -62,6 +71,8 @@ export type {
 	ToolWrapper,
 	UserInput,
 } from "./harness/types.ts";
+export { UsageDoc, type UsageState } from "./harness/usage.ts";
+export type { ConversationView } from "./harness/view.ts";
 export { createSession } from "./session/session.ts";
 export { MemoryStorage } from "./storage/memory.ts";
 export { defineTask } from "./tasks.ts";

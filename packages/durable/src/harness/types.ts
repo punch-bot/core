@@ -1,4 +1,4 @@
-import type { Context, JsonValue } from "@punch-bot/chord";
+import type { AttachedReplicatedState, Context, JsonValue } from "@punch-bot/chord";
 import type {
 	AssistantMessage,
 	CacheRetention,
@@ -9,6 +9,7 @@ import type {
 	ToolCall,
 	ToolResultMessage,
 	Transport,
+	Usage,
 	UserMessage,
 } from "@punch-bot/ai";
 import type { ExecutionEnv } from "../env/index.ts";
@@ -34,7 +35,10 @@ import type {
 	TaskRecord,
 	TaskState,
 	Tx,
+	WatchHandle,
 } from "../types.ts";
+import type { UsageState } from "./usage.ts";
+import type { ConversationView } from "./view.ts";
 
 /** Provider and model ID resolved through pi-ai `Models`. */
 export type ModelRef = {
@@ -126,11 +130,16 @@ export type ToolExecutionResult = {
 	readonly details?: JsonValue;
 	/** Added after those recorded through `api.diagnostic()`. */
 	readonly diagnostics?: readonly ToolDiagnostic[];
+	/** Spend of the execution itself, such as a model call; stored on the result and in `pi.usage.tools`. */
+	readonly usage?: Usage;
 	readonly control?: ToolControl;
 };
 
 /** Whether the tools of one round run at once or one after another in call order. */
 export type ToolExecutionMode = "parallel" | "sequential";
+
+/** How many queued items of one mode a boundary places: the first, or all of them. */
+export type QueueMode = "all" | "one-at-a-time";
 
 /**
  * Operations available to one tool invocation. A plain object, so a wrapper can pass `{ ...api, env }` to the tool it
@@ -408,12 +417,25 @@ export interface Conversation {
 	getToolExecution(context: Context): Promise<ToolExecutionMode>;
 	/** `undefined` removes the configured mode. */
 	setToolExecution(mode: ToolExecutionMode | undefined, context: Context): Promise<void>;
+	/** `one-at-a-time` when unset. */
+	getSteeringMode(context: Context): Promise<QueueMode>;
+	/** `undefined` removes the configured mode. */
+	setSteeringMode(mode: QueueMode | undefined, context: Context): Promise<void>;
+	/** `one-at-a-time` when unset. */
+	getFollowUpMode(context: Context): Promise<QueueMode>;
+	/** `undefined` removes the configured mode. */
+	setFollowUpMode(mode: QueueMode | undefined, context: Context): Promise<void>;
 
 	/**
-	 * Durably admit user input or a passive entry write. Until the inbox exists, a busy conversation rejects every
-	 * submission with `ConversationBusy`.
+	 * Durably admit user input or a passive entry write. A busy conversation, or one with queued items, queues it in
+	 * `pi.inbox`; `whenBusy: "reject"` rejects with `ConversationBusy` instead and writes nothing.
 	 */
 	submit(submission: SubmissionDraft, context: Context): Promise<Submission>;
+	/**
+	 * Admit a write of a `pi.reset` entry that starts a new context, carrying `handoff` as a user message when given.
+	 * Resolves after admission; while busy, it is placed at the next boundary.
+	 */
+	reset(handoff: string | undefined, context: Context): Promise<void>;
 
 	/** Session commit whose `tx.createTask()` defaults to this conversation. */
 	commit<T>(change: (tx: Tx) => T | Promise<T>, context: Context): Promise<T>;
@@ -428,6 +450,10 @@ export interface Conversation {
 	fork(at: EntryId, options: ConversationCreateOptions, context: Context): Promise<Conversation>;
 	/** Resolve when no live non-background task belongs to this conversation. */
 	waitForIdle(context: Context): Promise<void>;
+	/** The structural view (spec §9.3) as a disposable read-only Chord state. */
+	viewState(context: Context): Promise<AttachedReplicatedState<ConversationView>>;
+	/** The structural view as a serialized exact-frame watch with bounded pending frames. */
+	watch(context: Context): Promise<WatchHandle<ConversationView>>;
 }
 
 // TODO: decide how Harness exposes subscribeCommits() and subscribeClose(). Their listeners run on the Session line
@@ -442,7 +468,6 @@ export interface Harness extends Session {
 
 	/** Return the reserved root conversation, creating it with `init` in one commit when absent. */
 	root(context: Context, options?: { readonly init?: ConversationInit }): Promise<Conversation>;
-	// Conversation activity (active/idle notifications) is specified with run control in Package 17.
 	conversation(id: ConversationId, context: Context): Promise<Conversation | undefined>;
 	createConversation(options: ConversationCreateOptions, context: Context): Promise<Conversation>;
 
@@ -466,6 +491,8 @@ export interface Harness extends Session {
 	waitForTask<R>(id: TaskId<R>, context: Context): Promise<SettledTask<R>>;
 	/** Resolve when no live non-background task exists. */
 	waitForIdle(context: Context): Promise<void>;
+	/** Session total: every conversation's `pi.usage` summed. */
+	usage(context: Context): Promise<UsageState>;
 }
 
 /** What a hook may use: committed reads and the asking task's memos, which hooks and the task share. */

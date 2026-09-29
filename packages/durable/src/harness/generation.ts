@@ -13,8 +13,18 @@ import { isRetryableAssistantError, retryDelayMs } from "@punch-bot/ai/utils/ret
 import { getCurrentTools } from "@punch-bot/ai/utils/transcript";
 import { AssistantEntry, SystemEntry, UserEntry } from "../entries.ts";
 import { defineTask } from "../tasks.ts";
-import type { ConversationId, EntryId, NextTaskState, TaskId, TaskRuntime, Tx, TypedEntry } from "../types.ts";
+import type {
+	ConversationId,
+	EntryId,
+	NextTaskState,
+	SubmissionId,
+	TaskId,
+	TaskRuntime,
+	Tx,
+	TypedEntry,
+} from "../types.ts";
 import { ConversationConfig, DEFAULT_RETRY_POLICY } from "./config.ts";
+import { applyBoundary, prepareBoundary } from "./inbox.ts";
 import { assignJson } from "./json.ts";
 import { endRun, LiveDoc, type LiveState, type ToolSlot } from "./live.ts";
 import { PostToolsTask } from "./post-tools.ts";
@@ -29,6 +39,7 @@ import type {
 	ToolRegistration,
 	UserInput,
 } from "./types.ts";
+import { recordUsage } from "./usage.ts";
 
 export type GenerationInput = Record<string, never>;
 
@@ -205,8 +216,11 @@ async function failNoModel(runtime: Runtime, ref: ModelRef | undefined, context:
 	}, context);
 }
 
-/** Append a committed partial left by an interrupted attempt as an aborted assistant entry; the caller replaces `generation`. */
-async function convertPartial(tx: Tx, live: Draft<LiveState>, conversationId: ConversationId): Promise<void> {
+/**
+ * Append a committed partial left by an interrupted, aborted, faulted, or orphaned attempt as an aborted assistant
+ * entry; the caller replaces or removes `generation`.
+ */
+export async function convertPartial(tx: Tx, live: Draft<LiveState>, conversationId: ConversationId): Promise<void> {
 	const partial = live.generation?.message;
 	if (partial === undefined) return;
 	const message = copyJson(partial) as unknown as AssistantMessage;
@@ -256,7 +270,9 @@ async function streamResponse(
 	try {
 		const events = runtime.models.streamSimple(model, { messages: [...messages] }, options);
 		for await (const event of events) {
-			if (event.type === "done" || event.type === "error") continue;
+			// A partial without content, such as pi-ai's opening `start` event, shows nothing; a deferred response
+			// never gets past it, so it never leaves a partial.
+			if (event.type === "done" || event.type === "error" || event.partial.content.length === 0) continue;
 			pending = event.partial;
 			if (timer === undefined && inFlight === undefined) timer = setTimeout(flush, PARTIAL_THROTTLE_MS);
 		}
@@ -325,8 +341,9 @@ async function classify(
 }
 
 /**
- * A final answer. The first `onYield` continuation appends a user message and hands the run to a successor
- * generation; otherwise the run's inputs settle `done` and the final boundary applies.
+ * A final answer; the final boundary places queued items (spec §6). The first `onYield` continuation appends a user
+ * message and hands the run to a successor generation, but only when the boundary selected no user item and no reset.
+ * Otherwise the run's inputs settle `done`, and selected user items start the next run.
  */
 async function answer(runtime: Runtime, message: AssistantMessage, context: Context): Promise<void> {
 	let continuation: UserInput | undefined;
@@ -336,17 +353,20 @@ async function answer(runtime: Runtime, message: AssistantMessage, context: Cont
 	});
 	const conversationId = runtime.conversationId;
 	await runtime.commit(async (tx): Promise<Next> => {
+		const boundary = await prepareBoundary(tx, conversationId);
 		const live = await tx.doc(LiveDoc, conversationId);
 		const entry = await appendAssistant(tx, conversationId, message);
 		const result: Next = { status: "terminal", outcome: { status: "completed", result: { entryId: entry.id } } };
-		if (continuation === undefined) {
-			endRun(tx, live, runtime.taskId, { status: "done", answer: entry.id });
+		const { users, reset } = await applyBoundary(tx, boundary, "final", runtime.now());
+		if (continuation !== undefined && users.length === 0 && !reset) {
+			const user = { role: "user", content: continuation, timestamp: runtime.now() } as const;
+			await tx.appendEntry(UserEntry, conversationId, { model: [user] });
+			handOver(live, runtime.taskId, await tx.createTask(GenerationTask, {}));
+			delete live.generation;
 			return result;
 		}
-		const user = { role: "user", content: continuation, timestamp: runtime.now() } as const;
-		await tx.appendEntry(UserEntry, conversationId, { model: [user] });
-		handOver(live, runtime.taskId, await tx.createTask(GenerationTask, {}));
-		delete live.generation;
+		endRun(tx, live, runtime.taskId, { status: "done", answer: entry.id });
+		if (users.length > 0) await startRun(tx, conversationId, live, users);
 		return result;
 	}, context);
 }
@@ -399,15 +419,26 @@ async function startToolRound(
 }
 
 /**
- * Append a provider result. Every built-in writer of assistant entries goes through here.
- * REMINDER: Package 17 adds the `pi.usage` totals update here, in the same commit as the entry.
+ * Append a provider result and add its usage to `pi.usage` in the same commit.
+ * REMINDER: every built-in writer of assistant entries goes through here, so the usage ledger stays complete.
  */
-function appendAssistant(
+async function appendAssistant(
 	tx: Tx,
 	conversationId: ConversationId,
 	message: AssistantMessage,
 ): Promise<TypedEntry<never>> {
+	await recordUsage(tx, conversationId, "models", `${message.provider}/${message.model}`, message.usage);
 	return tx.appendEntry(AssistantEntry, conversationId, { model: [message] });
+}
+
+/** Start a run for `inputs`, placed input submissions: a new generation takes `pi.live.run`. */
+export async function startRun(
+	tx: Tx,
+	conversationId: ConversationId,
+	live: Draft<LiveState>,
+	inputs: SubmissionId[],
+): Promise<void> {
+	live.run = { taskId: await tx.createTask(GenerationTask, {}, { conversationId }), inputs };
 }
 
 /** Hand run control from `from` to `to`; the run's inputs move with it. */
