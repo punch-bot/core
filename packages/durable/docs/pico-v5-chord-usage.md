@@ -325,11 +325,11 @@ under `docs` by stable document kind, not numeric incarnation ID. The spec's
 illustrative path mapping is:
 
 ```text
-document ["s", ["message"], value]
- -> view ["s", ["docs", "pi.live", "message"], value]
+document ["s", ["generation", "message"], value]
+ -> view ["s", ["docs", "pi.live", "generation", "message"], value]
 ```
 
-Built-in kinds and fields await approval; `pi.live` is illustrative, not an available API.
+`pi.live` is specified in `pico-v5.md` section 8.2.
 The mount publishes one batch per complete Session commit: entry/head changes and
 changed mounted documents together, without a tracker or semantic projection.
 Third-party documents are **not automatically mounted**; use their own Chord

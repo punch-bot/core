@@ -8,11 +8,15 @@ import type {
   AttachedReplicatedState,
   Context,
   Draft,
+  JsonRepresentation,
   JsonValue,
   ReplicatedState,
 } from "@punch-bot/chord";
 import type { Op } from "@punch-bot/chord/delta";
 import type {
+  AssistantMessage,
+  CacheRetention,
+  DeferredHandle,
   Message,
   Models,
   ModelThinkingLevel,
@@ -20,6 +24,7 @@ import type {
   Tool,
   ToolReference,
   ToolResultMessage,
+  Transport,
   UserMessage,
 } from "@punch-bot/ai";
 
@@ -331,21 +336,51 @@ type HarnessOptions<Tool extends ToolRegistration = ToolRegistration> = {
   readonly onReport?: (error: unknown) => void;
 };
 
+/** Curated pi-ai request options; absent fields use pi-ai defaults. */
+type ConversationStreamOptions = {
+  transport?: Transport;
+  timeoutMs?: number;
+  /** Provider/SDK retries inside one request attempt. */
+  maxRetries?: number;
+  maxRetryDelayMs?: number;
+  headers?: Record<string, string>;
+  metadata?: JsonObject;
+  cacheRetention?: CacheRetention;
+  deferred?: boolean | { window?: "15m" | "1h" | "24h" };
+};
+
+/** Durable generation attempt retries; the JSON shape of pi-ai `RetryPolicy`. */
+type ConversationRetryPolicy = {
+  enabled: boolean;
+  maxRetries: number;
+  baseDelayMs: number;
+  maxAgentDelayMs?: number;
+};
+
 type ConversationConfigState = {
   model?: ModelRef;
   thinkingLevel: ModelThinkingLevel;
   activeTools: string[];
+  streamOptions?: ConversationStreamOptions;
+  retry?: ConversationRetryPolicy;
 };
 
 /** Built-in rewindable configuration document; see below. */
 declare const ConversationConfig: RewindableConversationDocToken<ConversationConfigState>;
 
-interface Entry<E extends EntryRecord = EntryRecord> {
+/** Entry whose `data` has type `D`; `never` means the kind carries no data. */
+type TypedEntry<D extends JsonValue> = Omit<EntryRecord, "data"> &
+  ([D] extends [never] ? { readonly data?: never } : { readonly data: D });
+
+type TypedEntryDraft<D extends JsonValue> = Omit<EntryDraft, "kind" | "data"> &
+  ([D] extends [never] ? { readonly data?: never } : { readonly data: D });
+
+interface Entry<D extends JsonValue = never> {
   readonly kind: string;
-  is(entry: EntryRecord | undefined): entry is E;
+  is(entry: EntryRecord | undefined): entry is TypedEntry<D>;
 }
 
-function defineEntry<E extends EntryRecord>(kind: string): Entry<E>;
+function defineEntry<D extends JsonValue = never>(kind: string): Entry<D>;
 
 type ContextView = {
   readonly head: EntryRecord | undefined;
@@ -384,6 +419,10 @@ interface Conversation {
   setThinkingLevel(level: ModelThinkingLevel, context: Context): Promise<void>;
   getActiveTools(context: Context): Promise<readonly string[]>;
   setActiveTools(names: readonly string[], context: Context): Promise<void>;
+  getStreamOptions(context: Context): Promise<ConversationStreamOptions>;
+  setStreamOptions(options: ConversationStreamOptions, context: Context): Promise<void>;
+  getRetryPolicy(context: Context): Promise<ConversationRetryPolicy>;
+  setRetryPolicy(policy: ConversationRetryPolicy | undefined, context: Context): Promise<void>;
 
   commit<T>(
     change: (tx: Tx) => T | Promise<T>,
@@ -417,10 +456,7 @@ interface Harness extends Session {
     options?: { readonly init?: ConversationInit },
   ): Promise<Conversation>;
   conversation(id: ConversationId, context: Context): Promise<Conversation | undefined>;
-  createConversation(
-    options: ConversationCreateOptions & { readonly input?: UserInput },
-    context: Context,
-  ): Promise<Conversation>;
+  createConversation(options: ConversationCreateOptions, context: Context): Promise<Conversation>;
 
   getTask<R>(id: TaskId<R>, context: Context): Promise<TaskRecord<JsonValue, JsonValue, R> | undefined>;
   submission(id: SubmissionId, context: Context): Promise<Submission | undefined>;
@@ -451,7 +487,9 @@ user input or passive entry write and returns one `Submission` that tracks its
 settlement.
 
 `Harness.open()` binds the Session to one application-owned registry (section
-7.1). Built-in task definitions live outside that registry.
+7.1). `createRegistry()` pre-registers the built-in task definitions (section 8);
+they cannot be disposed or replaced, and open rejects a registry whose snapshot
+lacks any of them.
 Open changes surviving `running` tasks to `pending` and does nothing else to
 task records: it never migrates or terminalizes a task because its definition
 is missing or unmigratable. Such a task stays `pending` and is **blocked**: the
@@ -473,10 +511,13 @@ repeat open-time reconciliation, and it throws after close. Work that must happe
 before any task runs, such as registration or seeding, happens before
 `resume()`.
 
-`createConversation({ ownership, init, input })` and
+`createConversation({ ownership, init })` and
 `fork(at, { ownership, init })` commit atomically: the conversation, its
-explicitly selected ownership, its configuration, every write made by `init`,
-and an optional input submission. Host callers must choose ownerless or task
+explicitly selected ownership, its configuration, and every write made by `init`.
+A first input is an ordinary `submit()` afterward. A request ID makes a retried
+`submit()` to the same conversation exactly-once; a host that must survive a
+crash between the two calls first finds its conversation again, for example
+through a key written by `init`. Host callers must choose ownerless or task
 ownership; neither the Harness nor a conversation handle infers ownership from
 call context. A new independent conversation receives the default configuration
 before `init` runs. A fork receives the configuration visible at `at` through
@@ -506,7 +547,13 @@ It has no prompt sections: prompt text is produced per request by the registry
 (section 7.4). Any code may edit it with
 `tx.doc(ConversationConfig, id)`, including in the same commit as a create or
 fork. The getters return immutable committed values, falling back to
-`initial()` when the document is absent; they never write. Each setter performs
+`initial()` when the document is absent; they never write. `getStreamOptions()`
+returns `{}` and `getRetryPolicy()` returns the default policy
+`{ enabled: true, maxRetries: 3, baseDelayMs: 2000, maxAgentDelayMs: 60000 }`
+when the field is absent; `setRetryPolicy(undefined)` removes the field.
+`streamOptions` are forwarded to every generation request of the conversation;
+`streamOptions.maxRetries` are provider retries inside one request, while `retry`
+governs durable generation attempts (section 8). Each setter performs
 one ordinary Session commit against the document. A setter does not start
 generation or append a system entry. Request preparation later compares the
 desired configuration with transcript history and appends the required
@@ -847,6 +894,8 @@ interface Session extends DocumentObserver {
 interface Tx {
   conversation(id: ConversationId): Promise<ConversationRecord | undefined>;
   entry(id: EntryId): Promise<EntryRecord | undefined>;
+  /** Undefined when the entry is absent or has another kind. */
+  entry<D extends JsonValue>(token: Entry<D>, id: EntryId): Promise<TypedEntry<D> | undefined>;
   task(id: TaskId): Promise<TaskRecord<JsonValue, JsonValue, JsonValue> | undefined>;
   scanConversations(query: ConversationQuery, limit: number, cursor?: Cursor): Promise<Page<ConversationRecord, Cursor>>;
   scanEntries(query: EntryQuery, limit: number, cursor?: Cursor): Promise<Page<EntryRecord, Cursor>>;
@@ -859,6 +908,10 @@ interface Tx {
     options: { readonly ownership: ConversationOwnership },
   ): Promise<ConversationRecord>;
   appendEntry(conversationId: ConversationId, value: EntryDraft): Promise<EntryRecord>;
+  /** The token supplies `kind` and types `data`. */
+  appendEntry<D extends JsonValue>(
+    token: Entry<D>, conversationId: ConversationId, value: TypedEntryDraft<D>,
+  ): Promise<TypedEntry<D>>;
   createTask<I, S extends { phase: string }, R, H extends object>(
     task: Task<I, S, R, H>, input: I, options?: TaskOptions,
   ): Promise<TaskId<R>>;
@@ -1294,7 +1347,7 @@ type PhaseHandler<I, P, S, R, H extends object> = (
   context: Context,
 ) => Promise<void>;
 
-interface TaskRuntime<I, S, R, H extends object> extends DocumentObserver {
+interface TaskRuntime<I, S, R, H extends object> extends DocumentObserver, DocumentReader {
   readonly taskId: TaskId<R>;
   readonly conversationId: ConversationId;
   readonly signal: AbortSignal;
@@ -1314,6 +1367,12 @@ interface TaskRuntime<I, S, R, H extends object> extends DocumentObserver {
   memo<T extends JsonValue>(name: string, context: Context): Promise<T | undefined>;
   memo<T extends JsonValue>(name: string, candidate: T, context: Context): Promise<T>;
   conversation(id: ConversationId, context: Context): Promise<ConversationHandle | undefined>;
+  /** Committed raw active transcript and model context, optionally cut off at `at`. */
+  context(conversationId: ConversationId, context: Context, at?: EntryId): Promise<ContextView>;
+  /** The Harness clock. */
+  now(): number;
+  /** Forward a non-fatal failure to `HarnessOptions.onReport`. */
+  report(error: unknown): void;
   sleep(until: number, context: Context): Promise<void>;
 }
 
@@ -1393,14 +1452,20 @@ abort: async (task, runtime, context) => {
 `memo(name, candidate)` is one gated commit; `memo(name)` reads the committed
 record. `sleep(until)` compares against the Harness `now` clock and rejects when
 the invocation is signalled or its context is cancelled. Watches acquired through
-the runtime stop when the invocation ends.
+the runtime stop when the invocation ends. `snapshot()`/`snapshotAsOf()` read
+committed documents, for example to supply `PromptInput.read` (section 7.4).
+`context()` captures its bounds on the Session line and derives the view from
+immutable entries off the line, like `Conversation.context()`. Like every runtime
+operation, these reject after the invocation ends.
 
 Reservation durably changes `pending` to `running`. One invocation runs phase
 handlers in sequence; checkpoint commits retain `running`. Before every phase,
-including the first, the scheduler runs one synchronous step callback on the
-Session line. It reads the committed task, applies the first matching rule
-below to the phase that just returned, writes any fault or handover in the same
-commit, and ends the invocation there when a rule stops it. A runtime commit the
+including the first, the scheduler runs one step callback on the Session line.
+It reads the committed task and synchronously applies the first matching rule
+below to the phase that just returned. It writes any fault or handover in the
+same commit, together with the Harness cleanup for a scheduler-written outcome
+(section 5.4), which may await document access inside that callback. It ends
+the invocation there when a rule stops it. A runtime commit the
 invocation queued earlier therefore either lands before the step and counts, or
 reaches the line after it and rejects. Before the first phase only rules 1–3
 apply:
@@ -1574,6 +1639,15 @@ written; the terminal task record and unanswered submissions carry the reason.
 Faulting a turn task performs the same control/submission cleanup with a
 `faulted` outcome.
 
+The scheduler knows nothing about turns or task kinds. The Harness, which owns
+submissions, turn control, and the built-in tasks, gives it one hook that the
+scheduler calls in the same commit for every terminal outcome it writes itself
+(`faulted` and `orphaned`). The hook ignores tasks whose kind is not a built-in
+turn kind, so it never creates `pi.live` elsewhere. It settles the turn when
+`pi.live.turn` names the task (section 8): its inputs become `unanswered` with reason `faulted`
+(detail: the error message) or the blocked reason, and `turn` and `generation`
+are removed. Outcomes a task commits for itself do their own settlement.
+
 At every normal phase boundary (section 5.1, rule 5), the step refreshes the
 invocation's registry snapshot. If the task definition resolved by name is a different object
 than the one the invocation started with and the new definition can reserve the
@@ -1598,11 +1672,13 @@ type InboxItem =
   | { readonly id: SubmissionId; readonly mode: "write"; readonly entry: EntryDraft };
 ```
 
-A built-in turn-control document has an optional `active` value naming the task
-currently responsible for the turn and its placed input-submission IDs. `active !==
-undefined` defines `busy`; get-or-create of the idle document does not. The
-value remains active while generation, tools, and post-tools hand work to one
-another.
+Turn control lives in the built-in live document `pi.live` (section 8). Its
+optional `turn` value names the task currently responsible for the turn and its
+placed input-submission IDs. `turn !== undefined` defines `busy`; get-or-create
+of the idle document does not. The value remains while generation, tools, and
+post-tools hand work to one another. The ID list is mutable state because a
+boundary adds placed steering inputs to a running turn; every terminal path
+settles exactly the listed inputs.
 
 Admission and terminal transitions:
 
@@ -1771,6 +1847,11 @@ so application metadata never enters the transcript.
 
 Registration rules:
 
+- `createRegistry()` starts with the built-in task definitions of section 8
+  registered first. They have no `Registration`, so they cannot be disposed, and
+  the duplicate-name rule rejects any other task with a built-in name.
+  `tasks.list()` includes them. Hooks register against built-in tasks like any
+  other task.
 - Tool names, section keys, and task names are unique among published
   registrations. Tool wrapper keys are unique per tool name, section wrapper
   keys per section key, and hook keys per task name. Duplicates reject.
@@ -2092,13 +2173,14 @@ Generation preparation takes these steps against its phase snapshot:
    configured order, as composed by their wrappers.
 3. Render every registered section, in registry order, with `PromptInput`: the
    conversation, those tools, the shown sections, the configured model and
-   thinking level, and a `DocumentReader` for committed documents. The results
-   are the desired sections.
+   thinking level, and a `DocumentReader` for committed documents (the task
+   runtime). The results are the desired sections.
 4. Compare desired sections and tool declarations with the replayed state and
    append one positional `pi.system` entry when they differ.
 5. The commit appending that entry first checks that the conversation's tail
-   entry, active head, and configuration are unchanged since step 1. If any
-   changed, preparation reruns from step 1 with the same registry snapshot.
+   entry and configuration are unchanged since step 1. Entries only append, so an
+   unchanged tail also means an unchanged active head. If either changed,
+   preparation reruns from step 1 with the same registry snapshot.
 
 Model and thinking level are request options, not prompt state.
 
@@ -2143,12 +2225,16 @@ requests replay exactly; merely restating equal values is insufficient.
 
 A PR #9548 `SystemMessage` is always a patch, not a reset: it cannot remove
 previous `content` or restore section order merely by restating current values.
-Therefore, when a head removes the previous request-visible baseline, the new
+Therefore, when a head removes the previous request-visible baseline, which is
+the case when the active context has a head marker and no `pi.system` entry
+follows that marker, the new
 `pi.system` entry adds `ContextEdit` omissions for every earlier `pi.system`
 entry still retained after the cut. Its own message is then a complete baseline
 containing every desired section in order and every effective tool declaration.
 Model-context replay sees the new baseline instead of the omitted retained
-deltas. Head rebaselining takes precedence over ordinary order/value patching.
+deltas. Preparation writes this baseline even when it restates the replayed
+values, so every later preparation finds a `pi.system` entry after the marker.
+Head rebaselining takes precedence over ordinary order/value patching.
 Without a head cut, an order mismatch uses the two-entry remove/re-add sequence
 above; only when order already matches does preparation emit the minimal changed
 values, `null` removals, and tool additions/removals. A changed tool declaration
@@ -2218,6 +2304,124 @@ Bounded output records whether content was truncated and any retained file path.
 
 Compaction changes model context by appending a summary entry with a head. It
 does not delete transcript history.
+
+### 8.1 Built-in entries
+
+Built-in entry kinds carry no `data`; each is exported as an `Entry` token.
+
+| kind | `model` | written by |
+|---|---|---|
+| `pi.user` | `[UserMessage]`, timestamp from the Harness clock at admission or placement | submissions |
+| `pi.assistant` | `[AssistantMessage]` with any stop reason | generation |
+| `pi.system` | `[SystemMessage]` with `content: ""` (section 7.4) | generation preparation |
+| `pi.tool-result` | `[ToolResultMessage]` | tool tasks |
+
+Every provider result becomes a `pi.assistant` entry: answers, failed attempts
+with their error text and usage, and converted partials with stop reason
+`aborted`. Context derivation (section 2.1, rule 9) keeps failed and aborted
+messages out of later requests, so no separate usage or notice kind exists.
+
+### 8.2 Live document
+
+```ts
+type LiveState = {
+  /** Turn control (section 6); present exactly while the conversation is busy. */
+  turn?: { taskId: TaskId; inputs: SubmissionId[] };
+  /** Presentation of the current generation attempt. */
+  generation?: {
+    attempt: number;
+    /** Committed throttled partial of the in-flight response. */
+    message?: JsonRepresentation<AssistantMessage>;
+    /** Durable backoff before the next attempt. */
+    retry?: { at: number; error: string };
+    /** Provider-side deferred response being polled. */
+    deferred?: { pollAt: number };
+  };
+};
+```
+
+| field | value |
+|---|---|
+| kind | `pi.live` |
+| version | `1` |
+| scope/history/fork | conversation, `latest`, `initial` |
+| `initial()` | `{}` |
+| checkpoint | base when no field is present, otherwise every 64 deltas |
+| view mount | `docs["pi.live"]` |
+
+Tool progress and compaction status join this document with the tool and
+collapse tasks. Partials are normalized to strict JSON before assignment. Every
+terminal path of a turn task removes `turn` and `generation` in the commit that
+settles the turn's inputs. Settlement stages each input's new status through a
+Session-private transaction operation that resolves the transaction's latest
+candidate submission record, falling back to committed state, during assembly,
+like task-document validation (section 3.3), so it is not a caller table read and works after the commit's first table write.
+
+### 8.3 Generation
+
+```ts
+type GenerationInput = {};
+type GenerationCheckpoint =
+  | { phase: "prepare"; attempt: number }
+  | {
+      phase: "request";
+      attempt: number;
+      model: ModelRef;
+      thinkingLevel: ModelThinkingLevel;
+      /** Newest entry included in the request. */
+      cutoff: EntryId;
+    }
+  | { phase: "retry"; attempt: number; until: number }
+  | { phase: "poll"; attempt: number; model: ModelRef; handle: DeferredHandle; pollAt: number };
+type GenerationResult = { entryId: EntryId };
+```
+
+`pi.generation` is version 1 and starts at `{ phase: "prepare", attempt: 1 }`.
+The turn's inputs live in `pi.live.turn`, not in the task input.
+
+- `prepare` runs section 7.4. A read-only commit captures the tail and the
+  configuration. When no model is configured or `models.getModel()` does not
+  know it, the task fails with `no_model`. Otherwise the final commit appends
+  the planned `pi.system` entries and moves to `request` with the new tail as
+  `cutoff`.
+- `request` and `poll` resolve the checkpoint's model through
+  `models.getModel()`; an unknown model fails the task with `no_model`, like
+  `prepare`. `request` converts a leftover partial (below) before it resolves
+  the model.
+- `request` first converts a committed partial left in `pi.live` by an
+  interrupted attempt into an aborted `pi.assistant` entry. It then streams the
+  model context through `cutoff` with the invocation signal, the thinking level
+  as `reasoning` (omitted for `off`), and the conversation's `streamOptions`,
+  committing throttled partials. Recovery resends the same messages with the
+  pinned model and thinking level; stream options are read when sending.
+- Before classifying, the handler stops the partial throttle and awaits any
+  partial commit in flight, so no stale partial lands after the outcome. The
+  terminal message is classified in one commit that also clears the partial:
+  - `stop`/`length`: append the answer, settle the turn's inputs `done`, remove
+    `turn` and `generation`, and complete with `{ entryId }`. The same commit
+    applies the final boundary (section 6).
+  - `toolUse`: append the assistant entry and continue through the tool chain.
+  - `error` that `isRetryableAssistantError()` accepts while the conversation's
+    retry policy allows another attempt (`enabled` and `attempt <= maxRetries`,
+    so `maxRetries` counts retries after the first attempt): append the error entry and move to
+    `retry` with `until = now + retryDelayMs(policy, attempt)`.
+  - any other `error`, or `aborted` without an abort mark: append the error
+    entry, settle the inputs `unanswered` with `model_error`, remove `turn` and
+    `generation`, and fail.
+  - `deferred`: move to `poll` with `pollAt = now + (handle.pollAfterMs ?? 5000)`.
+- `retry` sleeps until `until`, then returns to `prepare` with the next attempt,
+  so configuration changes made during the backoff apply.
+- `poll` sleeps until `pollAt` and calls `models.fetchDeferred()`. A still
+  deferred result moves `pollAt` strictly later; any other result is classified
+  as above.
+- The abort handler calls `models.cancelDeferred()` in `poll` when the model is
+  known (a failure is reported), converts a committed partial, settles the inputs `unanswered` with
+  `aborted`, removes `turn` and `generation`, and ends `aborted`.
+
+Input submissions settle `unanswered` with one of these reasons: `no_model`,
+`model_error` (detail: provider error text), `aborted`, `faulted` (detail: error
+message), or an orphaning blocked reason (section 5.4). Fault and orphan
+settlement discard a committed partial without writing a transcript entry.
 
 
 ## 9. Document observation and Chord
@@ -2393,8 +2597,8 @@ through their own Chord services, not automatically mounted.
 The mount consumes one complete Session commit and publishes one Chord batch:
 
 ```text
-document op ["s", ["message"], value]
--> view op ["s", ["docs", "pi.live", "message"], value]
+document op ["s", ["generation", "message"], value]
+-> view op ["s", ["docs", "pi.live", "generation", "message"], value]
 ```
 
 Entry appends/head changes and every changed mounted document are included in
@@ -2762,6 +2966,9 @@ These are contracts, not invitations to add defensive machinery:
 - **Unstable prompt text:** a section renderer whose output changes without a
   real content change, for example by embedding the time, appends system deltas
   and defeats provider prompt caching.
+- **Durable stream options:** `streamOptions.headers` and `metadata` are stored
+  in the conversation configuration history and copied into forks. Never put
+  credentials there; `Models` resolves auth.
 - **Fatal storage errors:** after an uncertain storage failure the Session is
   poisoned. Do not catch the error and continue using it.
 - **JSONL durability:** default JSONL ordering handles ordinary process crashes;

@@ -387,21 +387,34 @@ a public `markTask()` were dropped from §2.2.
 
 Implement the smallest real input-to-answer vertical path. Extend Package 14's
 `orphaned` settlement to mark affected input submissions unanswered and clear
-matching turn control in the same commit. Define the final
-inbox, turn-control, and generation presentation documents needed by this path;
-do not use provisional kinds or schemas. Add input `Submission` admission,
-request-ID deduplication, reacquisition and waiting, idle placement, active-turn
-ownership, successful answer settlement, and terminal failure cleanup. Expose
-the final `SubmissionDraft` union rather than an interim input-only API. Complete
-the optional initial input path on conversation creation so conversation,
-configuration, `init` writes, and input admission commit atomically. Busy steer/
-follow-up behavior, passive writes, and reset remain Package 17.
+matching turn control in the same commit, through the Harness hook for
+scheduler-written outcomes (§5.4); the scheduler learns nothing about turns or
+task kinds. Implement the final `pi.live` document (§8.2) with `turn` and
+`generation`, the built-in entry kinds (§8.1), and the `pi.generation` task
+(§8.3). The inbox document is defined in Package 17 with its first writer. Add
+input `Submission` admission, request-ID deduplication, reacquisition and
+waiting, idle placement, active-turn ownership, successful answer settlement,
+and terminal failure cleanup. Expose the final `SubmissionDraft` union. Idle
+write submissions append their entry and settle `done`. Until Package 17, every
+submission to a busy conversation rejects with `ConversationBusy` regardless of
+`whenBusy`, writing nothing. Busy steer/follow-up behavior, queued writes, and
+reset remain Package 17.
+
+Also implement the decided surface changes: typed entry tokens
+(`defineEntry<D extends JsonValue>`, token-first `tx.appendEntry()` and
+`tx.entry()` overloads); removal of `input` from `createConversation()`;
+built-in tasks pre-registered by `createRegistry()` (undisposable, not
+overridable, required by `Harness.open`); the `TaskRuntime` additions
+`snapshot`/`snapshotAsOf`, `context()`, `now()`, and `report()`; and the
+`streamOptions`/`retry` configuration fields with their getters and setters.
 
 Implement the §7.4 system prompt: rendering registered sections with `tag` and
 wrappers, and no-tool request preparation, including
 exact persisted rendered strings, positional system baselines/deltas with empty
 `content`, head-cut rebaselining with `ContextEdit` omissions, order-only
-two-entry rewrites, and section failure handling.
+two-entry rewrites, and section failure handling. No tools are offered in this
+package: preparation emits no tool declarations and passes `PromptInput.tools`
+as `[]`. Until Package 16, a `toolUse` response settles as the answer.
 Implement the ordinary generation phases needed for one response: preparation,
 request intent, durable throttled partials, attempts/retry classification,
 deferred handle polling/cancellation, assistant entry settlement, and input-
@@ -421,8 +434,8 @@ terminal model errors, no-visible-undurable updates, exact section order/value
 patches, complete post-head baselines, retained system deltas on both sides of a
 head marker, sections reading conversation documents through `input.read`,
 throwing sections, preparation
-rerun after a concurrent head/tail/config commit, atomic input/configuration creation, and durable
-submission settlement. This is also the first print-mode smoke path: print
+rerun after a concurrent tail/config commit, fault and orphan turn cleanup,
+typed entry tokens, and durable submission settlement. This is also the first print-mode smoke path: print
 awaits its own input submission rather than global idle.
 
 ## 16. First coding-agent tool turn
