@@ -591,22 +591,22 @@ current committed tail, empty source conversations, document fork policies,
 configuration overrides through `init`, foreground subagent cascade, and
 background supervisor recovery before and after submission admission.
 
-## 19. Collapse and overflow
+## 19. Compaction and overflow
 
-Implement manual, threshold, and generation-overflow collapse; exchange-boundary
+Implement manual, threshold, and generation-overflow compaction; exchange-boundary
 range selection; summarization; retry policy; staleness checks; and headed
-summary entries. Wire generation's real overflow path directly to the collapse
-task, and complete `Conversation.collapse()` so it returns the admitted task ID.
+summary entries. Wire generation's real overflow path directly to the compaction
+task, and complete `Conversation.compact()` so it returns the admitted task ID.
 
 Generation preparation no longer rechecks the transcript before appending its
 system entries (§7.4, §12): only run tasks and turn boundaries write to a busy
-conversation. A collapse summary for a busy conversation must therefore be
+conversation. A compaction summary for a busy conversation must therefore be
 placed at a turn boundary or as a step of the run, never appended concurrently.
 
-Test model context before and after collapse, raw history preservation, provider
+Test model context before and after compaction, raw history preservation, provider
 failure, declined and stale work, manual/threshold/overflow admission, late-join
 presentation state, and reopen from every phase. Rerun generation overflow
-integration without a fake collapse kind.
+integration without a fake compaction kind.
 
 ## 20. Reload and final conformance
 
@@ -624,7 +624,7 @@ acquisition and an already-running callback that remains caller-owned across
 shutdown. Verify service withdrawal and client detach.
 
 Run the exhaustive public conformance matrix: stable persisted root identity;
-all root/create/lookup/fork/reset/collapse/abort/idle paths; every configuration
+all root/create/lookup/fork/reset/compact/abort/idle paths; every configuration
 getter/setter and fork override; typed input/write submissions; task wait/abort;
 generic document access; registry changes before open, between open and resume,
 and while work runs; structural watches; and blocked tasks surviving open. Compile-test every §2.2 and §3 owner/key/seed overload,

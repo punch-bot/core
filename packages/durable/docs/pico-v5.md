@@ -490,7 +490,7 @@ interface Conversation {
     options: ConversationCreateOptions,
     context: Context,
   ): Promise<Conversation>;
-  collapse(instructions: string | undefined, context: Context): Promise<TaskId>;
+  compact(instructions: string | undefined, context: Context): Promise<TaskId>;
   reset(handoff: string | undefined, context: Context): Promise<void>;
   abort(context: Context): Promise<void>;
   waitForIdle(context: Context): Promise<void>;
@@ -677,7 +677,7 @@ because `Harness extends Session`.
 
 `fork()` requires a concrete visible parent entry and explicit ownership, then
 applies section 3.7.
-`collapse()` returns the newly admitted background collapse task ID, not its
+`compact()` returns the newly admitted background compaction task ID, not its
 future summary entry. `reset()` durably admits a write submission of a
 `pi.reset` entry (section 8.1) with `head: "self"`, carrying the handoff text as
 a user message when given, and then resolves; while busy, placement follows
@@ -1859,7 +1859,7 @@ selects the first item of that mode, `all` every item of that mode.
 | `final` | all | first/all by mode | first/all by mode |
 
 A boundary places its selected writes first, in ID order, and then its selected
-user items, in ID order. A user item queued before a reset or collapse summary
+user items, in ID order. A user item queued before a reset or compaction summary
 therefore lands after it and runs in the new context. Queued user items never
 become stale because of a head.
 
@@ -2114,7 +2114,7 @@ errors always propagate.
 | `beforeTool` | argument replacement chain; first block wins | block tool with error text |
 | `afterTool` | result replacement chain | report, continue |
 | `afterTools` | all observers | report, continue |
-| `beforeCollapse` | first decision wins | report, continue |
+| `beforeCompact` | first decision wins | report, continue |
 
 Hooks use task memos for durable first-writer-wins decisions. There is no public
 semantic event channel; current UI status is document state.
@@ -2649,7 +2649,7 @@ The initial implementation provides:
 | `pi.generation` | prepare system/loadout, request or poll model, retry, classify response |
 | `pi.tool` | validate, hook, execute, persist output and details, append result |
 | `pi.post-tools` | wait for tools, apply controls, run boundary, continue generation |
-| `pi.collapse` | select a transcript range, summarize, append a headed summary |
+| `pi.compaction` | select a transcript range, summarize, append a headed summary |
 
 Generation uses `HarnessOptions.models` without a Pico-specific model adapter. It
 resolves `models.getModel(ref.provider, ref.modelId)`, builds a pi-ai `Context`
@@ -2758,7 +2758,7 @@ Post-tools removes `tools`. Slot updates apply only while a slot with the task's
 `taskId` exists; without one, the durable partial output, details, and
 diagnostics are empty.
 
-Compaction status joins this document with the collapse task. Partials are
+Compaction status joins this document with the compaction task. Partials are
 normalized to strict JSON before assignment. Every terminal path of a run task
 removes `run`, `generation`, and `tools` in the commit that settles the run's
 inputs. `tx.settleSubmission()` stages each input's new status
@@ -3288,7 +3288,7 @@ Events derive from committed changes:
 - `auto_retry_start`/`auto_retry_end`, `deferred_poll`: `pi.live.generation`
   gains or drops `retry`, or gains `deferred` or moves its `pollAt`.
 - `task_failed`: a task of the conversation settles `faulted` or `orphaned`.
-- `compaction_start`/`compaction_end` are added with collapse (Package 19).
+- `compaction_start`/`compaction_end` are added with compaction (Package 19).
 
 One commit produces one batch, in this order: `tool_execution_start`,
 `message_start` of a first partial, `message_update`, `tool_execution_update`,
