@@ -22,11 +22,13 @@ import type {
   ModelThinkingLevel,
   TextContent,
   Tool,
+  ToolCall,
   ToolReference,
   ToolResultMessage,
   Transport,
   UserMessage,
 } from "@punch-bot/ai";
+import type { ExecutionEnv } from "@punch-bot/durable/env";
 
 type JsonObject = { [key: string]: JsonValue };
 type TaskOutcomeError = { message: string; detail?: JsonValue };
@@ -340,6 +342,8 @@ type AnyTask = {
 type HarnessOptions<Tool extends ToolRegistration = ToolRegistration> = {
   readonly models: Models; // the pi-ai Models interface
   readonly registry: RegistryReader<Tool>; // section 7.1
+  /** Default execution environment offered to tools (section 7.3). */
+  readonly env?: ExecutionEnv;
   readonly now?: () => number;
   readonly onReport?: (error: unknown) => void;
 };
@@ -365,12 +369,16 @@ type ConversationRetryPolicy = {
   maxAgentDelayMs?: number;
 };
 
+type ToolExecutionMode = "parallel" | "sequential";
+
 type ConversationConfigState = {
   model?: ModelRef;
   thinkingLevel: ModelThinkingLevel;
   activeTools: string[];
   streamOptions?: ConversationStreamOptions;
   retry?: ConversationRetryPolicy;
+  /** Default `parallel`; see section 8.3. */
+  toolExecution?: ToolExecutionMode;
 };
 
 /** Built-in rewindable configuration document; see below. */
@@ -452,6 +460,8 @@ interface Conversation {
   setStreamOptions(options: ConversationStreamOptions, context: Context): Promise<void>;
   getRetryPolicy(context: Context): Promise<ConversationRetryPolicy>;
   setRetryPolicy(policy: ConversationRetryPolicy | undefined, context: Context): Promise<void>;
+  getToolExecution(context: Context): Promise<ToolExecutionMode>;
+  setToolExecution(mode: ToolExecutionMode | undefined, context: Context): Promise<void>;
 
   commit<T>(
     change: (tx: Tx) => T | Promise<T>,
@@ -590,6 +600,8 @@ fork. The getters return immutable committed values, falling back to
 returns `{}` and `getRetryPolicy()` returns the default policy
 `{ enabled: true, maxRetries: 3, baseDelayMs: 2000, maxAgentDelayMs: 60000 }`
 when the field is absent; `setRetryPolicy(undefined)` removes the field.
+`getToolExecution()` returns `parallel` when the field is absent;
+`setToolExecution(undefined)` removes it.
 `streamOptions` are forwarded to every generation request of the conversation;
 `streamOptions.maxRetries` are provider retries inside one request, while `retry`
 governs durable generation attempts (section 8). Each setter performs
@@ -628,10 +640,18 @@ A missing tool implementation never fails a request. Request preparation offers
 only active names that are currently registered. If the replayed tool state still
 offers an unregistered name, the appended system delta lists it in
 `toolsRemoved`; when the name is registered again, a later delta adds its current
-declaration. When the model calls a tool that is not offered or whose
-implementation is unavailable at execution time, the tool task appends an error
-tool result with `details: { code: "tool_unavailable" }` stating that the tool is
-not available, and the run continues so the model can react.
+declaration. When the model calls a tool that its request did not offer, or whose
+implementation is unregistered when its tool task runs, an error tool result with
+an error diagnostic with code `tool_unavailable` (section 7.3) states that the tool is not available,
+and the run continues so the model can react (section 8.3).
+
+Configuration takes effect at turn boundaries. Generation preparation reads it
+once per request and fixes that turn's prompt, offered tools, model, and request
+options. A configuration change made while the turn runs, such as deactivating a
+tool the model already called, applies at the next preparation; the current
+turn's calls still execute. The retry policy is the exception: generation reads
+it when it classifies an attempt's result, because it governs the next attempt
+(section 8.3).
 
 A `Conversation.commit()` is a Session commit bound to that conversation.
 `tx.createTask()` defaults `TaskOptions.conversationId` to the bound conversation.
@@ -1421,6 +1441,11 @@ interface TaskRuntime<I, S, R, H extends object> extends DocumentObserver, Docum
   memo<T extends JsonValue>(name: string, context: Context): Promise<T | undefined>;
   memo<T extends JsonValue>(name: string, candidate: T, context: Context): Promise<T>;
   conversation(id: ConversationId, context: Context): Promise<ConversationHandle | undefined>;
+  /** Committed task record. */
+  getTask<T>(id: TaskId<T>, context: Context): Promise<TaskRecord<JsonValue, JsonValue, T> | undefined>;
+  /** Committed entry visible from the task's conversation. */
+  entry(id: EntryId, context: Context): Promise<EntryRecord | undefined>;
+  entry<D extends JsonValue>(token: Entry<D>, id: EntryId, context: Context): Promise<TypedEntry<D> | undefined>;
   /** Committed raw active transcript and model context, optionally cut off at `at`. */
   context(conversationId: ConversationId, context: Context, at?: EntryId): Promise<ContextView>;
   /** The Harness clock. */
@@ -1509,6 +1534,7 @@ record. `sleep(until)` compares against the Harness `now` clock and rejects when
 the invocation is signalled or its context is cancelled. Watches acquired through
 the runtime stop when the invocation ends. `snapshot()`/`snapshotAsOf()` read
 committed documents, for example to supply `PromptInput.read` (section 7.4).
+`getTask()` and `entry()` read committed records with one lookup each.
 `context()` captures its bounds on the Session line and derives the view from
 immutable entries off the line, like `Conversation.context()`. Like every runtime
 operation, these reject after the invocation ends.
@@ -1698,10 +1724,12 @@ The scheduler knows nothing about runs or task kinds. The Harness, which owns
 submissions, run control, and the built-in tasks, gives it one hook that the
 scheduler calls in the same commit for every terminal outcome it writes itself
 (`faulted` and `orphaned`). The hook ignores tasks whose kind is not a built-in
-run kind, so it never creates `pi.live` elsewhere. It settles the run when
+run or tool kind, so it never creates `pi.live` elsewhere. It settles the run when
 `pi.live.run` names the task (section 8): its inputs become `unanswered` with reason `faulted`
-(detail: the error message) or the blocked reason, and `run` and `generation`
-are removed. Outcomes a task commits for itself do their own settlement.
+(detail: the error message) or the blocked reason, and `run`, `generation`, and
+`tools` are removed. For a `pi.tool` task it marks the task's tool slot `done`
+without an entry; the run continues, and context derivation synthesizes the
+missing result (section 2.1). Outcomes a task commits for itself do their own settlement.
 
 At every normal phase boundary (section 5.1, rule 5), the step refreshes the
 invocation's registry snapshot. If the task definition resolved by name is a different object
@@ -1731,7 +1759,10 @@ Run control lives in the built-in live document `pi.live` (section 8). Its
 optional `run` value names the task currently responsible for the run and its
 placed input-submission IDs. `run !== undefined` defines `busy`; get-or-create
 of the idle document does not. The value remains while generation, tools, and
-post-tools hand work to one another. The ID list is mutable state because a
+post-tools hand work to one another: `taskId` names the task that settles the
+inputs, first generation, then post-tools while a tool round runs, then the next
+generation. Tool tasks never own the run; the current round's tool tasks are
+listed in `pi.live.tools`. The ID list is mutable state because a
 boundary adds placed steering inputs to an active run; every terminal path
 settles exactly the listed inputs.
 
@@ -1997,13 +2028,74 @@ errors always propagate.
 | `beforeRequest` | replacement chain | report, continue |
 | `afterResponse` | all observers | report, continue |
 | `onYield` | first continuation wins | report, continue |
-| `beforeTool` | call replacement chain; first block wins | block tool with error text |
+| `beforeTool` | argument replacement chain; first block wins | block tool with error text |
 | `afterTool` | result replacement chain | report, continue |
 | `afterTools` | all observers | report, continue |
 | `beforeCollapse` | first decision wins | report, continue |
 
 Hooks use task memos for durable first-writer-wins decisions. There is no public
 semantic event channel; current UI status is document state.
+
+```ts
+type HookResult<T> = T | undefined | Promise<T | undefined>;
+
+/** What a hook may use: committed reads and the asking task's memos. */
+interface HookApi extends DocumentReader {
+  readonly taskId: TaskId;
+  readonly conversationId: ConversationId;
+  memo<T extends JsonValue>(name: string, context: Context): Promise<T | undefined>;
+  memo<T extends JsonValue>(name: string, candidate: T, context: Context): Promise<T>;
+}
+
+interface GenerationHooks {
+  /** Before every request attempt, including recovery; the result is used for that request only. */
+  beforeRequest(
+    request: { readonly messages: readonly Message[] },
+    api: HookApi,
+    context: Context,
+  ): HookResult<{ readonly messages: readonly Message[] }>;
+  /** Every terminal provider message, before classification. */
+  afterResponse(message: AssistantMessage, api: HookApi, context: Context): void | Promise<void>;
+  /** A final answer; `continue` appends a user message and continues the run. */
+  onYield(answer: AssistantMessage, api: HookApi, context: Context): HookResult<{ readonly continue: UserInput }>;
+}
+
+interface ToolHooks {
+  /** Before intent; replaces the arguments or blocks the call with error text. */
+  beforeTool(
+    call: ToolCall,
+    api: HookApi,
+    context: Context,
+  ): HookResult<{ readonly arguments?: JsonObject; readonly block?: string }>;
+  /** After execution, before the result entry; replaces the result. */
+  afterTool(
+    call: ToolCall,
+    result: ToolExecutionResult,
+    api: HookApi,
+    context: Context,
+  ): HookResult<ToolExecutionResult>;
+}
+
+interface PostToolsHooks {
+  /** After every tool of the round is terminal; `results` are the round's result entries in call order. */
+  afterTools(assistant: EntryId, results: readonly EntryId[], api: HookApi, context: Context): void | Promise<void>;
+}
+```
+
+`GenerationTask`, `ToolTask`, and `PostToolsTask` are the exported built-in task
+tokens whose `H` parameters are these interfaces. `runtime.hooks.each(name,
+invoke)` calls `invoke` with every handler registered under `name` whose
+registration matches the task's conversation, in registry order of the phase
+snapshot. A registration matches when it has no scope, when its scope names the
+task's conversation, or, with `subtree`, when the task's conversation is owned
+transitively through tasks of the scope's conversation. Owner edges never change,
+so the Harness may cache each conversation's owner chain. An ordinary throw from
+`invoke` is reported through `onReport` and `each` continues with the next
+handler; once the invocation is signalled, the error propagates. A task that
+composes differently, such as `beforeTool` turning a throw into a block, or stops
+after a first decision, does so inside its own `invoke`. Hooks receive the task's
+runtime as their `HookApi`; hook memos and the task's own memos share one
+namespace, so hook authors prefix their memo names.
 
 ### 7.3 Tools
 
@@ -2014,10 +2106,18 @@ type ToolControl = {
   readonly handoff?: string;
 };
 
+/** Remark about a call for the model and the UI; never part of the tool's data. */
+type ToolDiagnostic = {
+  readonly severity: "info" | "warn" | "error";
+  readonly message: string;
+  readonly code?: string;
+};
+
 type ToolExecutionResult = {
   readonly content?: ToolResultMessage["content"];
   readonly isError?: boolean;
   readonly details?: JsonValue;
+  readonly diagnostics?: readonly ToolDiagnostic[];
   readonly control?: ToolControl;
 };
 
@@ -2032,7 +2132,10 @@ interface ToolExecutionApi extends DocumentObserver, DocumentReader {
   readonly taskId: TaskId;
   readonly conversationId: ConversationId;
   readonly callId: string;
+  /** `HarnessOptions.env` unless a wrapper supplies another environment. */
+  readonly env: ExecutionEnv | undefined;
   output(chunk: string | Uint8Array): void;
+  diagnostic(diagnostic: ToolDiagnostic): void;
   details(value: JsonValue, context: Context): Promise<void>;
   commit<T>(change: (tx: Tx) => T | Promise<T>, context: Context): Promise<T>;
   memo<T extends JsonValue>(name: string, context: Context): Promise<T | undefined>;
@@ -2050,6 +2153,7 @@ interface ToolExecutionApi extends DocumentObserver, DocumentReader {
 
 type ToolRegistration = Tool & {
   readonly replay?: "safe" | "unsafe";
+  readonly executionMode?: ToolExecutionMode;
   readonly outputLimits?: {
     readonly maxBytes?: number;
     readonly maxLines?: number;
@@ -2064,10 +2168,33 @@ type ToolRegistration = Tool & {
 ```
 
 Omitted `replay` is `unsafe`. Omitted `outputLimits` are 50 KiB, 2,000 lines,
-and `retain: "head"`.
+and `retain: "head"`. Omitted `executionMode` follows the conversation's
+`toolExecution`; one `sequential` call makes its whole round sequential
+(section 8.3).
 
-A running tool reports two things to the UI, mirroring the two halves of its
-final result:
+Tools reach files and processes only through `api.env`, never through an
+environment captured at registration, so the environment is chosen per call. The
+Harness supplies `HarnessOptions.env`. A wrapper may supply another, for example
+a per-conversation working directory or sandbox:
+
+```ts
+registry.tools.wrap("bash", "workspace", (tool) => ({
+  ...tool,
+  execute: async (args, api, context) => {
+    const workspace = await api.snapshot(WorkspaceDoc, api.conversationId, context);
+    return tool.execute(args, { ...api, env: environmentFor(workspace) }, context);
+  },
+}));
+```
+
+A tool rerun after recovery must get the same environment. When the state a
+wrapper reads can change while a call runs, the wrapper memoizes its choice with
+`api.memo()`. `api` is a plain object so wrappers can spread
+it. A tool that needs an environment and receives none throws, which produces an
+ordinary error result.
+
+A running tool reports output and details to the UI, mirroring the two halves of
+its final result, plus diagnostics (below):
 
 - `output(chunk)` appends running text output, like stdout. If `execute()` omits
   `content`, the final retained output becomes one text content item; no output
@@ -2080,19 +2207,51 @@ final result:
 Neither is sent to the model while the tool runs. `output()` synchronously
 accepts UTF-8 output into that invocation-owned bounded buffer and throws after
 invocation end. Throttled commits publish the retained output, dropped
-byte/line counts, and the current details in the tool presentation document. Explicit
+byte/line counts, and the current details and diagnostics in its `pi.live.tools`
+slot. The throttle is adaptive, like the environment's shell output capture: the
+first change after an idle period commits at once; each commit then delays the
+next by at least 100 ms and by its written size at 100 KiB/s, so a large
+rewrite buys a proportionally longer pause. Changes made during the delay
+coalesce into the next commit. The throttle is Harness policy, not part of
+`outputLimits`, which only bounds what is retained. Explicit
 text in explicit result content is bounded by the same limits before transcript
-persistence; non-text content is retained as declared by its pi-ai type.
+persistence; non-text content is retained as declared by its pi-ai type. When
+bounding drops text, the Harness adds a `warn` diagnostic with code `truncated`
+stating the dropped lines and bytes.
+
+Diagnostics are a channel, not text. Remarks about a call, such as truncated
+output, a spill path, a corrected path, a file changed on disk, or a capped
+search, go through `api.diagnostic()` or `ToolExecutionResult.diagnostics`,
+never into the content the model reads as the tool's data. The Harness adds the
+ones it owns, and a tool adds only what it alone knows. Every diagnostic is
+model-visible; information only for UIs belongs in `details`. `diagnostic()`
+synchronously records the diagnostic in the tool's slot with the next throttled
+commit and throws after invocation end. At settlement the result's diagnostics
+are those recorded through `api`, then those in the result, then the Harness's.
+When there are any, the result content ends with one text item:
+
+```text
+<harness>
+[warn] output truncated: 51,204 lines, 2,301,112 bytes dropped
+</harness>
+```
+
+with one `[severity] message` line per diagnostic, and the `pi.tool-result`
+entry stores the structured list, possibly empty, as `data: { diagnostics }`
+(section 8.1). The
+stored message is exactly what the model saw, while UIs and code read the list.
+A `warn` diagnostic does not set `isError`.
 
 `output()` never spills complete output to a file because spilling requires a
 filesystem, which may be remote or unavailable. A tool that must preserve
 complete output spills through the `ExecutionEnv` or `FileSystem` it was given,
-such as shell execution with spill capture, and reports the resulting path in its
-details.
+such as shell execution with spill capture, and reports the resulting path in a
+diagnostic, and in its details when a renderer needs it.
 
 The `details()` promise resolves after the corresponding or coalesced document
-commit. During normal settlement, accepted output updates drain before
-the tool-result entry and terminal task record commit. Abort and close obey
+commit. During normal settlement the tool task stops its throttle and awaits the
+commit in flight; the terminal commit, which appends the result entry, is the
+final flush and settles any `details()` promise still pending. Abort and close obey
 invocation and Session admission gates: uncommitted buffered updates may be
 discarded, while admitted commits settle. Cancellation, callback, tracker
 preparation, and checkpoint failures occur before Storage admission and do not
@@ -2108,16 +2267,20 @@ not offered, and calls produce `tool_unavailable`) and is reported. A wrapper
 without a base contributes nothing. The composite supplies the declaration,
 argument validation, replay policy, and execution.
 
-A tool call is accepted only if it was offered in the request's effective
-system/tool history. A call to a tool that is not offered or has no registered
-implementation produces the `tool_unavailable` error result described in section
-2.2 instead of failing the run. The tool task resolves the composed tool once
-from its snapshot before argument validation and pins it until execution
-settles, even across later snapshot refreshes. Arguments must satisfy both the offered
-declaration and the pinned implementation's schema; they are validated before
-and after `beforeTool` hooks.
+A tool call is accepted only if its request offered the tool. Generation checks
+this against the tool set replayed from the committed model context through the
+request's `cutoff`; `beforeRequest` replacements do not change it. It answers a
+call to a tool it did not offer with the `tool_unavailable` result described in
+section 2.2, without a tool task. A configuration change after preparation does
+not affect this check (section 2.2). The tool task resolves the composed tool
+once from its phase snapshot and uses that implementation until execution
+settles: one phase handler resolves, validates, runs `beforeTool`, records intent,
+executes, and commits the result, so no phase boundary separates resolution from
+settlement. An unregistered implementation produces `tool_unavailable`.
+Arguments are validated against the resolved implementation's schema before and
+after `beforeTool`; a failure produces an `invalid_arguments` error result.
 
-After hooks and validation, the tool task durably records the final call and
+After hooks and validation, the tool task durably records the final arguments and
 resolved replay policy before execution. Recovery does not rerun `beforeTool`
 and passes the same stored arguments to `execute()`. A replay-safe tool may
 reconstruct a submission from those arguments when that transformation is pure.
@@ -2132,7 +2295,7 @@ ordinary transaction writes for passive entries.
 
 A tool executes in a durable task. It may:
 
-- publish bounded running output and details to its presentation document;
+- publish bounded running output and details to its `pi.live.tools` slot;
 - commit memos;
 - create and wait for tasks;
 - atomically create or fork explicitly owned conversations through `commit()`;
@@ -2197,16 +2360,30 @@ not move onto `Tx`. Kernel ownership indexes independently drive abort and idle
 traversal.
 
 A tool result may request `addTools`, `terminate`, or `handoff`. Post-tools
-applies added tool names to configured loadout, uses a final boundary for
-terminate/handoff, and writes a headed handoff entry when requested.
+appends added tool names to the configured loadout; they take effect at the next
+preparation. The round terminates only when every result of the round requests
+`terminate`, as in the pi agent loop; post-tools then uses a final boundary. A
+`handoff` also uses a final boundary and writes a headed handoff entry (Package
+17 defines that entry together with `reset()`).
 
 On reopen, a tool reruns only when both its stored intent policy and the current
 registered declaration say `safe`. A current `unsafe` declaration may veto a
 stored-safe replay; a current-safe declaration never upgrades stored unsafe. A
 tool with no current registration is treated as `unsafe`. Every other orphaned
 effect produces an interrupted result containing the
-durable partial output. Completed, failed, and aborted
-tool terminal outcomes retain their tool-result entry ID for post-tools.
+durable partial output. Completed and aborted tool terminal outcomes retain
+their tool-result entry ID for post-tools.
+
+Error results the Harness writes itself set `isError` and carry an `error`
+diagnostic with one of the codes `tool_unavailable`, `invalid_arguments`,
+`blocked`, `interrupted`, `aborted`, or `tool_error` (a throw from `execute()`)
+and the error text as its message. Their content is the durable partial output,
+if any, and `details` is the tool's last reported value, if any.
+
+`@punch-bot/durable/tools` provides `read`, `bash`, `edit`, and `write`
+factories, ported from the agent harness tools. They use only `api.env` and are
+registered like any other tool; nothing registers them automatically. `read`
+does not return images yet.
 
 ### 7.4 System prompt and dynamic tools
 
@@ -2313,10 +2490,16 @@ values, so every later preparation finds a `pi.system` entry after the marker.
 Head rebaselining takes precedence over ordinary order/value patching.
 Without a head cut, an order mismatch uses the two-entry remove/re-add sequence
 above; only when order already matches does preparation emit the minimal changed
-values, `null` removals, and tool additions/removals. A changed tool declaration
-is removed and re-added in the same message. When the offered tool order differs
-from the desired order, the message removes every offered tool and re-adds the
-desired tools in order.
+values and `null` removals.
+
+Tool changes are planned separately and ride on the last planned entry, or on
+one entry of their own when sections are unchanged. Declarations are compared
+with pi-ai `declarationsEqual()` and written with `toToolDeclaration()`, so
+application metadata never enters the transcript. A changed declaration is
+removed and re-added in the same message. Replay keeps retained tools in place
+and appends additions; when that would not yield the desired order, the message
+removes every offered tool and re-adds the desired tools in order. A head
+rebaseline adds every desired tool.
 
 The rendered strings stored in historical `SystemMessage.sections` remain
 authoritative even if the current renderer changes. Pi-ai decides whether to
@@ -2376,21 +2559,24 @@ to normal interrupted/aborted transcript entries, clears presentation state,
 and then retries or terminates according to the task phase. Retry deadlines,
 attempts, compaction, and tool progress are current document state for late
 joiners; completed-attempt usage/accounting is an entry or terminal detail.
-Bounded output records whether content was truncated and any retained file path.
+Truncation and spill paths are tool diagnostics (section 7.3).
 
 Compaction changes model context by appending a summary entry with a head. It
 does not delete transcript history.
 
 ### 8.1 Built-in entries
 
-Built-in entry kinds carry no `data`; each is exported as an `Entry` token.
+Built-in entry kinds carry no `data`, except `pi.tool-result`, whose token is
+`Entry<{ diagnostics: ToolDiagnostic[] }>`; every tool result carries `data`,
+with an empty list when it has no diagnostics (section 7.3). Each kind is
+exported as an `Entry` token.
 
 | kind | `model` | written by |
 |---|---|---|
-| `pi.user` | `[UserMessage]`, timestamp from the Harness clock at admission or placement | submissions |
+| `pi.user` | `[UserMessage]`, timestamp from the Harness clock at admission or placement | submissions, `onYield` continuations |
 | `pi.assistant` | `[AssistantMessage]` with any stop reason | generation |
 | `pi.system` | `[SystemMessage]` with `content: ""` (section 7.4) | generation preparation |
-| `pi.tool-result` | `[ToolResultMessage]` | tool tasks |
+| `pi.tool-result` | `[ToolResultMessage]` | tool tasks; generation for calls to tools its request did not offer |
 
 Every provider result becomes a `pi.assistant` entry: answers, failed attempts
 with their error text and usage, and converted partials with stop reason
@@ -2413,6 +2599,24 @@ type LiveState = {
     /** Provider-side deferred response being polled. */
     deferred?: { pollAt: number };
   };
+  /** The current tool round in call order, from the tool-calling answer until post-tools. */
+  tools?: {
+    callId: string;
+    name: string;
+    /** Absent for a call its request did not offer; generation wrote its result. */
+    taskId?: TaskId;
+    status: "pending" | "running" | "done";
+    /** Retained running output and what the bounds dropped. */
+    output?: string;
+    droppedBytes?: number;
+    droppedLines?: number;
+    /** Last `details()` value. */
+    details?: JsonValue;
+    /** Diagnostics recorded through `api.diagnostic()`. */
+    diagnostics?: ToolDiagnostic[];
+    /** Result entry once done; absent when the tool task faulted or was orphaned. */
+    entry?: EntryId;
+  }[];
 };
 ```
 
@@ -2422,18 +2626,35 @@ type LiveState = {
 | version | `1` |
 | scope/history/fork | conversation, `latest`, `initial` |
 | `initial()` | `{}` |
-| checkpoint | complete base whenever `generation` is absent |
+| checkpoint | complete base whenever nothing runs: `generation` absent and no `running` tool slot |
 | view mount | `docs["pi.live"]` |
 | created | with every Harness conversation (section 2.2) |
 
-Nothing is in flight at every turn boundary and while idle, so the stored delta
-chain spans at most one generation, including its retries and deferred polls, or
-one tool round, and each base is small. Tool progress adds its own condition with the tool task.
+Nothing runs while idle, at a final boundary, in the commit where generation
+hands over to its tool round (every slot is still `pending` or `done`), between
+the tools of a sequential round, and whenever no tool of a parallel round is
+`running`. A slot holds output only while `running`, so every base is small, and
+the stored delta chain spans at most one generation, including its retries and
+deferred polls, or the overlapping execution of one round's tools. Retained head output grows by Chord string appends. A sliding tail
+usually becomes a front trim plus an append; when Chord's bounded overlap search
+finds no shared part, as with highly repetitive output or a window larger than
+its 64 KiB scan, the commit writes the retained window as one set. Either way
+each commit writes at most one window, and the throttle bounds the rate.
 
-Tool progress and compaction status join this document with the tool and
-collapse tasks. Partials are normalized to strict JSON before assignment. Every
-terminal path of a run task removes `run` and `generation` in the commit that
-settles the run's inputs. `tx.settleSubmission()` stages each input's new status
+Generation creates `tools` with one `pending` slot per call in the commit that
+appends the tool-calling answer; a call its request did not offer starts `done`
+with its result entry. A tool task sets its slot `running` in its intent commit,
+publishes throttled output and details into it, and in its terminal commit sets
+`done` and `entry` and removes `output`, `droppedBytes`, `droppedLines`,
+`details`, and `diagnostics`, which the result entry now carries (section 7.3).
+Post-tools removes `tools`. Slot updates apply only while a slot with the task's
+`taskId` exists; without one, the durable partial output, details, and
+diagnostics are empty.
+
+Compaction status joins this document with the collapse task. Partials are
+normalized to strict JSON before assignment. Every terminal path of a run task
+removes `run`, `generation`, and `tools` in the commit that settles the run's
+inputs. `tx.settleSubmission()` stages each input's new status
 and resolves the transaction's latest candidate submission record, falling back
 to committed state, during assembly, like task-document validation (section 3.3),
 so it is not a caller table read and works after the commit's first table write.
@@ -2450,11 +2671,20 @@ type GenerationCheckpoint =
       model: ModelRef;
       thinkingLevel: ModelThinkingLevel;
       streamOptions: ConversationStreamOptions;
+      toolExecution: ToolExecutionMode;
       /** Newest entry included in the request. */
       cutoff: EntryId;
     }
   | { phase: "retry"; attempt: number; until: number }
-  | { phase: "poll"; attempt: number; model: ModelRef; handle: DeferredHandle; pollAt: number };
+  | {
+      phase: "poll";
+      attempt: number;
+      model: ModelRef;
+      toolExecution: ToolExecutionMode;
+      cutoff: EntryId;
+      handle: DeferredHandle;
+      pollAt: number;
+    };
 type GenerationResult = { entryId: EntryId };
 ```
 
@@ -2465,7 +2695,10 @@ The run's inputs live in `pi.live.run`, not in the task input.
   is configured or `models.getModel()` does not know it, the task fails with
   `no_model`. Otherwise one commit appends the planned `pi.system` entries and
   moves to `request` with the new tail as `cutoff` and the configuration's model,
-  thinking level, and stream options.
+  thinking level, stream options, and tool execution mode. These stay fixed for
+  this request attempt; a retry prepares again. The retry policy is read when the
+  attempt's result is classified, because it governs the next attempt (section
+  2.2).
 - `request` and `poll` resolve the checkpoint's model through
   `models.getModel()`; an unknown model fails the task with `no_model`, like
   `prepare`. `request` converts a leftover partial (below) before it resolves
@@ -2474,15 +2707,24 @@ The run's inputs live in `pi.live.run`, not in the task input.
   interrupted attempt into an aborted `pi.assistant` entry. It then streams the
   model context through `cutoff` with the invocation signal, the thinking level
   as `reasoning` (omitted for `off`), and the pinned `streamOptions`,
-  committing throttled partials. Recovery resends the same messages with the
-  same pinned model, thinking level, and stream options.
+  committing throttled partials. Before streaming, the `beforeRequest` chain may
+  replace the messages for this request only. Recovery resends the same
+  committed messages with the same pinned model, thinking level, and stream
+  options, and reruns `beforeRequest`.
+- `afterResponse` observes every terminal message, from `request` or `poll`,
+  before classification; a still deferred result is not terminal.
 - Before classifying, the handler stops the partial throttle and awaits any
   partial commit in flight, so no stale partial lands after the outcome. The
   terminal message is classified in one commit that also clears the partial:
-  - `stop`/`length`: append the answer, settle the run's inputs `done`, remove
-    `run` and `generation`, and complete with `{ entryId }`. The same commit
-    applies the final boundary (section 6).
-  - `toolUse`: append the assistant entry and continue through the tool chain.
+  - `stop`/`length`: before the commit, the `onYield` chain runs; the first
+    `{ continue }` wins. With a continuation, the commit appends the answer and a
+    `pi.user` entry with the continuation content, creates a successor
+    generation, and hands it `pi.live.run`. Otherwise it appends the answer,
+    settles the run's inputs `done`, removes `run` and `generation`, and applies
+    the final boundary (section 6). Both complete with `{ entryId }`.
+  - `toolUse` with at least one tool call: the commit appends the assistant
+    entry and starts the tool round described below; it completes with
+    `{ entryId }`. A `toolUse` message without calls is classified like `stop`.
   - `error` that `isRetryableAssistantError()` accepts while the conversation's
     retry policy allows another attempt (`enabled` and `attempt <= maxRetries`,
     so `maxRetries` counts retries after the first attempt): append the error entry and move to
@@ -2500,10 +2742,87 @@ The run's inputs live in `pi.live.run`, not in the task input.
   known (a failure is reported), converts a committed partial, settles the inputs `unanswered` with
   `aborted`, removes `run` and `generation`, and ends `aborted`.
 
+A tool round starts in the commit that appends the tool-calling answer:
+
+1. The offered tools are replayed with pi-ai `getCurrentTools()` from the
+   committed model context through `cutoff`: `request` already holds it, and
+   `poll` derives it again. A call to a tool not offered gets its
+   `tool_unavailable` result entry here, without a task.
+2. Every other call gets one `pi.tool` task with input `{ assistant, callId }`, in
+   call order. The round is sequential when the pinned `toolExecution` is
+   `sequential` or any called tool's registration in the phase snapshot has
+   `executionMode: "sequential"`; then each tool task has `after` its predecessor.
+   Otherwise the tasks run in parallel.
+3. One `pi.post-tools` task gets input `{ assistant, tools }` and `after` every
+   tool task, and `pi.live.run.taskId` names it.
+4. `pi.live.tools` receives the round's slots (section 8.2), and `generation` is
+   removed.
+
 Input submissions settle `unanswered` with one of these reasons: `no_model`,
 `model_error` (detail: provider error text), `aborted`, `faulted` (detail: error
 message), or an orphaning blocked reason (section 5.4). Fault and orphan
 settlement discard a committed partial without writing a transcript entry.
+
+### 8.4 Tool
+
+```ts
+type ToolTaskInput = { assistant: EntryId; callId: string };
+type ToolTaskCheckpoint =
+  | { phase: "call" }
+  | { phase: "execute"; arguments: JsonObject; replay: "safe" | "unsafe" };
+type ToolTaskResult = { entryId: EntryId; control?: ToolControl };
+```
+
+`pi.tool` is version 1 and starts at `{ phase: "call" }`. The input stays small
+because the terminal record keeps it; the call is read from the assistant entry.
+
+- `call` reads the call with `runtime.entry()`, resolves the composed tool from
+  its phase snapshot, validates the arguments with pi-ai
+  `validateToolArguments()`, runs the `beforeTool` chain, and validates again
+  (section 7.3). One commit then records intent: it moves to `execute` with the
+  final arguments and the tool's replay policy and sets the slot `running`. The
+  same handler executes the tool, runs the `afterTool` chain, and commits the
+  result. An unregistered tool, invalid arguments, or a block commits the
+  corresponding error result instead, without intent.
+- `execute` is reached only by recovery. When both the stored and the currently
+  registered policy are `safe`, it executes again with the stored arguments,
+  without `beforeTool`, and settles like `call`. Otherwise it commits an
+  `interrupted` error result from the slot's durable partial output, details, and
+  diagnostics.
+- The result commit bounds the content, appends the diagnostics block (section
+  7.3), appends one `pi.tool-result` entry with `model: [{ role: "toolResult",
+  toolCallId, toolName, content, details, isError, timestamp }]` and
+  `data: { diagnostics }`, marks the slot `done`, and
+  completes with `{ entryId, control }`. An `isError` result still completes.
+- A throw from `execute()` becomes a `tool_error` result; once the invocation is
+  signalled it propagates instead.
+- The abort handler commits an `aborted` error result from the slot's durable
+  partial output, details, and diagnostics and ends `aborted` with `{ entryId }`.
+
+### 8.5 Post-tools
+
+```ts
+type PostToolsInput = { assistant: EntryId; tools: TaskId<ToolTaskResult>[] };
+type PostToolsCheckpoint = { phase: "join" };
+type PostToolsResult = {};
+```
+
+`pi.post-tools` is version 1 and starts at `{ phase: "join" }`. It runs once every
+tool task of the round is terminal. `join` reads the tool records with
+`runtime.getTask()` and the round's result entries from the `pi.live.tools`
+slots, runs the `afterTools` observers, and then commits once:
+
+- It appends every `addTools` name not already active to the configured
+  loadout; the next preparation offers it.
+- When every result of the round requests `terminate`, it settles the run's
+  inputs `done` with the tool-calling answer, removes `run` and `tools`, and
+  applies the final boundary.
+- Otherwise it removes `tools`, applies the `postTools` boundary, creates the
+  next generation, and hands it `pi.live.run`.
+
+It completes with `{}`. The abort handler settles the inputs `unanswered` with
+`aborted`, removes `run` and `tools`, and ends `aborted`; it does not stop tool
+tasks that are still running (section 12).
 
 
 ## 9. Document observation and Chord
@@ -3008,6 +3327,12 @@ These are contracts, not invitations to add defensive machinery:
   with an active run. Raw entries appended by `Harness.commit()` or a custom
   task while a generation prepares its request can misplace its system prompt entries;
   use a write submission.
+- **Aborting one run task:** `abortTask()` on a run's post-tools task ends the
+  run but leaves its tool tasks running; their results land in a conversation
+  that may be idle or running another run. Abort the conversation instead
+  (Package 18); until then, abort the round's tool tasks together with post-tools.
+- **Hook memo names:** hooks share the asking task's memo namespace with the
+  task and other hooks. Prefix memo names.
 - **Long transactions:** an async commit callback holds the Session mutation
   line. Never await models, tools, processes, network calls, humans, a nested
   Session commit, or a Session waiter inside it. Use methods on the current `Tx`.

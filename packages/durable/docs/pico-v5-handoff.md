@@ -441,31 +441,82 @@ awaits its own input submission rather than global idle.
 ## 16. First coding-agent tool turn
 
 Implement hook dispatch and `TaskRuntime.hooks`, deferred from Package 14
-(Session-wide and scoped to a conversation or its owned subtree) and wire the real generation → tool tasks → post-tools → generation
-chain. Implement offered-set checks, tool pinning from the phase snapshot,
-declaration and argument validation against both the offered declaration and
-the pinned implementation, hook composition, durable execution intent, stored
-replay policy, bounded output/details presentation documents, result entries, post-tools
-joining, controls, and `postTools`/`final` boundaries. The generation task now
-classifies tool calls and continues through the real built-in task chain;
-neither side uses a production fake successor.
+(Session-wide and scoped to a conversation or its owned subtree, §7.2), and wire
+the real generation → tool tasks → post-tools → generation chain (§8.3–8.5).
+Neither side uses a production fake successor.
 
-Implement preparation behavior for tool loadout additions/removals, same-name
-replacement ordering, complete baseline tool declarations, wrapped tools and
-failing wrappers, and hook memos.
+- Generation: tool declarations in preparation (§7.4: additions/removals,
+  same-name replacement, order rewrite, complete baseline after a head cut,
+  duplicate active names offered once, wrapped and failing wrappers,
+  `PromptInput.tools`); `toolExecution` pinned in `request`/`poll`; the tool
+  round commit (offered check against the committed context through `cutoff`,
+  unaffected by `beforeRequest`; `tool_unavailable`
+  results for calls not offered, parallel or `after`-chained sequential tool
+  tasks, post-tools, `pi.live.tools`, run handed to post-tools);
+  `beforeRequest`, `afterResponse`, and `onYield` continuations.
+- `pi.tool` (§8.4): input `{ assistant, callId }`, resolve/validate/
+  `beforeTool`/validate/intent/execute/`afterTool`/result in one `call` handler,
+  recovery-only `execute` with the stored/current replay rule, bounded output and
+  details in the `pi.live.tools` slot, the terminal commit as final flush,
+  diagnostics (`api.diagnostic()`, result diagnostics, Harness truncation and
+  error codes, the `<harness>` block, `pi.tool-result` `data: { diagnostics }`),
+  and the abort handler.
+- `pi.post-tools` (§8.5): `afterTools`, `addTools`, all-results `terminate`, the
+  `postTools`/`final` boundaries (no inbox placement until Package 17), and the
+  next generation. The `handoff` control moves to Package 17 with `reset()`,
+  which defines the headed entry both write.
+- `pi.live.tools` and the checkpoint rule (§8.2); the scheduler cleanup hook for
+  `pi.post-tools` (ends the run) and `pi.tool` (marks the slot `done`).
+- Surface: `ToolExecutionApi` without `conversation()`, which the `src` type
+  drops until Package 18 adds it with `ConversationHandle`; `api.env` and `HarnessOptions.env`,
+  `ToolRegistration.executionMode`, the `toolExecution` configuration field with
+  its getter/setter, `TaskRuntime.getTask()` and `entry()`, `HookApi`, and the
+  exported `GenerationTask`, `ToolTask`, and `PostToolsTask` tokens.
+- `@punch-bot/durable/tools`: copy `read`, `bash`, `edit`, and `write`
+  with their helpers from `packages/agent/src/harness/tools` and adapt them to
+  `ToolRegistration` (`api.env`, `api.output`, `api.details`). Image reading in
+  `read` is deferred; note it where the tool rejects or skips images.
 
 Acceptance: input → model tool call → registered local read/bash/edit operation →
 tool result → model answer → durable submission settlement. Run that path once
 normally and once interrupted/reopened. Test recovery from every tool and post-
-tools phase; offered-history enforcement; before/after hook rules; both stored/
-current replay-policy directions; default and overridden `outputLimits`; output
-content fallback; details replacement, last-details fallback, and coalesced
-commit settlement; drain-
-before-terminal ordering; abort/close with buffered output; invocation-bound
-handles and watches; unregistered active tools that are removed from the offered set, re-added after re-registration, and produce `tool_unavailable` results when called, without failing the request; a tool replaced mid-call
-finishing under its pinned implementation, including across phase boundaries;
-hooks surviving a task reload; duplicate active names offered once; order-only tool changes; atomic assistant/tool/post-tools commits;
-and all positional tool-history cases.
+tools phase; offered-set enforcement, including a tool deactivated after
+preparation still executing; before/after hook rules, hook scopes, and hook
+memos; `onYield` continuations; both stored/current replay-policy directions;
+default and overridden `outputLimits`; output content fallback; details
+replacement, last-details fallback, and coalesced commit settlement; the terminal
+commit as final flush; abort/close with buffered output; invocation-bound
+watches; parallel and sequential rounds, including a per-tool sequential mode;
+unregistered active tools that are removed from the offered set, re-added after
+re-registration, and produce `tool_unavailable` results when called, without
+failing the request; a tool replaced mid-call finishing under the implementation
+it resolved; hooks surviving a task reload; order-only tool changes; atomic
+assistant/tool/post-tools commits; `terminate` only when every result requests
+it; `addTools`; tool fault/orphan leaving a synthesized context result;
+diagnostic ordering, the `<harness>` block, and entry `data`; and all
+positional tool-history cases. Also test the ported tools against
+`NodeExecutionEnv`, and a wrapper supplying a different `api.env`.
+
+Tool output benchmark (`test/*.bench.ts`, memory, SQLite, and JSONL): drive the
+real tool task, adaptive throttle, and `pi.live` commits with low (a line every
+few seconds), normal (a compiler or test run), and high (continuous `cat` of a
+large file) output rates, head and tail retention, one tool and several parallel
+tools, over one long round. Report commits, operation bytes written, stored
+size before and after the round's base, reclamation, heap and RSS, commit
+latency, and reopen/replay time mid-round. Assert that head output commits as
+Chord appends and that a sliding tail of non-repetitive output within 64 KiB
+commits as trim plus append; report how often repetitive output falls back to a
+full window set. The checkpoint rule stays "base whenever nothing runs" (§8.2) with
+no delta-count bound; the benchmark decides whether that holds. Assign
+`slot.output` as one string field so Chord can diff it; replacing the slot
+object records a full set.
+
+Throughput target: a plain `cat` of a 1 GiB file of unique lines through the
+ported bash tool and the real Harness path (env capture and spill, `api.output`,
+throttled `pi.live` commits, result entry) completes in about 0.4 s, like the
+mini coding agent. Also drive `api.output()` directly with the same 1 GiB in
+64 KiB chunks: accepting a chunk must not cost work proportional to the
+retained window.
 
 ## 17. Live UI and product state
 
@@ -474,6 +525,9 @@ passive writes, withdrawal, ordered `postTools`/`final` selection, stale targets
 self-head cuts, successor turns, queued reset/handoff, and every terminal cleanup.
 Successful inputs still require an answer; writes settle on placement and never
 start generation.
+
+Define the headed reset/handoff entry once, used by `reset(handoff)` and by the
+post-tools `handoff` control deferred from Package 16, and implement that control.
 
 Add `harness.blockedTasks()`, deferred from Package 14: the pending tasks this
 process cannot run and why (`missing_task`, `task_too_old`, `migration_failed`
