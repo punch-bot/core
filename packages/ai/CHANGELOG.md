@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added the lightweight `@punch-bot/ai/models` entry point for model collections and provider construction without loading TypeBox, built-in catalogs, or provider SDKs.
+
 ## [0.99.1] - 2026-09-29
 
 ### Added

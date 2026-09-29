@@ -2,13 +2,8 @@
 // Run from packages/durable:
 //   node --conditions=source --experimental-strip-types test/examples/09-context.ts
 import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
-import {
-	type AssistantMessage,
-	createModels,
-	type Message,
-	type StopReason,
-	type ToolResultMessage,
-} from "@punch-bot/ai";
+import type { AssistantMessage, Message, StopReason, ToolResultMessage } from "@punch-bot/ai";
+import { createModels } from "@punch-bot/ai/models";
 import { createRegistry, Harness, MemoryStorage } from "../../src/index.ts";
 
 const context = BACKGROUND_CONTEXT;

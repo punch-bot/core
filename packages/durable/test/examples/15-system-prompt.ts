@@ -2,7 +2,8 @@
 // Run from packages/durable:
 //   node --conditions=source --experimental-strip-types test/examples/15-system-prompt.ts
 import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
-import { createModels, fauxAssistantMessage, fauxProvider } from "@punch-bot/ai";
+import { createModels } from "@punch-bot/ai/models";
+import { fauxAssistantMessage, fauxProvider } from "@punch-bot/ai/providers/faux";
 import {
 	type Conversation,
 	ConversationConfig,

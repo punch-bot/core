@@ -2,7 +2,7 @@
 // Run from packages/durable:
 //   node --conditions=source --experimental-strip-types test/examples/11-conversation-setup.ts
 import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
-import { createModels } from "@punch-bot/ai";
+import { createModels } from "@punch-bot/ai/models";
 import { createRegistry, defineDoc, Harness, LiveDoc, MemoryStorage } from "../../src/index.ts";
 
 const context = BACKGROUND_CONTEXT;

@@ -55,6 +55,7 @@
 ### Fixed
 
 - Fixed cached documents skipping migration when accessed with a newer definition version, and older definitions reading values migrated only in memory. Document states and watches hydrated under another definition version receive the new value as a root replacement.
+- Avoided loading TypeBox through the package root's generation retry helpers and switched examples to narrow pi-ai model and faux-provider imports.
 
 ## [0.87.1] - 2026-09-22
 
