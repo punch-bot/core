@@ -38,13 +38,20 @@ function gate(name: string): Deferred<Ending> {
 	return found;
 }
 
-/** A task that holds until its named gate opens or it is aborted. */
-const Hold = defineTask<{ name: string }, { phase: "hold" }, null>({
+/** How often each named task started its run phase. */
+const runs = new Map<string, number>();
+
+/**
+ * A task that holds until its named gate opens or it is aborted. With `slowAbort`, its abort handler first waits for
+ * the gate `abort.<name>`.
+ */
+const Hold = defineTask<{ name: string; slowAbort?: boolean }, { phase: "hold" }, null>({
 	name: "test.hold",
 	version: 1,
 	initial: () => ({ phase: "hold" }),
 	phases: {
 		hold: async (task, runtime, ctx) => {
+			runs.set(task.input.name, (runs.get(task.input.name) ?? 0) + 1);
 			const ending = await Promise.race([gate(task.input.name).promise, aborted(runtime.signal)]);
 			await runtime.commit(
 				() =>
@@ -55,7 +62,19 @@ const Hold = defineTask<{ name: string }, { phase: "hold" }, null>({
 			);
 		},
 	},
-	abort: (_task, runtime, ctx) => runtime.commit(() => ({ status: "terminal", outcome: { status: "aborted" } }), ctx),
+	abort: async (task, runtime, ctx) => {
+		if (task.input.slowAbort === true) await gate(`abort.${task.input.name}`).promise;
+		await runtime.commit(() => ({ status: "terminal", outcome: { status: "aborted" } }), ctx);
+	},
+});
+
+/** Never registered: aborting it can only orphan it. */
+const Unregistered = defineTask<{ name: string }, { phase: "hold" }, null>({
+	name: "test.unregistered",
+	version: 1,
+	initial: () => ({ phase: "hold" }),
+	phases: { hold: async () => {} },
+	abort: async () => {},
 });
 
 function open(name: string, ending: Ending): void {
@@ -65,6 +84,7 @@ function open(name: string, ending: Ending): void {
 const directories = new Set<string>();
 afterEach(async () => {
 	gates.clear();
+	runs.clear();
 	for (const directory of directories) await rm(directory, { recursive: true, force: true });
 	directories.clear();
 });
@@ -91,6 +111,13 @@ function gated(message: AssistantMessage) {
 		return message;
 	};
 	return { step, reached: reached.promise, release: () => gate.resolve() };
+}
+
+async function waitUntil(check: () => Promise<boolean>): Promise<void> {
+	for (let attempt = 0; attempt < 500 && !(await check()); attempt++) {
+		await new Promise((resolve) => setTimeout(resolve, 5));
+	}
+	if (!(await check())) throw new Error("Condition was not reached");
 }
 
 /** Mark a conversation busy with `task` standing in for its run, so submissions queue. */
@@ -341,6 +368,122 @@ describe("ownership", () => {
 		await opened.harness.close(context);
 	});
 
+	it("cascades from an owner the scheduler orphans", async () => {
+		const { harness, root } = await openHarness();
+		const { owner, inner } = await root.commit(async (tx) => {
+			const owner = await tx.createTask(Unregistered, { name: "unregistered" });
+			const child = await tx.createConversation({ ownership: { kind: "task", taskId: owner } });
+			return { owner, inner: await tx.createTask(Hold, { name: "below" }, { conversationId: child.id }) };
+		}, context);
+		expect(await harness.abortTask(owner, context)).toBe("marked");
+		expect((await harness.waitForTask(owner, context)).state.outcome).toEqual({
+			status: "orphaned",
+			reason: "missing_task",
+		});
+		expect((await harness.waitForTask(inner, context)).state.outcome.status).toBe("aborted");
+		await harness.close(context);
+	});
+
+	it("cancels only the caller's wait, never the shared work", async () => {
+		const { harness, root } = await openHarness();
+		const tree = await ownedChild(root, "owner");
+		const waiting = new AbortController();
+		const idle = root.waitForIdle({ ...context, abortSignal: waiting.signal });
+		waiting.abort(new Error("stop waiting"));
+		await expect(idle).rejects.toThrow("stop waiting");
+		expect((await status(harness, tree.inner)).status).not.toBe("terminal");
+
+		// Cancelling an abort after its commit leaves the marks in place.
+		const slow = await ownedChild(root, "slow");
+		await root.commit(async (tx) => {
+			const record = (await tx.task(slow.owner))!;
+			(tx as unknown as { setTask(value: unknown): void }).setTask({
+				...record,
+				input: { name: "slow", slowAbort: true },
+			});
+		}, context);
+		const aborting = new AbortController();
+		const abort = root.abort({ ...context, abortSignal: aborting.signal });
+		await waitUntil(async () => (await harness.getTask(slow.owner, context))!.abortRequested);
+		aborting.abort(new Error("stop aborting"));
+		await expect(abort).rejects.toThrow("stop aborting");
+		open("abort.slow", "completed");
+		for (const id of [tree.owner, tree.inner, slow.owner, slow.inner]) {
+			expect((await harness.waitForTask(id, context)).state.outcome.status).toBe("aborted");
+		}
+		await harness.close(context);
+	});
+
+	it("aborts a child whose dependency completes in the commit that marks its owner", async () => {
+		const { harness, root } = await openHarness();
+		const { owner, dependency, blocked } = await root.commit(async (tx) => {
+			const owner = await tx.createTask(Hold, { name: "owner" });
+			const child = await tx.createConversation({ ownership: { kind: "task", taskId: owner } });
+			const dependency = await tx.createTask(Hold, { name: "dependency" });
+			const blocked = await tx.createTask(
+				Hold,
+				{ name: "blocked" },
+				{ conversationId: child.id, after: [dependency] },
+			);
+			return { owner, dependency, blocked };
+		}, context);
+		await waitUntil(async () => runs.get("dependency") === 1 && runs.get("owner") === 1);
+		// One commit completes the dependency and marks the owner.
+		await root.commit(async (tx) => {
+			const setTask = (value: unknown) => (tx as unknown as { setTask(value: unknown): void }).setTask(value);
+			const completedDependency = (await tx.task(dependency))!;
+			const marked = (await tx.task(owner))!;
+			setTask({
+				...completedDependency,
+				state: { status: "terminal", outcome: { status: "completed", result: null } },
+			});
+			setTask({ ...marked, abortRequested: true });
+		}, context);
+		expect((await harness.waitForTask(blocked, context)).state.outcome.status).toBe("aborted");
+		await harness.close(context);
+	});
+
+	it("retries marks found through an edge loaded after reopen when their commit is rejected", async () => {
+		const directory = await mkdtemp(join(tmpdir(), "pi-durable-ownership-"));
+		directories.add(directory);
+		const path = join(directory, "session.sqlite");
+		let opened = await openHarness(await openNodeSqliteStorage(path));
+		const tree = await ownedChild(opened.root, "owner");
+		open("owner.inner", "completed");
+		await opened.harness.waitForTask(tree.inner, context);
+		open("owner", "failed");
+		await opened.harness.waitForTask(tree.owner, context);
+		await opened.harness.close(context);
+
+		const storage = await openNodeSqliteStorage(path);
+		let rejectMark: TaskId | undefined;
+		const commit = storage.commit.bind(storage);
+		storage.commit = async (writes, ctx) => {
+			if (
+				writes.some((write) => write.type === "task" && write.value.id === rejectMark && write.value.abortRequested)
+			) {
+				rejectMark = undefined;
+				throw new StorageRejected("rejected once");
+			}
+			return commit(writes, ctx);
+		};
+		opened = await openHarness(storage);
+		const gatekeeper = await opened.root.commit((tx) => tx.createTask(Hold, { name: "gatekeeper" }), context);
+		const child = (await opened.harness.conversation(tree.child, context))!;
+		const blocked = await child.commit(async (tx) => {
+			const id = await tx.createTask(Hold, { name: "blocked" }, { after: [gatekeeper] });
+			rejectMark = id;
+			return id;
+		}, context);
+		await waitUntil(async () => rejectMark === undefined);
+		expect((await status(opened.harness, blocked)).status).toBe("pending");
+		// An unrelated commit retries the cascade.
+		await opened.root.commit((tx) => tx.appendEntry(opened.root.id, { kind: "note" }), context);
+		expect((await opened.harness.waitForTask(blocked, context)).state.outcome.status).toBe("aborted");
+		open("gatekeeper", "completed");
+		await opened.harness.close(context);
+	});
+
 	it("retries a cascade whose commit the Storage rejected", async () => {
 		let rejectMark: TaskId | undefined;
 		class Rejecting extends MemoryStorage {
@@ -409,8 +552,68 @@ describe("owned conversations from tools and supervisors", () => {
 			"invocation has ended",
 		);
 		await expect(handle!.waitForIdle(context)).rejects.toThrow("invocation has ended");
+		await expect(handle!.abort(context)).rejects.toThrow("invocation has ended");
 		await expect(submission!.wait(context)).rejects.toThrow("invocation has ended");
+		// Nothing was admitted or marked after the call ended.
+		const childConversation = (await harness.conversation(handle!.id, context))!;
+		const childEntries = (await childConversation.entries({}, 100, undefined, context)).items;
+		expect(childEntries.filter((entry) => entry.kind === "pi.user")).toHaveLength(1);
+		const childTasks = (await harness.inspect(context)).tasks.filter(
+			(task) => task.record.conversationId === handle!.id,
+		);
+		expect(childTasks).toEqual([]);
 		expect((await (await harness.submission(submission!.id, context))!.status(context)).status).toBe("done");
+		await harness.close(context);
+	});
+
+	it("rejects a handle operation queued on the line when the invocation ends before it runs", async () => {
+		const setup = chatSetup();
+		const ready = deferred<{ child: ConversationId; taskId: TaskId }>();
+		const go = deferred();
+		const queued = deferred<{ submitting: Promise<unknown> }>();
+		setup.registry.tools.add({
+			name: "delegate",
+			description: "Delegates late",
+			parameters: Type.Object({}),
+			execute: async (_args, api, callContext) => {
+				const child = await api.commit(async (tx) => {
+					const created = await tx.createConversation({ ownership: { kind: "task", taskId: api.taskId } });
+					return created.id;
+				}, callContext);
+				const handle = (await api.conversation(child, callContext))!;
+				ready.resolve({ child, taskId: api.taskId });
+				await go.promise;
+				// Called while the invocation is alive, with a context that is not the call's: the handle binds it to the
+				// invocation. It reaches the line only after the abort mark.
+				const submitting = handle.submit({ type: "input", content: "late" }, context);
+				submitting.catch(() => {});
+				queued.resolve({ submitting });
+				return aborted(callContext.abortSignal!);
+			},
+		});
+		setup.faux.setResponses([
+			fauxAssistantMessage([fauxToolCall("delegate", {}, { id: "c1" })], { stopReason: "toolUse" }),
+		]);
+		const { harness, root } = await openChat(new MemoryStorage(), setup);
+		await root.submit({ type: "input", content: "go" }, context);
+		const { child, taskId } = await ready.promise;
+		// Hold the Session line, queue the abort mark behind it, then let the tool queue its submit.
+		const release = deferred();
+		const holding = root.commit(async () => {
+			await release.promise;
+		}, context);
+		const aborting = harness.abortTask(taskId, context);
+		go.resolve();
+		const { submitting } = await queued.promise;
+		release.resolve();
+		await holding;
+		await aborting;
+		await expect(submitting).rejects.toThrow();
+		const childConversation = (await harness.conversation(child, context))!;
+		expect((await childConversation.entries({}, 10, undefined, context)).items).toEqual([]);
+		expect((await harness.inspect(context)).submissions.filter((record) => record.conversationId === child)).toEqual(
+			[],
+		);
 		await harness.close(context);
 	});
 
