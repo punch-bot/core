@@ -9,6 +9,8 @@ import { installCodingAgentConsumer, packReleasePackages, smokeTestCodingAgentCo
 const packages = [
 	{ directory: "packages/chord", name: "@punch-bot/chord" },
 	{ directory: "packages/telemetry", name: "@punch-bot/telemetry" },
+	{ directory: "packages/codemode", name: "@punch-bot/codemode" },
+	{ directory: "packages/mcp", name: "@punch-bot/mcp" },
 	{ directory: "packages/ai", name: "@punch-bot/ai" },
 	{ directory: "packages/durable", name: "@punch-bot/durable" },
 	{ directory: "packages/agent", name: "@punch-bot/agent" },
