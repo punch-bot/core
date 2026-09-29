@@ -1412,7 +1412,7 @@ type RunningTask<I, S, R> = TaskRecord<I, S, R> & {
 type NextTaskState<S, R> = Extract<TaskState<S, R>, { status: "running" | "terminal" }>;
 
 interface HookRunner<H extends object> {
-  each<K extends keyof H>(name: K, invoke: (handler: H[K]) => void | Promise<void>): Promise<void>;
+  each<K extends keyof H>(name: K, invoke: (handler: NonNullable<H[K]>) => void | Promise<void>): Promise<void>;
 }
 
 type PhaseHandler<I, P, S, R, H extends object> = (
@@ -1429,6 +1429,8 @@ interface TaskRuntime<I, S, R, H extends object> extends DocumentObserver, Docum
   readonly registry: RegistrySnapshot<ToolRegistration>;
   readonly models: Models;
   readonly hooks: HookRunner<H>;
+  /** `HarnessOptions.env`; the tool task passes it to tools as `api.env`. */
+  readonly env: ExecutionEnv | undefined;
 
   commit(
     change: (
@@ -1443,6 +1445,8 @@ interface TaskRuntime<I, S, R, H extends object> extends DocumentObserver, Docum
   conversation(id: ConversationId, context: Context): Promise<ConversationHandle | undefined>;
   /** Committed task record. */
   getTask<T>(id: TaskId<T>, context: Context): Promise<TaskRecord<JsonValue, JsonValue, T> | undefined>;
+  /** Terminal receipt; rejects when the invocation ends. */
+  waitForTask<T>(id: TaskId<T>, context: Context): Promise<SettledTask<T>>;
   /** Committed entry visible from the task's conversation. */
   entry(id: EntryId, context: Context): Promise<EntryRecord | undefined>;
   entry<D extends JsonValue>(token: Entry<D>, id: EntryId, context: Context): Promise<TypedEntry<D> | undefined>;
@@ -1534,7 +1538,8 @@ record. `sleep(until)` compares against the Harness `now` clock and rejects when
 the invocation is signalled or its context is cancelled. Watches acquired through
 the runtime stop when the invocation ends. `snapshot()`/`snapshotAsOf()` read
 committed documents, for example to supply `PromptInput.read` (section 7.4).
-`getTask()` and `entry()` read committed records with one lookup each.
+`getTask()` and `entry()` read committed records with one lookup each; `waitForTask()` waits for a terminal receipt,
+for example a child task created by a tool.
 `context()` captures its bounds on the Session line and derives the view from
 immutable entries off the line, like `Conversation.context()`. Like every runtime
 operation, these reject after the invocation ends.
@@ -1641,7 +1646,10 @@ abort handler commits terminal outcome
 
 A run invocation may not commit after its durable abort mark appears. Every
 runtime operation rejects after its owning invocation ends, even while the
-Session remains open. Returning from one phase handler does not end an invocation
+Session remains open, and the invocation's signal and handler context abort when
+it ends for any reason. An invocation ends only after its last handler returned,
+so this cancels only detached leftovers, such as an unawaited `waitForTask()` or
+a fetch started with the handler's context; they could no longer write anything. Returning from one phase handler does not end an invocation
 that continues into another phase. Invocation mode is volatile and derived from
 the durable mark on reopen. Cancelling one caller's `Context` only cancels
 that call or wait; it does not durably abort shared work unless the invoked API
@@ -2154,6 +2162,8 @@ interface ToolExecutionApi extends DocumentObserver, DocumentReader {
 type ToolRegistration = Tool & {
   readonly replay?: "safe" | "unsafe";
   readonly executionMode?: ToolExecutionMode;
+  /** Pure repair of commonly malformed arguments; runs before validation and must not mutate `args`. */
+  prepareArguments?(args: JsonValue): JsonValue;
   readonly outputLimits?: {
     readonly maxBytes?: number;
     readonly maxLines?: number;
@@ -2198,7 +2208,11 @@ its final result, plus diagnostics (below):
 
 - `output(chunk)` appends running text output, like stdout. If `execute()` omits
   `content`, the final retained output becomes one text content item; no output
-  becomes an empty content list.
+  becomes an empty content list. Retained output is an exact slice of whole lines
+  of the stream (the first lines for `head`, the last for `tail`), trailing
+  newline included; a single line longer than `maxBytes` is cut at the byte limit
+  on a character boundary. Control characters other than tab and newline are
+  removed from the retained text; accepting a chunk does no per-chunk sanitizing.
 - `details(value)` replaces the running details with a complete JSON value; it
   does not merge keys. If `execute()` omits `details`, the last value becomes the
   final `details`, so a renderer handles one details shape from the first
@@ -2245,8 +2259,13 @@ A `warn` diagnostic does not set `isError`.
 `output()` never spills complete output to a file because spilling requires a
 filesystem, which may be remote or unavailable. A tool that must preserve
 complete output spills through the `ExecutionEnv` or `FileSystem` it was given,
-such as shell execution with spill capture, and reports the resulting path in a
-diagnostic, and in its details when a renderer needs it.
+and reports the resulting path in a diagnostic, and in its details when a
+renderer needs it. The environment's shell streams raw output chunks and spills
+the complete output to a file once it crosses byte or line thresholds; it keeps
+no bounded view of its own, so `output()` is the one place output is bounded,
+sanitized, and throttled. The `bash` tool pipes those chunks into `output()`,
+reports the spill path as a diagnostic, and throws on a nonzero exit or timeout;
+the error result still carries the retained output and diagnostics.
 
 The `details()` promise resolves after the corresponding or coalesced document
 commit. During normal settlement the tool task stops its throttle and awaits the
@@ -2277,8 +2296,11 @@ once from its phase snapshot and uses that implementation until execution
 settles: one phase handler resolves, validates, runs `beforeTool`, records intent,
 executes, and commits the result, so no phase boundary separates resolution from
 settlement. An unregistered implementation produces `tool_unavailable`.
-Arguments are validated against the resolved implementation's schema before and
-after `beforeTool`; a failure produces an `invalid_arguments` error result.
+The implementation's `prepareArguments`, if any, first repairs the call's
+arguments, for example `edits` sent as a JSON string; the stored call keeps what
+the model sent. Arguments are validated against the resolved implementation's
+schema before and after `beforeTool`; a failure, or a throwing repair, produces an
+`invalid_arguments` error result.
 
 After hooks and validation, the tool task durably records the final arguments and
 resolved replay policy before execution. Recovery does not rerun `beforeTool`

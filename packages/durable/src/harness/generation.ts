@@ -7,15 +7,28 @@ import type {
 	Model,
 	ModelThinkingLevel,
 	SimpleStreamOptions,
+	ToolCall,
 } from "@punch-bot/ai";
 import { isRetryableAssistantError, retryDelayMs } from "@punch-bot/ai/utils/retry";
-import { AssistantEntry, SystemEntry } from "../entries.ts";
+import { getCurrentTools } from "@punch-bot/ai/utils/transcript";
+import { AssistantEntry, SystemEntry, UserEntry } from "../entries.ts";
 import { defineTask } from "../tasks.ts";
-import type { ConversationId, EntryId, NextTaskState, TaskRuntime, Tx } from "../types.ts";
+import type { ConversationId, EntryId, NextTaskState, TaskId, TaskRuntime, Tx, TypedEntry } from "../types.ts";
 import { ConversationConfig, DEFAULT_RETRY_POLICY } from "./config.ts";
-import { endRun, LiveDoc, type LiveState } from "./live.ts";
-import { planSystemEntries, renderSections, replaySections } from "./prompt.ts";
-import type { ConversationStreamOptions, ModelRef } from "./types.ts";
+import { assignJson } from "./json.ts";
+import { endRun, LiveDoc, type LiveState, type ToolSlot } from "./live.ts";
+import { PostToolsTask } from "./post-tools.ts";
+import { desiredTools, planSystemEntries, renderSections, replaySections } from "./prompt.ts";
+import { appendToolResult, harnessError, ToolTask, type ToolTaskResult } from "./tool.ts";
+import type {
+	ConversationStreamOptions,
+	GenerationHooks,
+	ModelRef,
+	PromptInput,
+	ToolExecutionMode,
+	ToolRegistration,
+	UserInput,
+} from "./types.ts";
 
 export type GenerationInput = Record<string, never>;
 
@@ -28,47 +41,71 @@ export type GenerationCheckpoint =
 			thinkingLevel: ModelThinkingLevel;
 			/** Configured request options when preparation committed; a resend after recovery uses them unchanged. */
 			streamOptions: ConversationStreamOptions;
+			toolExecution: ToolExecutionMode;
 			/** Newest entry included in the request. */
 			cutoff: EntryId;
 	  }
 	| { phase: "retry"; attempt: number; until: number }
-	| { phase: "poll"; attempt: number; model: ModelRef; handle: DeferredHandle; pollAt: number };
+	| {
+			phase: "poll";
+			attempt: number;
+			model: ModelRef;
+			toolExecution: ToolExecutionMode;
+			cutoff: EntryId;
+			handle: DeferredHandle;
+			pollAt: number;
+	  };
 
 export type GenerationResult = { entryId: EntryId };
 
-type Runtime = TaskRuntime<GenerationInput, GenerationCheckpoint, GenerationResult, object>;
+type Runtime = TaskRuntime<GenerationInput, GenerationCheckpoint, GenerationResult, GenerationHooks>;
 type Next = NextTaskState<GenerationCheckpoint, GenerationResult>;
+
+/** What classification needs from the request that produced a message. */
+type Request = {
+	readonly attempt: number;
+	readonly model: ModelRef;
+	readonly toolExecution: ToolExecutionMode;
+	readonly cutoff: EntryId;
+	/** Committed model context through `cutoff`, when the phase already derived it. */
+	readonly messages?: readonly Message[];
+	/** Set when the message came from polling, so a still deferred result polls strictly later. */
+	readonly pollAt?: number;
+};
 
 const PARTIAL_THROTTLE_MS = 100;
 const DEFAULT_POLL_AFTER_MS = 5000;
 
 /**
- * Built-in generation task: prepares the positional system prompt, requests or polls the model, retries, and classifies
- * the response. The run's inputs live in `pi.live.run`.
+ * Built-in generation task: prepares the positional system prompt and tool loadout, requests or polls the model,
+ * retries, and classifies the response. The run's inputs live in `pi.live.run`.
  */
-export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, GenerationResult>({
+export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, GenerationResult, GenerationHooks>({
 	name: "pi.generation",
 	version: 1,
 	initial: () => ({ phase: "prepare", attempt: 1 }),
 	phases: {
 		/**
-		 * Render the system prompt and append the positional `pi.system` entries it needs, then move to `request`. Only
-		 * the Harness writes to a busy conversation, so the transcript read here is still the tail at the commit.
+		 * Render the system prompt and tool loadout and append the positional `pi.system` entries they need, then move to
+		 * `request`. The configuration read here is fixed for this request. Only the Harness writes to a busy
+		 * conversation, so the transcript read here is still the tail at the commit.
 		 */
 		prepare: async (task, runtime, context) => {
 			const { conversationId, registry } = runtime;
-			for (const failure of registry.failures()) if (failure.kind === "section") runtime.report(failure.error);
-			const { model, thinkingLevel, streamOptions } =
+			for (const failure of registry.failures()) runtime.report(failure.error);
+			const config =
 				(await runtime.snapshot(ConversationConfig, conversationId, context)) ??
 				ConversationConfig.definition.initial();
+			const { model, thinkingLevel, streamOptions } = config;
 			if (model === undefined || runtime.models.getModel(model.provider, model.modelId) === undefined) {
 				return failNoModel(runtime, model, context);
 			}
 			const view = await runtime.context(conversationId, context);
 			const shown = replaySections(view.messages);
-			const input = {
+			const tools = desiredTools(config.activeTools, (name) => registry.tool(name));
+			const input: PromptInput<ToolRegistration> = {
 				conversationId,
-				tools: [],
+				tools,
 				shown: Object.fromEntries(shown),
 				model,
 				thinkingLevel,
@@ -76,18 +113,24 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 			};
 			const report = (error: unknown) => runtime.report(error);
 			const desired = await renderSections(registry.sections(), input, shown, report, context);
-			const entries = planSystemEntries(view, desired, runtime.now());
+			const entries = planSystemEntries(view, desired, tools, runtime.now());
 			await runtime.commit(async (tx) => {
 				let cutoff = (await tx.scanEntries({ conversationId }, 1)).items[0]?.id;
 				for (const entry of entries) cutoff = (await tx.appendEntry(SystemEntry, conversationId, entry)).id;
 				if (cutoff === undefined) throw new Error(`Conversation ${conversationId} has no entries to send`);
-				const { attempt } = task.state.checkpoint;
-				const request = { attempt, model, thinkingLevel, streamOptions: streamOptions ?? {}, cutoff };
+				const request = {
+					attempt: task.state.checkpoint.attempt,
+					model,
+					thinkingLevel,
+					streamOptions: streamOptions ?? {},
+					toolExecution: config.toolExecution ?? "parallel",
+					cutoff,
+				};
 				return { status: "running", checkpoint: { phase: "request", ...request } };
 			}, context);
 		},
 		request: async (task, runtime, context) => {
-			const { attempt, model: ref, thinkingLevel, streamOptions, cutoff } = task.state.checkpoint;
+			const { attempt, model: ref, thinkingLevel, streamOptions, toolExecution, cutoff } = task.state.checkpoint;
 			const conversationId = runtime.conversationId;
 			await runtime.commit(async (tx) => {
 				const live = await tx.doc(LiveDoc, conversationId);
@@ -98,13 +141,19 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 			const model = runtime.models.getModel(ref.provider, ref.modelId);
 			if (model === undefined) return failNoModel(runtime, ref, context);
 			const view = await runtime.context(conversationId, context, cutoff);
+			let messages = view.messages;
+			await runtime.hooks.each("beforeRequest", async (hook) => {
+				const replaced = await hook({ messages }, runtime, context);
+				if (replaced !== undefined) messages = replaced.messages;
+			});
 			const options: SimpleStreamOptions = {
 				...streamOptions,
 				signal: runtime.signal,
 				...(thinkingLevel === "off" ? {} : { reasoning: thinkingLevel }),
 			};
-			const message = await streamResponse(runtime, model, view.messages, options, attempt, context);
-			await classify(runtime, attempt, ref, undefined, message, context);
+			const message = await streamResponse(runtime, model, messages, options, attempt, context);
+			const request = { attempt, model: ref, toolExecution, cutoff, messages: view.messages };
+			await classify(runtime, request, message, context);
 		},
 		retry: async (task, runtime, context) => {
 			const { attempt, until } = task.state.checkpoint;
@@ -115,12 +164,12 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 			}, context);
 		},
 		poll: async (task, runtime, context) => {
-			const { attempt, model: ref, handle, pollAt } = task.state.checkpoint;
+			const { attempt, model: ref, toolExecution, cutoff, handle, pollAt } = task.state.checkpoint;
 			const model = runtime.models.getModel(ref.provider, ref.modelId);
 			if (model === undefined) return failNoModel(runtime, ref, context);
 			await runtime.sleep(pollAt, context);
 			const message = await runtime.models.fetchDeferred(model, handle, { signal: runtime.signal });
-			await classify(runtime, attempt, ref, pollAt, message, context);
+			await classify(runtime, { attempt, model: ref, toolExecution, cutoff, pollAt }, message, context);
 		},
 	},
 	abort: async (task, runtime, context) => {
@@ -161,7 +210,7 @@ async function convertPartial(tx: Tx, live: Draft<LiveState>, conversationId: Co
 	const partial = live.generation?.message;
 	if (partial === undefined) return;
 	const message = copyJson(partial) as unknown as AssistantMessage;
-	await tx.appendEntry(AssistantEntry, conversationId, { model: [{ ...message, stopReason: "aborted" }] });
+	await appendAssistant(tx, conversationId, { ...message, stopReason: "aborted" });
 }
 
 /**
@@ -219,33 +268,39 @@ async function streamResponse(
 	}
 }
 
-/**
- * Classify a terminal provider message in one commit that also clears the partial. `previousPollAt` is set when the
- * message came from polling, so a still deferred result polls strictly later.
- */
+/** Classify a terminal provider message in one commit that also clears the partial. */
 async function classify(
 	runtime: Runtime,
-	attempt: number,
-	ref: ModelRef,
-	previousPollAt: number | undefined,
+	request: Request,
 	message: AssistantMessage,
 	context: Context,
 ): Promise<void> {
 	// An abort mark or close: the abort invocation or the reopened run handles the committed state.
 	runtime.signal.throwIfAborted();
 	const conversationId = runtime.conversationId;
+	const { attempt, model: ref, toolExecution, cutoff } = request;
 	if (message.stopReason === "deferred" && message.deferred !== undefined) {
 		const handle = message.deferred;
 		const pollAt = Math.max(
 			runtime.now() + (handle.pollAfterMs ?? DEFAULT_POLL_AFTER_MS),
-			previousPollAt === undefined ? Number.NEGATIVE_INFINITY : previousPollAt + 1,
+			request.pollAt === undefined ? Number.NEGATIVE_INFINITY : request.pollAt + 1,
 		);
 		await runtime.commit(async (tx) => {
 			(await tx.doc(LiveDoc, conversationId)).generation = { attempt, deferred: { pollAt } };
-			return { status: "running", checkpoint: { phase: "poll", attempt, model: ref, handle, pollAt } };
+			const checkpoint = { phase: "poll", attempt, model: ref, toolExecution, cutoff, handle, pollAt } as const;
+			return { status: "running", checkpoint };
 		}, context);
 		return;
 	}
+	await runtime.hooks.each("afterResponse", (hook) => hook(message, runtime, context));
+	const calls = message.content.filter((content): content is ToolCall => content.type === "toolCall");
+	if (message.stopReason === "toolUse" && calls.length > 0) {
+		return startToolRound(runtime, request, message, calls, context);
+	}
+	if (message.stopReason === "stop" || message.stopReason === "length" || message.stopReason === "toolUse") {
+		return answer(runtime, message, context);
+	}
+	// The retry policy governs the next attempt, so it is read now rather than pinned at preparation.
 	const policy = (await runtime.snapshot(ConversationConfig, conversationId, context))?.retry ?? DEFAULT_RETRY_POLICY;
 	const retry =
 		message.stopReason === "error" &&
@@ -255,15 +310,7 @@ async function classify(
 	const until = retry ? runtime.now() + retryDelayMs(policy, attempt) : 0;
 	await runtime.commit(async (tx): Promise<Next> => {
 		const live = await tx.doc(LiveDoc, conversationId);
-		const entry = await tx.appendEntry(AssistantEntry, conversationId, { model: [message] });
-		switch (message.stopReason) {
-			case "stop":
-			case "length":
-			// Until the tool chain exists, a tool call settles as the answer.
-			case "toolUse":
-				endRun(tx, live, runtime.taskId, { status: "done", answer: entry.id });
-				return { status: "terminal", outcome: { status: "completed", result: { entryId: entry.id } } };
-		}
+		await appendAssistant(tx, conversationId, message);
 		if (retry) {
 			live.generation = { attempt, retry: { at: until, error: message.errorMessage ?? "" } };
 			return { status: "running", checkpoint: { phase: "retry", attempt, until } };
@@ -277,32 +324,93 @@ async function classify(
 	}, context);
 }
 
-type JsonContainer = Record<string, JsonValue> | JsonValue[];
-
 /**
- * Assign `value` at `target[key]` leaf by leaf. Chord records a container assignment as one full set and only emits an
- * append when a string leaf is reassigned with a longer string, so writing the partial whole would store and publish the
- * complete message on every flush.
+ * A final answer. The first `onYield` continuation appends a user message and hands the run to a successor
+ * generation; otherwise the run's inputs settle `done` and the final boundary applies.
  */
-function assignJson(target: JsonContainer, key: string | number, value: JsonValue): void {
-	const slots = target as Record<string | number, JsonValue>;
-	const current = slots[key];
-	if (isRecord(current) && isRecord(value)) {
-		for (const name of Object.keys(current)) if (!Object.hasOwn(value, name)) delete current[name];
-		for (const [name, child] of Object.entries(value)) assignJson(current, name, child);
-		return;
-	}
-	if (Array.isArray(current) && Array.isArray(value) && current.length <= value.length) {
-		const items = current as JsonValue[];
-		for (let index = 0; index < value.length; index++) {
-			if (index < items.length) assignJson(items, index, value[index]!);
-			else items.push(value[index]!);
+async function answer(runtime: Runtime, message: AssistantMessage, context: Context): Promise<void> {
+	let continuation: UserInput | undefined;
+	await runtime.hooks.each("onYield", async (hook) => {
+		if (continuation !== undefined) return;
+		continuation = (await hook(message, runtime, context))?.continue;
+	});
+	const conversationId = runtime.conversationId;
+	await runtime.commit(async (tx): Promise<Next> => {
+		const live = await tx.doc(LiveDoc, conversationId);
+		const entry = await appendAssistant(tx, conversationId, message);
+		const result: Next = { status: "terminal", outcome: { status: "completed", result: { entryId: entry.id } } };
+		if (continuation === undefined) {
+			endRun(tx, live, runtime.taskId, { status: "done", answer: entry.id });
+			return result;
 		}
-		return;
-	}
-	if (current !== value) slots[key] = value;
+		const user = { role: "user", content: continuation, timestamp: runtime.now() } as const;
+		await tx.appendEntry(UserEntry, conversationId, { model: [user] });
+		handOver(live, runtime.taskId, await tx.createTask(GenerationTask, {}));
+		delete live.generation;
+		return result;
+	}, context);
 }
 
-function isRecord(value: JsonValue | undefined): value is Record<string, JsonValue> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
+/**
+ * Append the tool-calling answer and start its tool round in one commit (spec §8.3). A call to a tool the request did
+ * not offer gets its `tool_unavailable` result here; every other call gets a tool task, chained in call order when the
+ * round is sequential. Post-tools waits for all of them and takes over the run.
+ */
+async function startToolRound(
+	runtime: Runtime,
+	request: Request,
+	message: AssistantMessage,
+	calls: readonly ToolCall[],
+	context: Context,
+): Promise<void> {
+	const conversationId = runtime.conversationId;
+	const messages = request.messages ?? (await runtime.context(conversationId, context, request.cutoff)).messages;
+	const offered = new Set(getCurrentTools(messages).map((tool) => tool.name));
+	const sequential =
+		request.toolExecution === "sequential" ||
+		calls.some((call) => offered.has(call.name) && runtime.registry.tool(call.name)?.executionMode === "sequential");
+	await runtime.commit(async (tx): Promise<Next> => {
+		const live = await tx.doc(LiveDoc, conversationId);
+		const entry = await appendAssistant(tx, conversationId, message);
+		const slots: ToolSlot[] = [];
+		const tools: TaskId<ToolTaskResult>[] = [];
+		for (const call of calls) {
+			if (!offered.has(call.name)) {
+				const unavailable = harnessError("tool_unavailable", `Tool ${call.name} is not available`);
+				const result = await appendToolResult(tx, conversationId, call, unavailable, runtime.now());
+				slots.push({ callId: call.id, name: call.name, status: "done", entry: result.id });
+				continue;
+			}
+			const previous = tools.at(-1);
+			const after = sequential && previous !== undefined ? [previous] : [];
+			const taskId = await tx.createTask(ToolTask, { assistant: entry.id, callId: call.id }, { after });
+			tools.push(taskId);
+			slots.push({ callId: call.id, name: call.name, taskId, status: "pending" });
+		}
+		handOver(
+			live,
+			runtime.taskId,
+			await tx.createTask(PostToolsTask, { assistant: entry.id, tools }, { after: tools }),
+		);
+		delete live.generation;
+		live.tools = slots;
+		return { status: "terminal", outcome: { status: "completed", result: { entryId: entry.id } } };
+	}, context);
+}
+
+/**
+ * Append a provider result. Every built-in writer of assistant entries goes through here.
+ * REMINDER: Package 17 adds the `pi.usage` totals update here, in the same commit as the entry.
+ */
+function appendAssistant(
+	tx: Tx,
+	conversationId: ConversationId,
+	message: AssistantMessage,
+): Promise<TypedEntry<never>> {
+	return tx.appendEntry(AssistantEntry, conversationId, { model: [message] });
+}
+
+/** Hand run control from `from` to `to`; the run's inputs move with it. */
+export function handOver(live: Draft<LiveState>, from: TaskId, to: TaskId): void {
+	if (live.run?.taskId === from) live.run.taskId = to;
 }

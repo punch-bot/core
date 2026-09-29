@@ -1,12 +1,16 @@
 import { type Context, copyJson, type JsonValue } from "@punch-bot/chord";
 import { awaitWithContext, withAbortSignal } from "@punch-bot/chord/context";
 import type { Models } from "@punch-bot/ai";
+import type { ExecutionEnv } from "../env/index.ts";
 import type { SessionImpl } from "../session/session.ts";
 import type { Transaction } from "../session/transaction.ts";
 import type {
 	CommitPublication,
 	ConversationId,
 	DocumentWatch,
+	EntryId,
+	EntryRecord,
+	HookRunner,
 	JsonObject,
 	RunningTask,
 	Storage,
@@ -21,6 +25,7 @@ import { readContext } from "./context.ts";
 import type {
 	AnyTask,
 	HarnessInspection,
+	HookScope,
 	RegistryReader,
 	RegistrySnapshot,
 	SettledTask,
@@ -89,6 +94,7 @@ export type TaskSchedulerOptions = {
 	readonly storage: Storage;
 	readonly registry: RegistryReader;
 	readonly models: Models;
+	readonly env: ExecutionEnv | undefined;
 	readonly now: () => number;
 	readonly report: (error: unknown) => void;
 	/** Harness cleanup staged in the same commit as every terminal outcome the scheduler writes itself. */
@@ -113,6 +119,7 @@ export class TaskScheduler {
 	readonly #storage: Storage;
 	readonly #registry: RegistryReader;
 	readonly #models: Models;
+	readonly #env: ExecutionEnv | undefined;
 	readonly #now: () => number;
 	readonly #report: (error: unknown) => void;
 	readonly #settleOutcome: TaskSchedulerOptions["settleOutcome"];
@@ -124,6 +131,8 @@ export class TaskScheduler {
 	readonly #idleWaiters = new Waiters<ConversationId | undefined, void>();
 	/** Definition whose migration failed per task; retried only once the registry resolves another definition. */
 	readonly #failedMigrations = new Map<TaskId, { readonly task: AnyTask; readonly error: unknown }>();
+	/** Owner conversations of each conversation, nearest first; owner edges never change. */
+	readonly #owners = new Map<ConversationId, readonly ConversationId[]>();
 	#unsubscribeRegistry: () => void = () => {};
 	#enabled = false;
 	#closing = false;
@@ -135,6 +144,7 @@ export class TaskScheduler {
 		this.#storage = options.storage;
 		this.#registry = options.registry;
 		this.#models = options.models;
+		this.#env = options.env;
 		this.#now = options.now;
 		this.#report = options.report;
 		this.#settleOutcome = options.settleOutcome;
@@ -409,7 +419,11 @@ export class TaskScheduler {
 	async #run(reservation: Reservation): Promise<void> {
 		const invocation = reservation.invocation;
 		const state = { task: reservation.task, snapshot: reservation.snapshot, reported: undefined as ReportedTask };
-		const runtime = this.#runtime(invocation, () => state.snapshot);
+		const runtime = this.#runtime(
+			invocation,
+			() => state.snapshot,
+			() => state.task,
+		);
 		let previous: PhaseResult | undefined;
 		for (;;) {
 			const current = await this.#step(invocation, (tx, current) => this.#decide(tx, current, previous, state));
@@ -471,7 +485,11 @@ export class TaskScheduler {
 		if (current === undefined || this.#closing) return;
 		let failure: { readonly error: unknown } | undefined;
 		try {
-			const runtime = this.#runtime(invocation, () => reservation.snapshot);
+			const runtime = this.#runtime(
+				invocation,
+				() => reservation.snapshot,
+				() => reservation.task,
+			);
 			await erased(reservation.task).abort(current, runtime, invocation.context);
 		} catch (error) {
 			failure = { error };
@@ -515,12 +533,14 @@ export class TaskScheduler {
 		return this.#settleOutcome(tx, record, outcome);
 	}
 
-	/** End an invocation: its runtime operations reject from now on, its watches stop, and its task is free. */
+	/** End an invocation: its runtime operations reject from now on, its signal aborts, its watches stop, and its task is free. */
 	#end(invocation: Invocation): void {
 		if (invocation.ended) return;
 		invocation.ended = true;
 		if (this.#invocations.get(invocation.taskId) === invocation) this.#invocations.delete(invocation.taskId);
 		for (const watch of invocation.watches) void watch.stop();
+		// Pending waits bound to the invocation, such as a tool's waitForTask(), reject with it.
+		invocation.controller.abort(endedError(invocation));
 	}
 
 	#idle(conversationId: ConversationId | undefined): boolean {
@@ -533,12 +553,30 @@ export class TaskScheduler {
 
 	// ─── Invocation runtime ──────────────────────────────────────────────────
 
-	#runtime(invocation: Invocation, snapshot: () => RegistrySnapshot): ErasedRuntime {
+	#runtime(invocation: Invocation, snapshot: () => RegistrySnapshot, task: () => AnyTask): ErasedRuntime {
+		const hooks: HookRunner<Record<string, unknown>> = {
+			each: async (name, invoke) => {
+				if (invocation.ended) throw endedError(invocation);
+				for (const { handlers, scope } of snapshot().hooks(task())) {
+					const handler = (handlers as Record<string, unknown>)[name];
+					if (typeof handler !== "function") continue;
+					if (scope !== undefined && !(await this.#inScope(invocation, scope))) continue;
+					try {
+						await invoke(handler.bind(handlers));
+					} catch (error) {
+						if (invocation.controller.signal.aborted) throw error;
+						this.#report(error);
+					}
+				}
+			},
+		};
 		return {
 			taskId: invocation.taskId as TaskId<JsonValue>,
 			conversationId: invocation.conversationId,
 			signal: invocation.controller.signal,
 			models: this.#models,
+			env: this.#env,
+			hooks: hooks as ErasedRuntime["hooks"],
 			get registry() {
 				return snapshot();
 			},
@@ -577,11 +615,50 @@ export class TaskScheduler {
 				this.#read(invocation, () =>
 					sessionMethod(this.#session, "snapshotAsOf")(...args),
 				)) as ErasedRuntime["snapshotAsOf"],
+			getTask: ((id: TaskId, context: Context) =>
+				this.#read(invocation, () =>
+					this.#session.readOnLine(() => this.#storage.task(id, context)),
+				)) as ErasedRuntime["getTask"],
+			waitForTask: ((id: TaskId, context: Context) =>
+				this.#read(invocation, () =>
+					this.waitForTask(id, withAbortSignal(invocation.controller.signal, context)),
+				)) as ErasedRuntime["waitForTask"],
+			entry: ((...args: readonly unknown[]) => {
+				const [token, id, context] =
+					args.length === 2
+						? [undefined, args[0] as EntryId, args[1] as Context]
+						: [args[0] as { readonly kind: string }, args[1] as EntryId, args[2] as Context];
+				return this.#read(invocation, async () => {
+					const found = await this.#session.readOnLine(() =>
+						this.#storage.entry(invocation.conversationId, id, context),
+					);
+					const entry: EntryRecord | undefined = found?.entry;
+					return token === undefined || entry?.kind === token.kind ? entry : undefined;
+				});
+			}) as ErasedRuntime["entry"],
 			context: (conversationId, context, at) =>
 				this.#read(invocation, () => readContext(this.#session, this.#storage, conversationId, context, at)),
 			now: () => this.#now(),
 			report: (error) => this.#report(error),
 		};
+	}
+
+	/** Whether a scoped hook registration matches the invocation's conversation. */
+	async #inScope(invocation: Invocation, scope: HookScope): Promise<boolean> {
+		if (scope.conversationId === invocation.conversationId) return true;
+		if (scope.subtree !== true) return false;
+		return (await this.#ownersOf(invocation.conversationId)).includes(scope.conversationId);
+	}
+
+	/** Conversations owning `conversationId` through tasks, transitively, nearest first. */
+	async #ownersOf(conversationId: ConversationId): Promise<readonly ConversationId[]> {
+		const cached = this.#owners.get(conversationId);
+		if (cached !== undefined) return cached;
+		const record = await this.#session.readOnLine(() => this.#storage.conversation(conversationId, this.#context));
+		const owner = record?.owner?.conversationId;
+		const owners = owner === undefined ? [] : [owner, ...(await this.#ownersOf(owner))];
+		this.#owners.set(conversationId, owners);
+		return owners;
 	}
 
 	/** Run a committed-state read unless the invocation has ended. */

@@ -31,6 +31,24 @@ The portable SQLite core, minimal database facade, and ordered schema migrations
 
 The Node adapter uses WAL mode with `synchronous = NORMAL` and checkpoints the WAL on close. Acknowledged commits survive process crashes, but the newest commits may be lost after a power or host failure. One `SqliteStorage` owner must serialize writes to a database file; cross-process ID allocation is not supported.
 
+## Tools
+
+`@punch-bot/durable/tools` provides `read`, `bash`, `edit`, and `write` tools. They reach files and processes only through the execution environment the Harness passes as `api.env` (`HarnessOptions.env`, or one a tool wrapper supplies). Reading images is not supported yet.
+
+```ts
+import { NodeExecutionEnv } from "@punch-bot/durable/env/node";
+import { createBashTool, createEditTool, createReadTool, createWriteTool } from "@punch-bot/durable/tools";
+
+registry.batch(() => {
+	for (const tool of [createReadTool(), createBashTool(), createEditTool(), createWriteTool()]) registry.tools.add(tool);
+});
+const harness = await Harness.open(storage, { models, registry, env: new NodeExecutionEnv({ cwd }) }, context);
+```
+
+The package root loads TypeBox, because the built-in tool task validates tool arguments with pi-ai's `validateToolArguments()`. Unbundled, that costs about 23 MB of peak RSS; a tree-shaken bundle keeps about 4 MB.
+
+`npm run bench:tool-output` drives the tool task and its throttled `pi.live` progress commits at low, normal, and high output rates, with head and tail retention, one and four parallel tools, and all three backends. It reports commits, operation bytes, whole-window output writes, commit latency, stored size mid-round and after the round, replay time on reopen, peak RSS, and heap, plus 1 GiB throughput through `api.output()` and through the bash tool.
+
 ## Storage conformance
 
 Storage adapters can register the runner-independent conformance cases through the testing entry. The convenience adapter accepts Vitest/Jest-compatible runner functions without importing either package:

@@ -11,7 +11,7 @@ facades, membranes, document routing, view projection, events, or clone chains.
 
 - Obsolete `pico` and `pico4` prototypes were removed.
 - `pico3` remains.
-- Packages 1–15 are implemented in `packages/durable`; Package 10 was already satisfied by Chord's canonical structural diff implementation.
+- Packages 1–16 are implemented in `packages/durable`; Package 10 was already satisfied by Chord's canonical structural diff implementation.
 
 ## 1. Records, cursors, and memory tables
 
@@ -475,7 +475,10 @@ Neither side uses a production fake successor.
 - `@punch-bot/durable/tools`: copy `read`, `bash`, `edit`, and `write`
   with their helpers from `packages/agent/src/harness/tools` and adapt them to
   `ToolRegistration` (`api.env`, `api.output`, `api.details`). Image reading in
-  `read` is deferred; note it where the tool rejects or skips images.
+  `read` is deferred; note it where the tool rejects or skips images. The env
+  shell streams raw output (`onOutput`) and spills past thresholds; `output()` is
+  the only place output is bounded, sanitized, and throttled. `prepareArguments`
+  restores the edit tool's argument repair.
 
 Acceptance: input → model tool call → registered local read/bash/edit operation →
 tool result → model answer → durable submission settlement. Run that path once
@@ -496,6 +499,10 @@ it; `addTools`; tool fault/orphan leaving a synthesized context result;
 diagnostic ordering, the `<harness>` block, and entry `data`; and all
 positional tool-history cases. Also test the ported tools against
 `NodeExecutionEnv`, and a wrapper supplying a different `api.env`.
+
+Document in the durable README that the package root loads TypeBox through the
+tool task's argument validation (pi-ai `validateToolArguments()`): about 23 MB of
+peak RSS unbundled, about 4 MB in a tree-shaken bundle.
 
 Tool output benchmark (`test/*.bench.ts`, memory, SQLite, and JSONL): drive the
 real tool task, adaptive throttle, and `pi.live` commits with low (a line every
@@ -525,6 +532,13 @@ passive writes, withdrawal, ordered `postTools`/`final` selection, stale targets
 self-head cuts, successor turns, queued reset/handoff, and every terminal cleanup.
 Successful inputs still require an answer; writes settle on placement and never
 start generation.
+
+Usage ledger (decided with the reviewers, needs Mario's approval before spec text): one conversation-scoped
+`pi.usage` document (`latest`, `fork: "initial"`, base on every change, created lazily, mounted in the
+view) holding pi-ai `Usage` totals per `provider/model` for entries appended in that conversation. The
+totals update in the same commit as each assistant entry through generation's single `appendAssistant()`
+helper (already in place). Session and ownership-subtree totals are summed on read, never stored. Entries
+stay authoritative; the document is a derived index.
 
 Define the headed reset/handoff entry once, used by `reset(handoff)` and by the
 post-tools `handoff` control deferred from Package 16, and implement that control.

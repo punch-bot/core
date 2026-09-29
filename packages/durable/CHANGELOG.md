@@ -24,6 +24,10 @@
 - `createRegistry()` now pre-registers the built-in `pi.generation` task and `pi` conversation setup, which cannot be disposed or replaced, and `Harness.open()` rejects a registry whose snapshot lacks either.
 - `RegistrySnapshot` now requires `conversationSetups()`.
 - `Tx` now requires `settleSubmission()`.
+- `TaskRuntime` now requires `env`, `hooks`, `getTask()`, `waitForTask()`, and `entry()`; `ToolExecutionApi` requires `env` and `diagnostic()` and no longer declares `conversation()` until owned-conversation handles land.
+- `createRegistry()` also pre-registers the built-in `pi.tool` and `pi.post-tools` tasks.
+- `ToolResultEntry` now carries `data: { diagnostics }`.
+- The environment shell no longer keeps a bounded, throttled output view: `ShellExecOptions.capture` and `onUpdate` are replaced by raw `onOutput` chunks and `spill: { afterBytes, afterLines }`, `ShellExecResult` is `{ exitCode, spillPath? }`, and `ExecutionError.spillPath` reports the spill of a timed-out or aborted command.
 
 ### Added
 
@@ -51,6 +55,15 @@
 - Added `registry.conversations.setup()`: setups run in every Harness commit that creates or forks a conversation, including raw `Tx.createConversation()` and `Tx.forkConversation()`, before host `init`. The built-in `pi` setup runs first and stages the default configuration with every registered tool active (forks keep their copied configuration) and an empty `pi.live`.
 - `Conversation.submit()`, `Submission.wait()`, `waitForTask()`, and `waitForIdle()` now enable task scheduling, so they never wait on a Harness whose `resume()` was not called.
 - Scheduler-written `faulted` and `orphaned` outcomes of a run task now settle the run's input submissions `unanswered` and clear its run control in the same commit.
+- Added the tool chain: generation offers active registered tools through positional system entries, answers calls to tools it did not offer with `tool_unavailable`, and hands the run to parallel or sequential `pi.tool` tasks and a `pi.post-tools` task that applies `addTools` and `terminate` and continues with the next generation.
+- Added the `pi.tool` task: argument validation before and after `beforeTool`, durable intent with the replay policy, recovery that reruns only replay-safe tools, bounded `output()` and `details()` progress in `pi.live.tools` slots with adaptive throttling, output and details fallback, `afterTool`, and results with a rendered `<harness>` diagnostics block.
+- Added tool diagnostics: `api.diagnostic()`, `ToolExecutionResult.diagnostics`, and Harness diagnostics for truncation and error results.
+- Added hook dispatch with conversation and owned-subtree scopes: `beforeRequest`, `afterResponse`, and `onYield` continuations on generation, `beforeTool` and `afterTool` on tools, and `afterTools` on post-tools, with `HookApi` memos.
+- Added `HarnessOptions.env`, `ToolRegistration.executionMode`, and the `toolExecution` configuration with `get/setToolExecution()`.
+- Added `read`, `bash`, `edit`, and `write` tools in `@punch-bot/durable/tools`; they use `api.env`. Bash streams raw output into `api.output()`, reports its spill file as a diagnostic, and throws on a nonzero exit or timeout. Reading images is not supported yet.
+- Added `ToolRegistration.prepareArguments()` to repair malformed arguments before validation; the edit tool uses it for `edits` sent as a JSON string or a single object and for top-level `oldText`/`newText`.
+- Tool output retained by `api.output()` is an exact slice of whole lines, sanitized of control characters.
+- Added the `bench:tool-output` benchmark of tool output rates, retention, backends, replay, and 1 GiB throughput.
 
 ### Fixed
 

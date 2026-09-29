@@ -2,6 +2,8 @@ import type { ConversationRecord, Tx } from "../types.ts";
 import { ConversationConfig } from "./config.ts";
 import { GenerationTask } from "./generation.ts";
 import { LiveDoc } from "./live.ts";
+import { PostToolsTask } from "./post-tools.ts";
+import { ToolTask } from "./tool.ts";
 import type {
 	AnyTask,
 	ConversationSetup,
@@ -21,7 +23,7 @@ import type {
 const SECTION_KEY = /^[a-z][a-z0-9_-]*$/;
 
 /** Built-in task definitions every registry starts with; they cannot be disposed or replaced. */
-export const BUILTIN_TASKS: readonly AnyTask[] = [GenerationTask];
+export const BUILTIN_TASKS: readonly AnyTask[] = [GenerationTask, ToolTask, PostToolsTask];
 
 export const BUILTIN_SETUP_KEY = "pi";
 

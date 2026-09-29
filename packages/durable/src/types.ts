@@ -1,7 +1,8 @@
 import type { AttachedReplicatedState, Context, Draft, JsonValue } from "@punch-bot/chord";
 import type { Op } from "@punch-bot/chord/delta";
 import type { Message, Models } from "@punch-bot/ai";
-import type { ContextView, RegistrySnapshot } from "./harness/types.ts";
+import type { ExecutionEnv } from "./env/index.ts";
+import type { ContextView, RegistrySnapshot, SettledTask } from "./harness/types.ts";
 
 /** JSON object used as the root of every durable document. */
 export type JsonObject = { [key: string]: JsonValue };
@@ -143,18 +144,34 @@ export type PhaseHandler<I, P, S, R, H extends object> = (
 	context: Context,
 ) => Promise<void>;
 
+/** Dispatches one hook of a task to every matching registered handler, in registry order of the phase snapshot. */
+export interface HookRunner<H extends object> {
+	/**
+	 * Call `invoke` with each matching handler named `name`. An ordinary throw from `invoke` is reported and the next
+	 * handler runs; once the invocation is signalled, the error propagates. Composition happens inside `invoke`.
+	 */
+	each<K extends keyof H>(name: K, invoke: (handler: NonNullable<H[K]>) => void | Promise<void>): Promise<void>;
+}
+
 /**
  * Operations of one task invocation. Every operation rejects after the invocation ends; watches acquired through it
- * stop at invocation end. `_H` is the task's hook map, consumed once the runtime gains its hook runner.
+ * stop at invocation end.
  */
-export interface TaskRuntime<I, S, R, _H extends object> extends DocumentObserver, DocumentReader {
+export interface TaskRuntime<I, S, R, H extends object> extends DocumentObserver, DocumentReader {
 	readonly taskId: TaskId<R>;
 	readonly conversationId: ConversationId;
-	/** Aborted when the run is signalled by `abortTask()` or the Harness closes. */
+	/**
+	 * Aborted when the run is signalled by `abortTask()`, the Harness closes, or the invocation ends. Work still using it
+	 * after the invocation ended, such as a detached wait, is cancelled; it could not write anything anyway.
+	 */
 	readonly signal: AbortSignal;
 	/** Registry snapshot of the current phase; refreshed at every phase boundary. */
 	readonly registry: RegistrySnapshot;
 	readonly models: Models;
+	/** `HarnessOptions.env`; tools receive it as `api.env`. */
+	readonly env: ExecutionEnv | undefined;
+	/** Handlers registered for this task's name whose scope matches its conversation. */
+	readonly hooks: HookRunner<H>;
 
 	/**
 	 * Commit on the Session line after rereading the task. Rejects when the task is terminal, the invocation ended, the
@@ -173,6 +190,14 @@ export interface TaskRuntime<I, S, R, _H extends object> extends DocumentObserve
 	memo<T extends JsonValue>(name: string, context: Context): Promise<T | undefined>;
 	/** Store `candidate` unless a memo already exists; return the durable winner. */
 	memo<T extends JsonValue>(name: string, candidate: T, context: Context): Promise<T>;
+	/** Committed task record. */
+	getTask<T>(id: TaskId<T>, context: Context): Promise<TaskRecord<JsonValue, JsonValue, T> | undefined>;
+	/** Resolve with the task's terminal receipt; rejects when the invocation ends. */
+	waitForTask<T>(id: TaskId<T>, context: Context): Promise<SettledTask<T>>;
+	/** Committed entry visible from the task's conversation. */
+	entry(id: EntryId, context: Context): Promise<EntryRecord | undefined>;
+	/** Undefined when the entry is absent, not visible, or has another kind. */
+	entry<D extends JsonValue>(token: Entry<D>, id: EntryId, context: Context): Promise<TypedEntry<D> | undefined>;
 	/** Committed raw active transcript and model context, optionally cut off at the visible entry `at`. */
 	context(conversationId: ConversationId, context: Context, at?: EntryId): Promise<ContextView>;
 	/** The Harness clock. */

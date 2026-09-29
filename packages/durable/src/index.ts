@@ -9,8 +9,15 @@ export {
 	GenerationTask,
 } from "./harness/generation.ts";
 export { Harness } from "./harness/harness.ts";
-export { LiveDoc, type LiveState } from "./harness/live.ts";
+export { LiveDoc, type LiveState, type ToolSlot } from "./harness/live.ts";
+export {
+	type PostToolsCheckpoint,
+	type PostToolsInput,
+	type PostToolsResult,
+	PostToolsTask,
+} from "./harness/post-tools.ts";
 export { createRegistry } from "./harness/registry.ts";
+export { ToolTask, type ToolTaskCheckpoint, type ToolTaskInput, type ToolTaskResult } from "./harness/tool.ts";
 export type {
 	AnyTask,
 	ContextView,
@@ -21,13 +28,17 @@ export type {
 	ConversationRetryPolicy,
 	ConversationSetup,
 	ConversationStreamOptions,
+	GenerationHooks,
 	HarnessInspection,
 	HarnessOptions,
+	HookApi,
 	HookRegistration,
+	HookResult,
 	HookScope,
 	HooksOf,
 	InputSubmissionDraft,
 	ModelRef,
+	PostToolsHooks,
 	PromptInput,
 	PromptSection,
 	PromptSectionWrapper,
@@ -42,8 +53,11 @@ export type {
 	SubmissionDraft,
 	TaskInspection,
 	ToolControl,
+	ToolDiagnostic,
 	ToolExecutionApi,
+	ToolExecutionMode,
 	ToolExecutionResult,
+	ToolHooks,
 	ToolRegistration,
 	ToolWrapper,
 	UserInput,
@@ -87,6 +101,7 @@ export type {
 	EntryId,
 	EntryQuery,
 	EntryRecord,
+	HookRunner,
 	Id,
 	JsonObject,
 	LatestConversationSemantics,

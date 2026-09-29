@@ -1,7 +1,6 @@
 import {
 	type AssistantMessage,
 	fauxAssistantMessage,
-	fauxToolCall,
 	type Message,
 	type Models,
 	type SimpleStreamOptions,
@@ -152,16 +151,6 @@ describe("generation", () => {
 		// The earlier settlement stays; the run's own settlement leaves it unchanged.
 		expect(await submission.status(context)).toMatchObject({ status: "unanswered", reason: "withdrawn" });
 		expect(await live(harness, root)).toEqual({});
-		await harness.close(context);
-	});
-
-	it("settles a tool call as the answer until the tool chain exists", async () => {
-		const setup = chatSetup();
-		setup.faux.setResponses([fauxAssistantMessage([fauxToolCall("read", { path: "a" })], { stopReason: "toolUse" })]);
-		const { harness, root } = await openChat(new MemoryStorage(), setup);
-		harness.resume();
-		const settled = await (await root.submit({ type: "input", content: "read a" }, context)).wait(context);
-		expect(settled.status).toBe("done");
 		await harness.close(context);
 	});
 

@@ -1,14 +1,17 @@
 import type { Context, JsonValue } from "@punch-bot/chord";
 import type {
+	AssistantMessage,
 	CacheRetention,
 	Message,
 	Models,
 	ModelThinkingLevel,
 	Tool,
+	ToolCall,
 	ToolResultMessage,
 	Transport,
 	UserMessage,
 } from "@punch-bot/ai";
+import type { ExecutionEnv } from "../env/index.ts";
 import type {
 	ConversationId,
 	ConversationOwnership,
@@ -108,20 +111,41 @@ export type ToolControl = {
 	readonly handoff?: string;
 };
 
+/** Remark about a call for the model and the UI, such as truncation or a spill path; never part of the tool's data. */
+export type ToolDiagnostic = {
+	readonly severity: "info" | "warn" | "error";
+	readonly message: string;
+	readonly code?: string;
+};
+
 export type ToolExecutionResult = {
+	/** Omitted: the retained `output()` text becomes the content. */
 	readonly content?: ToolResultMessage["content"];
 	readonly isError?: boolean;
+	/** Omitted: the last `details()` value becomes the details. */
 	readonly details?: JsonValue;
+	/** Added after those recorded through `api.diagnostic()`. */
+	readonly diagnostics?: readonly ToolDiagnostic[];
 	readonly control?: ToolControl;
 };
 
-/** Operations available to one tool invocation. */
+/** Whether the tools of one round run at once or one after another in call order. */
+export type ToolExecutionMode = "parallel" | "sequential";
+
+/**
+ * Operations available to one tool invocation. A plain object, so a wrapper can pass `{ ...api, env }` to the tool it
+ * wraps. Every operation rejects after the invocation ends.
+ */
 export interface ToolExecutionApi extends DocumentObserver, DocumentReader {
 	readonly taskId: TaskId;
 	readonly conversationId: ConversationId;
 	readonly callId: string;
+	/** `HarnessOptions.env` unless a wrapper supplies another environment. */
+	readonly env: ExecutionEnv | undefined;
 	/** Append running output; it becomes the result content when the result omits `content`. */
 	output(chunk: string | Uint8Array): void;
+	/** Record a model-visible remark about this call. */
+	diagnostic(diagnostic: ToolDiagnostic): void;
 	/** Replace running details; the last value becomes the result details when the result omits `details`. */
 	details(value: JsonValue, context: Context): Promise<void>;
 	commit<T>(change: (tx: Tx) => T | Promise<T>, context: Context): Promise<T>;
@@ -135,13 +159,20 @@ export interface ToolExecutionApi extends DocumentObserver, DocumentReader {
 	): Promise<TaskId<R>>;
 	getTask<R>(id: TaskId<R>, context: Context): Promise<TaskRecord<JsonValue, JsonValue, R> | undefined>;
 	waitForTask<R>(id: TaskId<R>, context: Context): Promise<SettledTask<R>>;
-	conversation(id: ConversationId, context: Context): Promise<ConversationHandle | undefined>;
+	// conversation() arrives with ConversationHandle in Package 18.
 }
 
 /** Executable tool registered in a registry. Only pi-ai `Tool` fields enter the transcript. */
 export type ToolRegistration = Tool & {
 	/** Whether an interrupted execution may rerun on recovery. Default `unsafe`. */
 	readonly replay?: "safe" | "unsafe";
+	/** Default: the conversation's `toolExecution`. One sequential call makes its whole round sequential. */
+	readonly executionMode?: ToolExecutionMode;
+	/**
+	 * Repair arguments models commonly get wrong before validation, such as a JSON string where an array belongs. Must be
+	 * pure and must not mutate `args`: it runs again when a call is retried before its intent is recorded.
+	 */
+	prepareArguments?(args: JsonValue): JsonValue;
 	readonly outputLimits?: {
 		readonly maxBytes?: number;
 		readonly maxLines?: number;
@@ -312,6 +343,8 @@ export type HarnessOptions<Tool extends ToolRegistration = ToolRegistration> = {
 	/** pi-ai model access used by generation. */
 	readonly models: Models;
 	readonly registry: RegistryReader<Tool>;
+	/** Default execution environment offered to tools as `api.env`. */
+	readonly env?: ExecutionEnv;
 	readonly now?: () => number;
 	/** Receives extension failures that do not fail the calling operation. Must not throw. */
 	readonly onReport?: (error: unknown) => void;
@@ -371,6 +404,10 @@ export interface Conversation {
 	getRetryPolicy(context: Context): Promise<ConversationRetryPolicy>;
 	/** `undefined` removes the configured policy. */
 	setRetryPolicy(policy: ConversationRetryPolicy | undefined, context: Context): Promise<void>;
+	/** `parallel` when unset. */
+	getToolExecution(context: Context): Promise<ToolExecutionMode>;
+	/** `undefined` removes the configured mode. */
+	setToolExecution(mode: ToolExecutionMode | undefined, context: Context): Promise<void>;
 
 	/**
 	 * Durably admit user input or a passive entry write. Until the inbox exists, a busy conversation rejects every
@@ -429,4 +466,51 @@ export interface Harness extends Session {
 	waitForTask<R>(id: TaskId<R>, context: Context): Promise<SettledTask<R>>;
 	/** Resolve when no live non-background task exists. */
 	waitForIdle(context: Context): Promise<void>;
+}
+
+/** What a hook may use: committed reads and the asking task's memos, which hooks and the task share. */
+export interface HookApi extends DocumentReader {
+	readonly taskId: TaskId;
+	readonly conversationId: ConversationId;
+	memo<T extends JsonValue>(name: string, context: Context): Promise<T | undefined>;
+	memo<T extends JsonValue>(name: string, candidate: T, context: Context): Promise<T>;
+}
+
+export type HookResult<T> = T | undefined | Promise<T | undefined>;
+
+/** Hooks of the built-in generation task. */
+export interface GenerationHooks {
+	/** Before every request attempt, including recovery; the result is used for that request only. */
+	beforeRequest(
+		request: { readonly messages: readonly Message[] },
+		api: HookApi,
+		context: Context,
+	): HookResult<{ readonly messages: readonly Message[] }>;
+	/** Every terminal provider message, before classification. */
+	afterResponse(message: AssistantMessage, api: HookApi, context: Context): void | Promise<void>;
+	/** A final answer; the first `continue` appends a user message and continues the run. */
+	onYield(answer: AssistantMessage, api: HookApi, context: Context): HookResult<{ readonly continue: UserInput }>;
+}
+
+/** Hooks of the built-in tool task. */
+export interface ToolHooks {
+	/** Before intent; the first `block` wins, otherwise `arguments` replace the call's arguments. A throw blocks. */
+	beforeTool(
+		call: ToolCall,
+		api: HookApi,
+		context: Context,
+	): HookResult<{ readonly arguments?: JsonObject; readonly block?: string }>;
+	/** After execution, before the result entry; replaces the result. */
+	afterTool(
+		call: ToolCall,
+		result: ToolExecutionResult,
+		api: HookApi,
+		context: Context,
+	): HookResult<ToolExecutionResult>;
+}
+
+/** Hooks of the built-in post-tools task. */
+export interface PostToolsHooks {
+	/** After every tool of the round is terminal; `results` are the round's result entries in call order. */
+	afterTools(assistant: EntryId, results: readonly EntryId[], api: HookApi, context: Context): void | Promise<void>;
 }

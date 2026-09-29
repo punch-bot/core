@@ -41,6 +41,7 @@ import type {
 	SettledTask,
 	Submission,
 	SubmissionDraft,
+	ToolExecutionMode,
 	ToolRegistration,
 } from "./types.ts";
 import { scanAll } from "./util.ts";
@@ -130,6 +131,17 @@ class ConversationImpl<Tool extends ToolRegistration> implements Conversation {
 		}, context);
 	}
 
+	async getToolExecution(context: Context): Promise<ToolExecutionMode> {
+		return (await this.#config(context)).toolExecution ?? "parallel";
+	}
+
+	setToolExecution(mode: ToolExecutionMode | undefined, context: Context): Promise<void> {
+		return this.#editConfig((config) => {
+			if (mode === undefined) delete config.toolExecution;
+			else config.toolExecution = mode;
+		}, context);
+	}
+
 	submit(submission: SubmissionDraft, context: Context): Promise<Submission> {
 		return this.#host.submissions.submit(this.id, submission, context);
 	}
@@ -203,6 +215,7 @@ class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements 
 			storage,
 			registry: options.registry,
 			models: options.models,
+			env: options.env,
 			now,
 			report: options.onReport ?? (() => {}),
 			settleOutcome: settleSchedulerOutcome,
