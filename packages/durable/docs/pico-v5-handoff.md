@@ -11,7 +11,7 @@ facades, membranes, document routing, view projection, events, or clone chains.
 
 - Obsolete `pico` and `pico4` prototypes were removed.
 - `pico3` remains.
-- Packages 1–17 are implemented in `packages/durable`; Package 10 was already satisfied by Chord's canonical structural diff implementation.
+- Packages 1–18 are implemented in `packages/durable`; Package 10 was already satisfied by Chord's canonical structural diff implementation.
 
 ## 1. Records, cursors, and memory tables
 
@@ -582,6 +582,16 @@ boundaries, ordinary and full traversal, conversation abort, and exact idle
 waits. Finish invocation-bound owned APIs used by tools and the foreground and
 background subagent provisioning patterns, including atomic task/conversation/
 registry creation and request-ID-safe submission recovery.
+
+An abort cascade withdraws queued inputs in every owned conversation it reaches
+(spec §5.4). There is no full-teardown primitive: `close()` stops everything
+without outcomes, and a host cancels everything by aborting what `inspect()`
+lists. No built-in subagent tool or supervisor task: two concise, product-style
+examples, `test/examples/22-subagent-foreground.ts` (child owned by the tool task,
+reported through `api.details({ conversationId })`, the UI attaching to the
+child's events) and `test/examples/23-subagent-background.ts` (supervisor task,
+`app.subagents` name→conversation document, request-ID-safe submission), show
+the patterns.
 
 Test deep ownership trees, owner edges after terminal settlement, nested
 background boundaries, conversation abort/join with surviving passive writes and

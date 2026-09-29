@@ -684,10 +684,9 @@ a user message when given, and then resolves; while busy, placement follows
 section 6 and may occur later. Observe its placement through the conversation
 watch. An idle wait does not guarantee placement of queued passive writes.
 
-`abortTask()` commits `abortRequested` and the durable foreground-subtree
-cascade, then signals and joins the active run; the scheduler then starts the
-abort invocation. Marking without signalling is internal: the cascade marks
-owned tasks in the same commit. `Conversation.abort()` withdraws queued
+`abortTask()` commits `abortRequested`, then signals and joins the active run;
+the scheduler then starts the abort invocation and marks the foreground-owned
+subtree in its next reconcile commit (section 5.4). `Conversation.abort()` withdraws queued
 input submissions, marks non-background tasks selected by ordinary ownership
 traversal, signals them, and resolves only after that scope is ordinarily idle.
 Passive writes and background subtrees survive. Conversation idle means no live
@@ -1685,9 +1684,10 @@ owner edges after the owner becomes terminal, but a background owner is a
 boundary: ordinary traversal skips that task and its complete owned subtree.
 Direct conversation operations start inside that conversation regardless of its
 owner. Directly aborting a live background task includes that task and follows
-its ordinary owned subtree; nested background owners remain boundaries. Full
-teardown crosses every boundary, marks every live task, and must seal new
-admission while it gathers the complete indexed ownership subtree.
+its ordinary owned subtree; nested background owners remain boundaries.
+`close()` stops every invocation, foreground and background, without writing an
+outcome, so the work resumes on reopen. A host that must durably cancel
+everything aborts each live task that `inspect()` lists.
 
 `Conversation.abort()` withdraws queued inputs and marks live non-background
 tasks selected by ordinary traversal. `Conversation.waitForIdle()` waits until
@@ -1697,8 +1697,20 @@ counting tasks, so ordinary work below a background owner does not block it.
 Explicit `waitForTask()` waits for its referenced task regardless of the task's
 background flag.
 
-An abort mark atomically and idempotently cascades to foreground-owned work,
-including conversations, tasks, and submissions staged in the same transaction.
+An abort mark cascades idempotently to foreground-owned work. The durable
+cancellation intent is the owner's own record: its abort mark, or a terminal
+outcome other than `completed`. The scheduler derives the rest in a later
+reconcile commit, and again at open, so a crash in between loses nothing; work
+already queued on the Session line may make one more commit first. Every live
+non-background task whose owner chain
+reaches a cancelled owner, without first crossing a background owner that is not
+itself cancelled, gets an abort mark, including work created there after the
+cascade. Deriving the marks in their own commit
+keeps them out of the owner's commit, which may already have written the tasks
+involved. Every conversation the cascade reaches is treated like
+`Conversation.abort()`: its queued input submissions become `unanswered` with
+reason `aborted` and leave its inbox, while queued writes stay. The cascade starts
+below the cancelled task, so that task's own conversation keeps its queue.
 Terminal outcomes `failed`, `faulted`, `orphaned`, and `aborted` record the same
 durable cancellation intent; `completed` does not. Conversation records and
 owner edges are never retired with the task. Active invocations are signalled
@@ -2421,10 +2433,15 @@ the same way; the admitted submission remains durable after those methods reject
 Invocation-owned document watches stop when the invocation ends.
 
 A foreground subagent conversation is explicitly owned by its tool task. One
-transaction creates or forks the child and records its durable registry mapping;
-after settlement the tool reacquires the child, submits with the registered
-request ID, and waits for that submission's result. Aborting or abnormally
-terminalizing the tool task cascades through the owned scope.
+transaction creates or forks the child; the owner edge is its durable record, so
+a replay-safe rerun finds the child with `scanConversations({ ownerTaskId })`
+before creating one. After settlement the tool reacquires the child, submits
+with a request ID derived from its task ID, which a rerun keeps, and waits for
+that submission's result. Provider call IDs are not unique across a Session and
+must not serve as request IDs. Aborting or abnormally
+terminalizing the tool task cascades through the owned scope. The tool reports
+the child in its running details, for example `api.details({ conversationId })`,
+so a UI that sees the call can attach to the child's view or events.
 
 A background subagent is provisioned in one transaction. After deduplicating by
 its durable registry key, the tool stages a background supervisor task `B`, a
@@ -2433,7 +2450,8 @@ semantic name to `C` plus its stable request ID. `B` may be staged earlier in th
 same transaction and used immediately as `C`'s owner. Its durable input contains
 the exact submission draft and the registry location/key; it need not contain
 `C`'s not-yet-created ID. Once scheduled, `B` resolves `C` from the mapping,
-verifies the immutable owner edge, and performs normal `Conversation.submit()`.
+which was committed together with `C` and its owner edge, and performs normal
+`Conversation.submit()`.
 A crash before admission makes `B` retry; a crash after admission returns the
 existing request-ID-deduplicated `Submission`. The initiating tool may race the
 same submit for lower latency and wait only for the durable admission receipt.
@@ -2443,6 +2461,8 @@ its owned scope.
 
 Applications may maintain a conversation document mapping semantic subagent
 names to durable conversation IDs and application-minted submission request IDs.
+A UI lists background subagents from that document; a child is active while its
+`pi.live.run` is set.
 Such a live registry uses `fork: "initial"` so children do not inherit the
 parent's agent list and its update is not a selected fork source. Conversation
 creation/forking, supervisor creation when applicable, and the registry mapping
@@ -2455,8 +2475,7 @@ request to submit; a crash after admission retries the same request and receives
 the existing `Submission`. A read-only lookup by conversation/request ID can
 report absence or return the durable queued/placed/done/unanswered receipt.
 Submission admission therefore needs no private transaction shortcut and does
-not move onto `Tx`. Kernel ownership indexes independently drive abort and idle
-traversal.
+not move onto `Tx`. Owner edges alone drive abort and idle traversal.
 
 A tool result may request `addTools`, `terminate`, or `handoff`. Post-tools
 appends added tool names to the configured loadout; they take effect at the next
@@ -2899,14 +2918,18 @@ because the terminal record keeps it; the call is read from the assistant entry.
   registered policy are `safe`, it executes again with the stored arguments,
   without `beforeTool`, and settles like `call`. Otherwise it commits an
   `interrupted` error result from the slot's durable partial output, details, and
-  diagnostics.
+  diagnostics, and ends `failed` with `{ entryId }`.
 - The result commit bounds the content, appends the diagnostics block (section
   7.3), appends one `pi.tool-result` entry with `model: [{ role: "toolResult",
   toolCallId, toolName, content, details, isError, timestamp }]` and
   `data: { diagnostics }`, marks the slot `done`, and
   completes with `{ entryId, control }`. An `isError` result still completes.
-- A throw from `execute()` becomes a `tool_error` result; once the invocation is
-  signalled it propagates instead.
+- A throw from `execute()` becomes a `tool_error` result and the task ends
+  `failed` with `{ entryId }`; once the invocation is signalled it propagates
+  instead. Ending `failed`, like `aborted`, records cancellation intent (section
+  5.4), so conversations the call owns, which nothing supervises any more, are
+  aborted. A returned `isError` result still completes, and its call's owned work
+  survives. Either way the run continues with the result entry.
 - The abort handler commits an `aborted` error result from the slot's durable
   partial output, details, and diagnostics and ends `aborted` with `{ entryId }`.
 
@@ -3596,8 +3619,8 @@ These are contracts, not invitations to add defensive machinery:
   already counts it, and subtree sums would count it twice.
 - **Aborting one run task:** `abortTask()` on a run's post-tools task ends the
   run but leaves its tool tasks running; their results land in a conversation
-  that may be idle or running another run. Abort the conversation instead
-  (Package 18); until then, abort the round's tool tasks together with post-tools.
+  that may be idle or running another run. Use `Conversation.abort()`, which
+  aborts every task of the conversation's run, tools included.
 - **Hook memo names:** hooks share the asking task's memo namespace with the
   task and other hooks. Prefix memo names.
 - **Long transactions:** an async commit callback holds the Session mutation
