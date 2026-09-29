@@ -11,7 +11,7 @@ facades, membranes, document routing, view projection, events, or clone chains.
 
 - Obsolete `pico` and `pico4` prototypes were removed.
 - `pico3` remains.
-- Packages 1–16 are implemented in `packages/durable`; Package 10 was already satisfied by Chord's canonical structural diff implementation.
+- Packages 1–17 are implemented in `packages/durable`; Package 10 was already satisfied by Chord's canonical structural diff implementation.
 
 ## 1. Records, cursors, and memory tables
 
@@ -527,62 +527,52 @@ retained window.
 
 ## 17. Live UI and product state
 
-Complete submissions and inbox behavior: busy `steer`/`followUp`/`reject`,
-passive writes, withdrawal, ordered `postTools`/`final` selection, stale targets,
-self-head cuts, successor turns, queued reset/handoff, and every terminal cleanup.
+Complete submissions and the inbox (§6): the `pi.inbox` document created by the
+built-in setup; busy `steer`/`followUp`/`reject`; queued writes; admission to an
+idle conversation with a non-empty inbox (queue, then a final boundary in the
+same commit); withdrawal removing the item; `tx.placeSubmission()`; ordered
+`postTools`/`final` selection by the new `steeringMode`/`followUpMode`
+configuration fields (with getters/setters), writes before user items; stale
+head writes; a reset at `postTools` ending the run with `reset`; successor runs;
+and `onYield` applying only when the final boundary selected no user item and no
+reset. Only an answer, `terminate`, or `handoff` applies the final boundary;
+failure, a run task's abort, fault, and orphan leave the inbox alone.
 Successful inputs still require an answer; writes settle on placement and never
-start generation.
+start generation by themselves.
 
-Usage ledger (decided with the reviewers, needs Mario's approval before spec text): one conversation-scoped
-`pi.usage` document (`latest`, `fork: "initial"`, base on every change, created lazily, mounted in the
-view) holding pi-ai `Usage` totals per `provider/model` for entries appended in that conversation. The
-totals update in the same commit as each assistant entry through generation's single `appendAssistant()`
-helper (already in place). Session and ownership-subtree totals are summed on read, never stored. Entries
-stay authoritative; the document is a derived index.
+Define the `pi.reset` entry (§8.1), written by `Conversation.reset(handoff)`
+through a write submission and by the post-tools `handoff` control.
 
-Define the headed reset/handoff entry once, used by `reset(handoff)` and by the
-post-tools `handoff` control deferred from Package 16, and implement that control.
+Usage (§8.6): the `pi.usage` document created by the built-in setup, updated in
+the same commit as every assistant entry (`appendAssistant()`) and every tool
+result with `usage` (`ToolExecutionResult.usage`, `appendToolResult()`), and
+`Harness.usage()` summing every conversation's document.
 
-Add `harness.blockedTasks()`, deferred from Package 14: the pending tasks this
-process cannot run and why (`missing_task`, `task_too_old`, `migration_failed`
-with the stored and registered versions and the migration error). It is derived
-from task records, the current registry snapshot, and scheduler memory, and is
-never persisted.
+`ConversationView`, `viewState()`, and `watch()` (§9.3): one mount per
+conversation, built lazily on the Session line, advanced from
+`subscribeCommits()` publications, and dropped with its last observer.
 
-Specify and implement the Harness activity view:
-the active conversations, notifications when a conversation becomes active or
-idle, all derived from committed turn-control and task
-state.
+Last: the experimental `watchEvents()` adapter (§9.4) with the snapshot event,
+translated message and tool deltas, and overflow-to-snapshot.
 
-Define any remaining built-in preference/presentation documents once with final
-schemas. Implement the structural `{ conversation, entries, docs }`
-`ConversationView`, `viewState()`, and `watch()`. Build the first revision lazily
-on the Session line. For each affected commit, derive and prepare one mounted
-operation batch from the complete candidate transaction before Storage
-admission; after success, only install prepared pointers/cursors and enqueue the
-exact immutable frame. Do not derive the mount through `subscribeCommits()`.
-
-Add the §9.4 notification adapter directly from uncoalesced committed
-publication, without another tracker or persistence authority. Wire TUI
-hydration to structural state/watch, print to its own `Submission`, and JSON/RPC
-to correlated commands plus ordered committed notifications. Transport
-backpressure and disconnect policy stay in the mode adapter.
+Examples next to the existing ones in `test/examples/`: a print demo awaiting
+its own `Submission`, a JSON demo with two modes, `--events` (adapter
+events as JSON lines) and `--ops` (raw `ConversationView` frames), an inbox
+demo, and a late-join demo attaching a view and an event stream mid-run. An
+interactive TUI demo and coding-agent integration are later work.
 
 Table-test every submission transition, cross-type request-ID conflicts,
-interleaved queue selection, compact positional removal of large payloads,
-abort results, reopen waits, writes pending without a later boundary, busy reset
-placement, and orphan/fault cleanup. Test one view publication per Session
-commit; atomic entry/preview settlement; parent-linked active entries and heads;
-mounted create/recreate/retire; preparation rollback before Storage; empty-batch
-suppression and redundant nonempty revisions; contiguous delivery; stable public
-paths; O(1) immutable acquisition; structural sharing; serialized consumers;
-bounded reset behind an in-flight callback; durable retry/tool/collapse status;
-output truncation metadata; the documented placement of diagnostics in entries,
-terminal details, or bounded state; asynchronous consumer initialization; and
-absence of semantic projection. Verify watch overflow cannot erase a separately
-subscribed notification lifecycle, late clients hydrate structurally, and
-notifications expose committed throttled
-progress rather than raw provider frames.
+interleaved queue selection under both queue modes, writes placed before user
+items, stale head writes, a reset at each boundary, handoff, `onYield` with and
+without queued items, compact positional removal of large payloads, withdrawal,
+reopen waits, queued items surviving a failed run and drained by the next
+submission, and orphan/fault cleanup. Test minimal Chord deltas for `pi.inbox`
+and `pi.usage` changes. Test one view revision per touching commit; atomic
+entry/document publication; fork-aware active entries and head cuts; mounted
+create/retire; empty-batch suppression; stable paths; structural sharing; watch
+overflow; and dropping the mount. Test the event translation of every
+`MessageChange` and output change, the snapshot at attachment and after
+overflow, and absence of raw provider frames.
 
 ## 18. Ownership and subagents
 
@@ -637,8 +627,7 @@ Run the exhaustive public conformance matrix: stable persisted root identity;
 all root/create/lookup/fork/reset/collapse/abort/idle paths; every configuration
 getter/setter and fork override; typed input/write submissions; task wait/abort;
 generic document access; registry changes before open, between open and resume,
-and while work runs; the activity view; structural watches; and
-blocked tasks surviving open. Compile-test every §2.2 and §3 owner/key/seed overload,
+and while work runs; structural watches; and blocked tasks surviving open. Compile-test every §2.2 and §3 owner/key/seed overload,
 the normative usage sequences, and the Chord guide. The erased registry test must
 use a concrete narrowed-input task with multiple checkpoint phases and custom
 hooks. Verify that a Chord root-replacement delta remains distinct from a
