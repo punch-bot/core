@@ -6,6 +6,10 @@
 
 - Changed the default OpenAI Codex model to GPT-6.1 Sol (`gpt-6.1-sol`).
 
+### Fixed
+
+- Fixed `/login` with OpenAI failing in the bundled release with a missing `openai-chatgpt.js` module error.
+
 ## [0.99.0] - 2026-09-29
 
 ### New Features
