@@ -4,7 +4,7 @@
 
 ### Breaking Changes
 
-- `TaskRuntime` now requires `env`, `hooks`, `getTask()`, `waitForTask()`, and `entry()`; `ToolExecutionApi` requires `env` and `diagnostic()` and no longer declares `conversation()` until owned-conversation handles land.
+- `TaskRuntime` now requires `env`, `hooks`, `getTask()`, `waitForTask()`, `entry()`, and `conversation()`; `ToolExecutionApi` requires `env`, `diagnostic()`, and `conversation()`.
 - `createRegistry()` also pre-registers the built-in `pi.tool` and `pi.post-tools` tasks.
 - `ToolResultEntry` now carries `data: { diagnostics }`.
 - `Tx` now requires `placeSubmission()` and `latestHeadMarker()`.
@@ -30,6 +30,11 @@
 - Added the `pi.usage` ledger (`UsageDoc`) of assistant usage per model and tool usage per tool, `ToolExecutionResult.usage`, and `Harness.usage()` for the Session total.
 - Added the structural `ConversationView` with `Conversation.viewState()` and `Conversation.watch()`.
 - Added the experimental `watchEvents()` agent event adapter with snapshot events, translated message and tool deltas, and overflow to a snapshot.
+- Added `Conversation.abort()`, which withdraws queued inputs, aborts the conversation's ordinary ownership scope, and resolves once it is idle.
+- Abort marks now cascade to work owned by the aborted task, or by a task that failed, faulted, or was orphaned: live foreground tasks below it are aborted and the queued inputs of their conversations withdrawn. Background tasks are boundaries.
+- Conversation and Harness idle waits now include work in owned conversations and stop at background tasks.
+- A tool task whose `execute()` throws, or that is interrupted by a restart without a safe rerun, now ends `failed` (still with its error result entry), which aborts the conversations the call owns.
+- Added `TaskRuntime.conversation()` and `ToolExecutionApi.conversation()`: invocation-bound `ConversationHandle`s for submitting to, aborting, and waiting on existing conversations, such as the ones a task owns.
 
 ### Fixed
 

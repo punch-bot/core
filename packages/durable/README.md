@@ -21,6 +21,7 @@ Built on [`@punch-bot/ai`](../ai/README.md) for model access and `@punch-bot/cho
 - [Agent Events (Experimental)](#agent-events-experimental)
 - [Hooks](#hooks)
 - [More Conversations and Forks](#more-conversations-and-forks)
+- [Abort and Subagents](#abort-and-subagents)
 - [Your Own State](#your-own-state)
 - [Usage and Cost](#usage-and-cost)
 - [Storage](#storage)
@@ -279,6 +280,46 @@ const fork = await root.fork(entryId, { ownership: { kind: "ownerless" } }, cont
 
 A fork sees its parent's entries up to `entryId` and continues independently. It keeps the parent's settings as of that entry.
 
+## Abort and Subagents
+
+`await root.abort(context)` stops a conversation: queued inputs are withdrawn (queued writes stay), every task of its current work is aborted, and the call resolves once the conversation is idle.
+
+A conversation can be **owned** by a task. A subagent tool creates its child inside `api.commit()` with `ownership: { kind: "task", taskId: api.taskId }`, then drives it through `api.conversation(id)`:
+
+```typescript
+registry.tools.add({
+	name: "subagent",
+	description: "Delegate a self-contained task to a subagent and get its answer back.",
+	parameters: Type.Object({ task: Type.String() }),
+	replay: "safe", // a rerun after a crash finds the same child and submission
+	execute: async (args, api, context) => {
+		const child = await api.commit(async (tx) => {
+			// The ownership index remembers the child, so a rerun reuses it.
+			const existing = (await tx.scanConversations({ ownerTaskId: api.taskId }, 1)).items[0];
+			if (existing !== undefined) return existing.id;
+			const created = await tx.createConversation({ ownership: { kind: "task", taskId: api.taskId } });
+			(await tx.doc(ConversationConfig, created.id)).model = { provider: "openai", modelId: "gpt-6-sol" };
+			return created.id;
+		}, context);
+		await api.details({ conversationId: child }, context); // lets a UI attach to the child
+		const request = { type: "input", content: (args as { task: string }).task, requestId: `subagent:${api.taskId}` } as const;
+		const settled = await (await (await api.conversation(child, context))!.submit(request, context)).wait(context);
+		return { content: [{ type: "text", text: settled.status }] };
+	},
+});
+```
+
+Owned work belongs to its owner:
+
+- Aborting the call aborts the child. So does the call failing: `execute()` throwing, or a crash that interrupts a call that is not replay-safe.
+- The parent is idle only once the child is.
+- A task created with `{ background: true }` is a boundary: work it owns survives the parent's abort and does not keep the parent busy.
+
+The examples show both patterns as product code:
+
+- [`22-subagent-foreground.ts`](test/examples/22-subagent-foreground.ts): the tool above, returning the child's answer. The UI finds the child through the call's `details` and prints the child's events indented under the call.
+- [`23-subagent-background.ts`](test/examples/23-subagent-background.ts): the call returns at once. One commit creates a background supervisor task, the child it owns, and an entry in the parent's `app.subagents` document. The supervisor submits with a stable request ID, so a restart never submits twice. The UI lists subagents from that document and shows which ones are working.
+
 ## Your Own State
 
 Documents are typed JSON objects committed together with entries. Define one, and edit it in a commit:
@@ -356,6 +397,8 @@ node --conditions=source --experimental-strip-types test/examples/14-chat.ts
 | [19-json](test/examples/19-json.ts) | JSON mode: agent events or raw view operations, on SQLite, JSONL, or memory |
 | [20-inbox](test/examples/20-inbox.ts) | Steers, follow-ups, writes, and withdrawal while busy |
 | [21-late-join](test/examples/21-late-join.ts) | Attaching a view and an event stream mid-run |
+| [22-subagent-foreground](test/examples/22-subagent-foreground.ts) | A replay-safe subagent tool whose child the call owns, with the child's events under the call |
+| [23-subagent-background](test/examples/23-subagent-background.ts) | A background subagent: supervisor task, name registry, and restart-safe submission |
 | [00](test/examples/00-conversation.ts)–[13](test/examples/13-recovery.ts) | The layers underneath: sessions, documents, forks, watches, tasks, recovery |
 
 Examples that call OpenAI need `OPENAI_API_KEY`; most use the faux provider otherwise.

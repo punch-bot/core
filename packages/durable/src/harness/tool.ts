@@ -57,11 +57,11 @@ export const ToolTask = defineTask<ToolTaskInput, ToolTaskCheckpoint, ToolTaskRe
 			const tool = runtime.registry.tool(call.name);
 			if (tool === undefined) {
 				const error = harnessError("tool_unavailable", `Tool ${call.name} is not available`);
-				return settle(runtime, call, "completed", () => error, context);
+				return settle(runtime, call, COMPLETED, () => error, context);
 			}
 			const prepared = prepare(tool, call.arguments as JsonObject);
 			const checked = "error" in prepared ? prepared : validate(tool, call, prepared.args);
-			if ("error" in checked) return settle(runtime, call, "completed", () => invalid(checked.error), context);
+			if ("error" in checked) return settle(runtime, call, COMPLETED, () => invalid(checked.error), context);
 			let args = checked.args;
 			let block: string | undefined;
 			await runtime.hooks.each("beforeTool", async (hook) => {
@@ -77,10 +77,10 @@ export const ToolTask = defineTask<ToolTaskInput, ToolTaskCheckpoint, ToolTaskRe
 			});
 			if (block !== undefined) {
 				const blocked = harnessError("blocked", `Tool call blocked: ${block}`);
-				return settle(runtime, call, "completed", () => blocked, context);
+				return settle(runtime, call, COMPLETED, () => blocked, context);
 			}
 			const validated = validate(tool, call, args);
-			if ("error" in validated) return settle(runtime, call, "completed", () => invalid(validated.error), context);
+			if ("error" in validated) return settle(runtime, call, COMPLETED, () => invalid(validated.error), context);
 			const final = validated.args;
 			await runtime.commit(async (tx) => {
 				const slot = toolSlot(await tx.doc(LiveDoc, runtime.conversationId), runtime.taskId);
@@ -105,13 +105,15 @@ export const ToolTask = defineTask<ToolTaskInput, ToolTaskCheckpoint, ToolTaskRe
 				return run(runtime, call, tool, args, context);
 			}
 			const message = `Tool ${call.name} was interrupted and may have partially run`;
-			await settle(runtime, call, "completed", (slot) => fromSlot(slot, "interrupted", message), context);
+			// `failed` records cancellation intent, so the call's owned conversations, left unsupervised, are aborted.
+			const ending = { status: "failed", message } as const;
+			await settle(runtime, call, ending, (slot) => fromSlot(slot, "interrupted", message), context);
 		},
 	},
 	abort: async (task, runtime, context) => {
 		const call = await readCall(runtime, task.input, context);
 		const message = `Tool ${call.name} was aborted`;
-		await settle(runtime, call, "aborted", (slot) => fromSlot(slot, "aborted", message), context);
+		await settle(runtime, call, { status: "aborted" }, (slot) => fromSlot(slot, "aborted", message), context);
 	},
 });
 
@@ -229,12 +231,14 @@ async function run(
 		},
 		getTask: runtime.getTask,
 		waitForTask: runtime.waitForTask,
+		conversation: runtime.conversation,
 		snapshot: runtime.snapshot,
 		snapshotAsOf: runtime.snapshotAsOf,
 		watchDoc: runtime.watchDoc,
 	};
 
 	let result: ToolExecutionResult;
+	let ending = COMPLETED;
 	try {
 		result = await tool.execute(args, api, context);
 	} catch (error) {
@@ -244,6 +248,9 @@ async function run(
 			throw error;
 		}
 		result = { isError: true, diagnostics: [toolDiagnostic("tool_error", errorText(error))] };
+		// A throw ends the task `failed`, which cancels what the call owned; it no longer supervises it. The error text
+		// is already in the result entry.
+		ending = { status: "failed", message: `Tool ${call.name} threw` };
 	}
 	ended = true;
 	reported.output.end();
@@ -251,7 +258,7 @@ async function run(
 	const pending = await progress.stop();
 	try {
 		const settled = await finalResult(runtime, call, result, reported, context);
-		await settle(runtime, call, "completed", () => settled, context);
+		await settle(runtime, call, ending, () => settled, context);
 	} catch (error) {
 		for (const waiter of pending) waiter.reject(error);
 		throw error;
@@ -352,7 +359,7 @@ async function finalResult(
 async function settle(
 	runtime: Runtime,
 	call: ToolCall,
-	status: "completed" | "aborted",
+	ending: Ending,
 	build: (slot: Readonly<ToolSlot> | undefined) => ToolExecutionResult,
 	context: Context,
 ): Promise<void> {
@@ -362,7 +369,12 @@ async function settle(
 		const entry = await appendToolResult(tx, runtime.conversationId, call, result, runtime.now());
 		if (slot !== undefined) finishSlot(slot, entry.id);
 		const entryId = entry.id;
-		if (status === "aborted") return { status: "terminal", outcome: { status: "aborted", result: { entryId } } };
+		if (ending.status === "aborted")
+			return { status: "terminal", outcome: { status: "aborted", result: { entryId } } };
+		if (ending.status === "failed") {
+			const error = { message: ending.message };
+			return { status: "terminal", outcome: { status: "failed", error, result: { entryId } } };
+		}
 		// Tools build control objects freely; drop keys set to undefined so the task result is strict JSON.
 		const control =
 			result.control === undefined
@@ -371,6 +383,14 @@ async function settle(
 		return { status: "terminal", outcome: { status: "completed", result: { entryId, ...control } } };
 	}, context);
 }
+
+/**
+ * How a tool task ends; the result entry is appended either way. `failed` (execution threw or was interrupted)
+ * records cancellation intent for the conversations the call owns; a result with `isError` still completes.
+ */
+type Ending = { readonly status: "completed" | "aborted" } | { readonly status: "failed"; readonly message: string };
+
+const COMPLETED: Ending = { status: "completed" };
 
 /** An error result from the slot's durable partial output, details, and diagnostics. */
 function fromSlot(slot: Readonly<ToolSlot> | undefined, code: string, message: string): ToolExecutionResult {

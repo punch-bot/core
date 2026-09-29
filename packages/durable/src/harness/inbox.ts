@@ -115,3 +115,17 @@ export async function removeInboxItem(tx: Tx, conversationId: ConversationId, id
 	const index = items.findIndex((item) => item.id === id);
 	if (index >= 0) items.splice(index, 1);
 }
+
+/**
+ * Withdraw every queued input of a conversation, as `Conversation.abort()` and abort cascades do: each settles
+ * `unanswered` with `aborted` and leaves the inbox; queued writes stay for later placement.
+ */
+export async function withdrawQueuedInputs(tx: Tx, conversationId: ConversationId): Promise<void> {
+	const items = (await tx.doc(InboxDoc, conversationId)).items;
+	for (let index = items.length - 1; index >= 0; index--) {
+		const item = items[index]!;
+		if (item.mode === "write") continue;
+		tx.settleSubmission(item.id, { status: "unanswered", reason: "aborted" });
+		items.splice(index, 1);
+	}
+}

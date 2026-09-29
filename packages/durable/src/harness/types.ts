@@ -100,11 +100,16 @@ export type AnyTask = {
 /** Hook handler map declared by a task definition. */
 export type HooksOf<K> = K extends Task<infer _I, infer _S, infer _R, infer H> ? H : never;
 
-/** Invocation-bound conversation operations available to tools. */
+/**
+ * Invocation-bound conversation operations for tasks and tools. Rejects after the invocation ends; passive entries are
+ * written with ordinary transaction writes instead.
+ */
 export interface ConversationHandle {
 	readonly id: ConversationId;
 	submit(submission: InputSubmissionDraft, context: Context): Promise<Submission>;
+	/** `Conversation.abort()`: withdraw queued inputs, abort the ordinary ownership scope, and wait until it is idle. */
 	abort(context: Context): Promise<void>;
+	/** Resolve when the conversation's ordinary ownership scope has no live non-background task. */
 	waitForIdle(context: Context): Promise<void>;
 }
 
@@ -168,7 +173,8 @@ export interface ToolExecutionApi extends DocumentObserver, DocumentReader {
 	): Promise<TaskId<R>>;
 	getTask<R>(id: TaskId<R>, context: Context): Promise<TaskRecord<JsonValue, JsonValue, R> | undefined>;
 	waitForTask<R>(id: TaskId<R>, context: Context): Promise<SettledTask<R>>;
-	// conversation() arrives with ConversationHandle in Package 18.
+	/** Invocation-bound handle of an existing conversation, such as one this tool created in `commit()`. */
+	conversation(id: ConversationId, context: Context): Promise<ConversationHandle | undefined>;
 }
 
 /** Executable tool registered in a registry. Only pi-ai `Tool` fields enter the transcript. */
@@ -448,7 +454,15 @@ export interface Conversation {
 		context: Context,
 	): Promise<Page<EntryRecord, Cursor>>;
 	fork(at: EntryId, options: ConversationCreateOptions, context: Context): Promise<Conversation>;
-	/** Resolve when no live non-background task belongs to this conversation. */
+	/**
+	 * Withdraw queued inputs (queued writes stay), mark every live non-background task of the ordinary ownership scope,
+	 * signal them, and resolve once the scope is idle. Background subtrees survive.
+	 */
+	abort(context: Context): Promise<void>;
+	/**
+	 * Resolve when the ordinary ownership scope has no live non-background task: this conversation and the conversations
+	 * owned, transitively, by its non-background tasks.
+	 */
 	waitForIdle(context: Context): Promise<void>;
 	/** The structural view (spec §9.3) as a disposable read-only Chord state. */
 	viewState(context: Context): Promise<AttachedReplicatedState<ConversationView>>;
@@ -489,7 +503,7 @@ export interface Harness extends Session {
 	abortTask(id: TaskId, context: Context): Promise<"marked" | "terminal">;
 	/** Resolve with the terminal receipt; cancelling `context` cancels only this wait. */
 	waitForTask<R>(id: TaskId<R>, context: Context): Promise<SettledTask<R>>;
-	/** Resolve when no live non-background task exists. */
+	/** Resolve when the ordinary ownership scope of every ownerless conversation has no live non-background task. */
 	waitForIdle(context: Context): Promise<void>;
 	/** Session total: every conversation's `pi.usage` summed. */
 	usage(context: Context): Promise<UsageState>;

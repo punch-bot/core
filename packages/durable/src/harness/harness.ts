@@ -1,5 +1,5 @@
 import type { AttachedReplicatedState, Context, Draft, JsonValue } from "@punch-bot/chord";
-import { withoutAbortSignal } from "@punch-bot/chord/context";
+import { withAbortSignal, withoutAbortSignal } from "@punch-bot/chord/context";
 import type { ModelThinkingLevel } from "@punch-bot/ai";
 import { ResetEntry } from "../entries.ts";
 import { SessionImpl } from "../session/session.ts";
@@ -23,14 +23,16 @@ import type {
 import { ROOT_CONVERSATION_ID } from "../types.ts";
 import { ConversationConfig, type ConversationConfigState, DEFAULT_RETRY_POLICY } from "./config.ts";
 import { readContext } from "./context.ts";
+import { withdrawQueuedInputs } from "./inbox.ts";
 import { settleSchedulerOutcome } from "./live.ts";
 import { BUILTIN_SETUP_KEY, BUILTIN_TASKS } from "./registry.ts";
-import { TaskScheduler } from "./scheduler.ts";
+import { type InvocationBinding, TaskScheduler } from "./scheduler.ts";
 import { Submissions } from "./submissions.ts";
 import type {
 	ContextView,
 	Conversation,
 	ConversationCreateOptions,
+	ConversationHandle,
 	ConversationInit,
 	ConversationRetryPolicy,
 	ConversationStreamOptions,
@@ -214,6 +216,11 @@ class ConversationImpl<Tool extends ToolRegistration> implements Conversation {
 		);
 	}
 
+	abort(context: Context): Promise<void> {
+		this.#host.tasks.resume();
+		return this.#host.tasks.abortConversation(this.id, context);
+	}
+
 	waitForIdle(context: Context): Promise<void> {
 		this.#host.tasks.resume();
 		return this.#host.tasks.waitForIdle(this.id, context);
@@ -265,6 +272,11 @@ class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements 
 			now,
 			report: options.onReport ?? (() => {}),
 			settleOutcome: settleSchedulerOutcome,
+			withdrawInputs: withdrawQueuedInputs,
+			conversation: async (id, binding, callContext) => {
+				const record = await this.readOnLine(() => storage.conversation(id, callContext));
+				return record === undefined ? undefined : boundConversation(id, binding, this.#submissions, this.#tasks);
+			},
 			context: withoutAbortSignal(context),
 		});
 		this.#submissions = new Submissions(this, storage, now, () => this.#tasks.resume());
@@ -415,6 +427,40 @@ class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements 
 	#assertOpen(): void {
 		if (this.#closed) throw new Error("Harness is closed");
 	}
+}
+
+/**
+ * Invocation-bound handle for tasks and tools. Every operation, and every operation of a submission it returns, first
+ * checks the invocation and runs under its signal, so it rejects once the invocation ends; admitted work stays durable.
+ */
+function boundConversation(
+	id: ConversationId,
+	binding: InvocationBinding,
+	submissions: Submissions,
+	tasks: TaskScheduler,
+): ConversationHandle {
+	const bind = (context: Context): Context => withAbortSignal(binding.signal, context);
+	const bound = <T>(operation: (context: Context) => Promise<T>) => {
+		return async (context: Context): Promise<T> => {
+			binding.check();
+			return operation(bind(context));
+		};
+	};
+	return {
+		id,
+		submit: async (draft, context) => {
+			binding.check();
+			const submission = await submissions.submit(id, draft, bind(context));
+			return {
+				id: submission.id,
+				status: bound((callContext) => submission.status(callContext)),
+				wait: bound((callContext) => submission.wait(callContext)),
+				abort: bound((callContext) => submission.abort(callContext)),
+			};
+		},
+		abort: bound((callContext) => tasks.abortConversation(id, callContext)),
+		waitForIdle: bound((callContext) => tasks.waitForIdle(id, callContext)),
+	};
 }
 
 /** Reject names newly added relative to `previous` that `snapshot` does not register; existing names are never rechecked. */

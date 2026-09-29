@@ -2,7 +2,7 @@ import type { AttachedReplicatedState, Context, Draft, JsonValue } from "@punch-
 import type { Op } from "@punch-bot/chord/delta";
 import type { Message, Models } from "@punch-bot/ai";
 import type { ExecutionEnv } from "./env/index.ts";
-import type { ContextView, RegistrySnapshot, SettledTask } from "./harness/types.ts";
+import type { ContextView, ConversationHandle, RegistrySnapshot, SettledTask } from "./harness/types.ts";
 
 /** JSON object used as the root of every durable document. */
 export type JsonObject = { [key: string]: JsonValue };
@@ -194,6 +194,11 @@ export interface TaskRuntime<I, S, R, H extends object> extends DocumentObserver
 	getTask<T>(id: TaskId<T>, context: Context): Promise<TaskRecord<JsonValue, JsonValue, T> | undefined>;
 	/** Resolve with the task's terminal receipt; rejects when the invocation ends. */
 	waitForTask<T>(id: TaskId<T>, context: Context): Promise<SettledTask<T>>;
+	/**
+	 * Invocation-bound handle of an existing conversation, for example one this task owns; `undefined` when absent. Its
+	 * operations and the submissions it returns reject after the invocation ends; admitted work stays durable.
+	 */
+	conversation(id: ConversationId, context: Context): Promise<ConversationHandle | undefined>;
 	/** Committed entry visible from the task's conversation. */
 	entry(id: EntryId, context: Context): Promise<EntryRecord | undefined>;
 	/** Undefined when the entry is absent, not visible, or has another kind. */
