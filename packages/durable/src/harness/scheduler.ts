@@ -8,7 +8,6 @@ import type {
 	ConversationId,
 	DocumentWatch,
 	JsonObject,
-	NextTaskState,
 	RunningTask,
 	Storage,
 	TaskDefinition,
@@ -17,9 +16,17 @@ import type {
 	TaskRecord,
 	TaskRuntime,
 	TaskState,
-	Tx,
 } from "../types.ts";
-import type { AnyTask, RegistryReader, RegistrySnapshot, SettledTask } from "./types.ts";
+import { readContext } from "./context.ts";
+import type {
+	AnyTask,
+	HarnessInspection,
+	RegistryReader,
+	RegistrySnapshot,
+	SettledTask,
+	TaskInspection,
+} from "./types.ts";
+import { closedError, scanAll, Waiters } from "./util.ts";
 
 type AnyTaskRecord = TaskRecord<JsonValue, JsonValue, JsonValue>;
 type LiveTaskRecord = Extract<AnyTaskRecord, { readonly state: { readonly status: "pending" | "running" } }>;
@@ -38,6 +45,11 @@ type BlockedReason = "missing_task" | "task_too_old" | "migration_failed";
 type Resolution =
 	| { readonly kind: "ready"; readonly task: AnyTask; readonly record: LiveTaskRecord }
 	| { readonly kind: "blocked"; readonly reason: BlockedReason };
+
+/** A definition that can take a record, or why none can; deciding it runs no task code. */
+type Fit =
+	| { readonly task: AnyTask; readonly migrates: boolean }
+	| { readonly reason: BlockedReason; readonly error?: unknown };
 
 /** One in-memory execution of a task in run or abort mode. */
 type Invocation = {
@@ -66,7 +78,11 @@ type ReportedTask = { readonly task: AnyTask | undefined } | undefined;
 /** Outcome of the phase that just returned, judged by the next step. */
 type PhaseResult = { readonly checkpoint: Checkpoint; readonly failure?: { readonly error: unknown } };
 
-type Waiter<T> = { readonly resolve: (value: T) => void; readonly reject: (error: unknown) => void };
+/** Step decision: continue with the next phase, end the invocation, or end it by writing terminal `faulted`. */
+type Decision = boolean | { readonly fault: unknown };
+
+/** Terminal outcomes the scheduler writes without running task code. */
+export type SchedulerOutcome = Extract<TaskOutcome<JsonValue>, { readonly status: "faulted" | "orphaned" }>;
 
 export type TaskSchedulerOptions = {
 	readonly session: SessionImpl;
@@ -75,6 +91,8 @@ export type TaskSchedulerOptions = {
 	readonly models: Models;
 	readonly now: () => number;
 	readonly report: (error: unknown) => void;
+	/** Harness cleanup staged in the same commit as every terminal outcome the scheduler writes itself. */
+	readonly settleOutcome: (tx: Transaction, record: AnyTaskRecord, outcome: SchedulerOutcome) => Promise<void>;
 	/** Context for scheduler commits and invocations; carries no caller cancellation. */
 	readonly context: Context;
 };
@@ -97,14 +115,15 @@ export class TaskScheduler {
 	readonly #models: Models;
 	readonly #now: () => number;
 	readonly #report: (error: unknown) => void;
+	readonly #settleOutcome: TaskSchedulerOptions["settleOutcome"];
 	readonly #context: Context;
 	readonly #live = new Map<TaskId, LiveTaskRecord>();
 	readonly #invocations = new Map<TaskId, Invocation>();
-	readonly #taskWaiters = new Map<TaskId, Set<Waiter<SettledTask<JsonValue>>>>();
+	readonly #taskWaiters = new Waiters<TaskId, SettledTask<JsonValue>>();
 	/** Idle waiters by conversation; `undefined` waits for the whole Harness. */
-	readonly #idleWaiters = new Map<ConversationId | undefined, Set<Waiter<void>>>();
+	readonly #idleWaiters = new Waiters<ConversationId | undefined, void>();
 	/** Definition whose migration failed per task; retried only once the registry resolves another definition. */
-	readonly #failedMigrations = new Map<TaskId, AnyTask>();
+	readonly #failedMigrations = new Map<TaskId, { readonly task: AnyTask; readonly error: unknown }>();
 	#unsubscribeRegistry: () => void = () => {};
 	#enabled = false;
 	#closing = false;
@@ -118,6 +137,7 @@ export class TaskScheduler {
 		this.#models = options.models;
 		this.#now = options.now;
 		this.#report = options.report;
+		this.#settleOutcome = options.settleOutcome;
 		this.#context = options.context;
 	}
 
@@ -127,23 +147,18 @@ export class TaskScheduler {
 		this.#session.subscribeClose(() => this.#seal());
 		this.#unsubscribeRegistry = this.#registry.subscribe(() => this.#kick());
 		await this.#session.commitWith(async (tx) => {
-			const running: LiveTaskRecord[] = [];
-			for (const status of ["pending", "running"] as const) {
-				let cursor: Parameters<Tx["scanTasks"]>[2];
-				do {
-					const page = await tx.scanTasks({ status }, SCAN_PAGE_SIZE, cursor);
-					for (const record of page.items as readonly LiveTaskRecord[]) {
-						this.#live.set(record.id, record);
-						if (status === "running") running.push(record);
-					}
-					cursor = page.next;
-				} while (cursor !== undefined);
-			}
-			for (const record of running)
+			const scan = (status: "pending" | "running") =>
+				scanAll((cursor) => tx.scanTasks({ status }, SCAN_PAGE_SIZE, cursor)) as Promise<LiveTaskRecord[]>;
+			const pending = await scan("pending");
+			const running = await scan("running");
+			for (const record of [...pending, ...running]) this.#live.set(record.id, record);
+			for (const record of running) {
 				tx.setTask(withState(record, { status: "pending", checkpoint: record.state.checkpoint }));
+			}
 		}, context);
 	}
 
+	/** Enable scheduling. Idempotent; the kick does nothing once closing. */
 	resume(): void {
 		this.#enabled = true;
 		this.#kick();
@@ -168,7 +183,7 @@ export class TaskScheduler {
 			if (invocation === undefined) {
 				const resolution = this.#resolve(live, this.#registry.snapshot());
 				if (resolution.kind === "blocked") {
-					tx.setTask(withState(live, terminal({ status: "orphaned", reason: resolution.reason })));
+					await this.#terminate(tx, live, { status: "orphaned", reason: resolution.reason });
 					return { result: "marked" as const };
 				}
 			}
@@ -186,7 +201,7 @@ export class TaskScheduler {
 		// Check and register on the line so no terminal publication falls between them.
 		const found = await this.#session.readOnLine(async () => {
 			if (this.#closing) throw closedError();
-			if (this.#live.has(id)) return { promise: addWaiter(this.#taskWaiters, id, context) };
+			if (this.#live.has(id)) return { promise: this.#taskWaiters.add(id, context) };
 			const record = await this.#storage.task(id, context);
 			if (record === undefined) throw new Error(`Task ${id} does not exist`);
 			return { promise: Promise.resolve(record as SettledTask<JsonValue>) };
@@ -198,7 +213,7 @@ export class TaskScheduler {
 	waitForIdle(conversationId: ConversationId | undefined, context: Context): Promise<void> {
 		if (this.#closing) return Promise.reject(closedError());
 		if (this.#idle(conversationId)) return Promise.resolve();
-		return addWaiter(this.#idleWaiters, conversationId, context);
+		return this.#idleWaiters.add(conversationId, context);
 	}
 
 	// ─── Scheduling ────────────────────────────────────────────────────────
@@ -215,11 +230,11 @@ export class TaskScheduler {
 			}
 			this.#live.delete(record.id);
 			this.#failedMigrations.delete(record.id);
-			settleWaiters(this.#taskWaiters, record.id, (waiter) => waiter.resolve(record as SettledTask<JsonValue>));
+			this.#taskWaiters.resolve(record.id, record as SettledTask<JsonValue>);
 		}
 		if (!changed) return;
-		for (const conversationId of [...this.#idleWaiters.keys()]) {
-			if (this.#idle(conversationId)) settleWaiters(this.#idleWaiters, conversationId, (waiter) => waiter.resolve());
+		for (const conversationId of this.#idleWaiters.keys()) {
+			if (this.#idle(conversationId)) this.#idleWaiters.resolve(conversationId);
 		}
 		this.#kick();
 	}
@@ -229,8 +244,8 @@ export class TaskScheduler {
 		this.#closing = true;
 		this.#unsubscribeRegistry();
 		const error = closedError();
-		for (const id of [...this.#taskWaiters.keys()]) settleWaiters(this.#taskWaiters, id, (w) => w.reject(error));
-		for (const id of [...this.#idleWaiters.keys()]) settleWaiters(this.#idleWaiters, id, (w) => w.reject(error));
+		this.#taskWaiters.rejectAll(error);
+		this.#idleWaiters.rejectAll(error);
 		for (const invocation of this.#invocations.values()) invocation.controller.abort();
 	}
 
@@ -266,22 +281,13 @@ export class TaskScheduler {
 				// Taken once per pass, and only when some task is a candidate.
 				let snapshot: RegistrySnapshot | undefined;
 				for (const record of [...this.#live.values()]) {
-					if (this.#invocations.has(record.id)) continue;
+					if (this.#invocations.has(record.id) || this.#waitingOn(record).length > 0) continue;
 					const mode = record.abortRequested ? "abort" : "run";
-					// An abort mark bypasses dependencies; a task already running has passed them.
-					if (
-						mode === "run" &&
-						record.state.status === "pending" &&
-						record.after.some((id) => this.#live.has(id))
-					) {
-						continue;
-					}
 					snapshot ??= this.#registry.snapshot();
 					const resolution = this.#resolve(record, snapshot);
 					if (resolution.kind === "blocked") {
-						if (mode === "abort") {
-							tx.setTask(withState(record, terminal({ status: "orphaned", reason: resolution.reason })));
-						}
+						if (mode === "abort")
+							await this.#terminate(tx, record, { status: "orphaned", reason: resolution.reason });
 						continue;
 					}
 					if (resolution.record !== record || record.state.status !== "running") {
@@ -309,39 +315,65 @@ export class TaskScheduler {
 
 	/** Resolve the record's definition by kind, migrating an older stored version. */
 	#resolve(record: LiveTaskRecord, snapshot: RegistrySnapshot): Resolution {
-		const task = snapshot.task(record.kind);
-		if (task === undefined) return { kind: "blocked", reason: "missing_task" };
-		const definition = erased(task);
-		if (definition.version === record.version) return { kind: "ready", task, record };
-		if (definition.version < record.version) return { kind: "blocked", reason: "task_too_old" };
-		if (this.#failedMigrations.get(record.id) === task) return { kind: "blocked", reason: "migration_failed" };
+		const fit = this.#fit(record, snapshot.task(record.kind));
+		if ("reason" in fit) return { kind: "blocked", reason: fit.reason };
+		if (!fit.migrates) return { kind: "ready", task: fit.task, record };
+		const definition = erased(fit.task);
 		try {
-			if (definition.migrate === undefined) {
-				throw new Error(
-					`Task ${record.kind} version ${definition.version} has no migration from ${record.version}`,
-				);
-			}
+			if (definition.migrate === undefined) throw missingMigration(record, definition);
 			const migrated = definition.migrate(record.input, record.state.checkpoint, record.version);
-			const migratedRecord = {
-				...record,
-				version: definition.version,
-				input: copyJson(migrated.input),
-				state: { status: record.state.status, checkpoint: copyJson(migrated.checkpoint) },
-			} as LiveTaskRecord;
-			return { kind: "ready", task, record: migratedRecord };
+			const state = { status: record.state.status, checkpoint: copyJson(migrated.checkpoint) };
+			const migratedRecord = { ...record, version: definition.version, input: copyJson(migrated.input), state };
+			return { kind: "ready", task: fit.task, record: migratedRecord as LiveTaskRecord };
 		} catch (error) {
-			this.#failedMigrations.set(record.id, task);
+			this.#failedMigrations.set(record.id, { task: fit.task, error });
 			this.#report(error);
 			return { kind: "blocked", reason: "migration_failed" };
 		}
 	}
 
+	#fit(record: LiveTaskRecord, task: AnyTask | undefined): Fit {
+		if (task === undefined) return { reason: "missing_task" };
+		const version = task.definition.version;
+		if (version === record.version) return { task, migrates: false };
+		if (version < record.version) return { reason: "task_too_old" };
+		const failed = this.#failedMigrations.get(record.id);
+		if (failed?.task === task) return { reason: "migration_failed", error: failed.error };
+		return { task, migrates: true };
+	}
+
+	/** Live dependencies a run waits for; an abort mark bypasses them and a running task has passed them. */
+	#waitingOn(record: LiveTaskRecord): TaskId[] {
+		if (record.abortRequested || record.state.status !== "pending") return [];
+		return record.after.filter((id) => this.#live.has(id));
+	}
+
+	/**
+	 * Scheduling state and every live task with its derived state, read on the Session line. Runs no task code: a
+	 * pending migration shows as `ready` with `migrates`, and only a migration the scheduler already tried, or one that
+	 * cannot exist, shows as failed.
+	 */
+	inspect(snapshot: RegistrySnapshot): { scheduling: HarnessInspection["scheduling"]; tasks: TaskInspection[] } {
+		const tasks: TaskInspection[] = [];
+		for (const record of this.#live.values()) tasks.push({ record, state: this.#inspectTask(record, snapshot) });
+		const scheduling = this.#closing ? "closing" : this.#enabled ? "running" : "paused";
+		return { scheduling, tasks };
+	}
+
+	#inspectTask(record: LiveTaskRecord, snapshot: RegistrySnapshot): TaskInspection["state"] {
+		if (this.#invocations.has(record.id)) return { kind: "running" };
+		const fit = this.#fit(record, snapshot.task(record.kind));
+		if ("reason" in fit) return { kind: "blocked", ...fit };
+		if (fit.migrates && fit.task.definition.migrate === undefined) {
+			return { kind: "blocked", reason: "migration_failed", error: missingMigration(record, erased(fit.task)) };
+		}
+		const on = this.#waitingOn(record);
+		return on.length > 0 ? { kind: "waiting", on } : { kind: "ready", migrates: fit.migrates };
+	}
+
 	#createInvocation(record: LiveTaskRecord, mode: "run" | "abort"): Invocation {
 		const controller = new AbortController();
-		let finish!: () => void;
-		const done = new Promise<void>((resolve) => {
-			finish = resolve;
-		});
+		const { promise: done, resolve: finish } = Promise.withResolvers<void>();
 		const invocation: Invocation = {
 			taskId: record.id,
 			conversationId: record.conversationId,
@@ -351,7 +383,7 @@ export class TaskScheduler {
 			watches: new Set(),
 			ended: false,
 			done,
-			finish,
+			finish: () => finish(),
 		};
 		this.#invocations.set(record.id, invocation);
 		return invocation;
@@ -402,20 +434,16 @@ export class TaskScheduler {
 		current: ErasedRunningTask,
 		previous: PhaseResult | undefined,
 		state: { task: AnyTask; snapshot: RegistrySnapshot; reported: ReportedTask },
-	): boolean {
+	): Decision {
 		// 3. abort mark: end; the next drain starts a fresh abort invocation.
 		if (current.abortRequested) return false;
 		if (previous === undefined) return true;
 		// 4. uncaught error.
-		if (previous.failure !== undefined) {
-			tx.setTask(faulted(current, previous.failure.error));
-			return false;
-		}
+		if (previous.failure !== undefined) return { fault: previous.failure.error };
 		// 6. no durable progress.
 		if (jsonEqual(current.state.checkpoint, previous.checkpoint)) {
 			const message = `Task ${current.kind} phase ${previous.checkpoint.phase} returned without durable progress`;
-			tx.setTask(faulted(current, new Error(message)));
-			return false;
+			return { fault: new Error(message) };
 		}
 		// 5. progress: refresh the snapshot; hand over to a replacement definition that can take the task.
 		state.snapshot = this.#registry.snapshot();
@@ -449,26 +477,29 @@ export class TaskScheduler {
 			failure = { error };
 		}
 		const message = `Abort handler of task ${invocation.taskId} returned without a terminal outcome`;
-		await this.#step(invocation, (tx, current) => {
-			tx.setTask(faulted(current, failure?.error ?? new Error(message)));
-			return false;
-		});
+		await this.#step(invocation, () => ({ fault: failure?.error ?? new Error(message) }));
 	}
 
 	/**
 	 * One synchronous decision on the Session line. A terminal task (rule 1) or a closing Harness (rule 2) ends the
 	 * invocation without a write; otherwise `decide` may stage a write and returns whether the invocation continues.
-	 * Ending happens inside the callback. A rejected step, such as admission after close, also ends the invocation.
+	 * Ending happens inside the callback, before a fault's Harness cleanup. A rejected step, such as admission after
+	 * close, also ends the invocation.
 	 */
 	async #step(
 		invocation: Invocation,
-		decide: (tx: Transaction, current: ErasedRunningTask) => boolean,
+		decide: (tx: Transaction, current: ErasedRunningTask) => Decision,
 	): Promise<ErasedRunningTask | undefined> {
 		try {
-			return await this.#session.commitWith((tx) => {
+			return await this.#session.commitWith(async (tx) => {
 				const current = this.#live.get(invocation.taskId) as ErasedRunningTask | undefined;
-				if (current !== undefined && !this.#closing && decide(tx, current)) return current;
+				const decision = current !== undefined && !this.#closing ? decide(tx, current) : false;
+				if (decision === true) return current;
 				this.#end(invocation);
+				if (decision !== false) {
+					const message = decision.fault instanceof Error ? decision.fault.message : String(decision.fault);
+					await this.#terminate(tx, current!, { status: "faulted", error: { message } });
+				}
 				return undefined;
 			}, this.#context);
 		} catch (error) {
@@ -476,6 +507,12 @@ export class TaskScheduler {
 			if (!this.#closing) this.#report(error);
 			return undefined;
 		}
+	}
+
+	/** Write a scheduler-decided terminal outcome together with its Harness cleanup. */
+	#terminate(tx: Transaction, record: LiveTaskRecord, outcome: SchedulerOutcome): Promise<void> {
+		tx.setTask(withState(record, { status: "terminal", outcome }));
+		return this.#settleOutcome(tx, record, outcome);
 	}
 
 	/** End an invocation: its runtime operations reject from now on, its watches stop, and its task is free. */
@@ -514,13 +551,43 @@ export class TaskScheduler {
 					},
 					context,
 				),
-			memo: ((name: string, ...rest: readonly unknown[]) =>
-				rest.length === 1
-					? this.#readMemo(invocation, name)
-					: this.#writeMemo(invocation, name, rest[0] as JsonValue, rest[1] as Context)) as ErasedRuntime["memo"],
+			memo: ((name: string, ...rest: readonly unknown[]) => {
+				if (rest.length === 1) {
+					return this.#read(invocation, async () => memoOf(this.#live.get(invocation.taskId), name));
+				}
+				const candidate = rest[0] as JsonValue;
+				return this.#gated(
+					invocation,
+					(tx, current) => {
+						const winner = memoOf(current, name);
+						if (winner !== undefined) return winner;
+						tx.setTask({ ...current, memos: { ...current.memos, [name]: candidate } } as AnyTaskRecord);
+						return candidate;
+					},
+					rest[1] as Context,
+				);
+			}) as ErasedRuntime["memo"],
 			sleep: (until, context) => this.#sleep(invocation, until, context),
 			watchDoc: ((...args: readonly unknown[]) => this.#watchDoc(invocation, args)) as ErasedRuntime["watchDoc"],
+			snapshot: ((...args: readonly unknown[]) =>
+				this.#read(invocation, () =>
+					sessionMethod(this.#session, "snapshot")(...args),
+				)) as ErasedRuntime["snapshot"],
+			snapshotAsOf: ((...args: readonly unknown[]) =>
+				this.#read(invocation, () =>
+					sessionMethod(this.#session, "snapshotAsOf")(...args),
+				)) as ErasedRuntime["snapshotAsOf"],
+			context: (conversationId, context, at) =>
+				this.#read(invocation, () => readContext(this.#session, this.#storage, conversationId, context, at)),
+			now: () => this.#now(),
+			report: (error) => this.#report(error),
 		};
+	}
+
+	/** Run a committed-state read unless the invocation has ended. */
+	async #read<T>(invocation: Invocation, read: () => Promise<T>): Promise<T> {
+		if (invocation.ended) throw endedError(invocation);
+		return read();
 	}
 
 	/** Commit after rereading the task on the line and gating the invocation. */
@@ -542,25 +609,7 @@ export class TaskScheduler {
 				return change(tx, current);
 			},
 			context,
-			invocation.conversationId,
-		);
-	}
-
-	#readMemo(invocation: Invocation, name: string): Promise<JsonValue | undefined> {
-		if (invocation.ended) return Promise.reject(endedError(invocation));
-		return Promise.resolve(memoOf(this.#live.get(invocation.taskId), name));
-	}
-
-	#writeMemo(invocation: Invocation, name: string, candidate: JsonValue, context: Context): Promise<JsonValue> {
-		return this.#gated(
-			invocation,
-			(tx, current) => {
-				const winner = memoOf(current, name);
-				if (winner !== undefined) return winner;
-				tx.setTask({ ...current, memos: { ...current.memos, [name]: candidate } } as AnyTaskRecord);
-				return candidate;
-			},
-			context,
+			{ conversationId: invocation.conversationId, taskId: invocation.taskId },
 		);
 	}
 
@@ -580,10 +629,7 @@ export class TaskScheduler {
 
 	async #watchDoc(invocation: Invocation, args: readonly unknown[]): Promise<DocumentWatch<JsonObject> | undefined> {
 		if (invocation.ended) throw endedError(invocation);
-		const watchDoc = this.#session.watchDoc.bind(this.#session) as (
-			...args: readonly unknown[]
-		) => Promise<DocumentWatch<JsonObject> | undefined>;
-		const watch = await watchDoc(...args);
+		const watch = (await sessionMethod(this.#session, "watchDoc")(...args)) as DocumentWatch<JsonObject> | undefined;
 		if (watch === undefined) return undefined;
 		if (invocation.ended) {
 			void watch.stop();
@@ -601,25 +647,24 @@ function memoOf(record: LiveTaskRecord | undefined, name: string): JsonValue | u
 	return memos !== undefined && Object.hasOwn(memos, name) ? memos[name] : undefined;
 }
 
+/** Overloaded Session method bound for forwarding an argument list unchanged. */
+function sessionMethod(
+	session: SessionImpl,
+	name: "snapshot" | "snapshotAsOf" | "watchDoc",
+): (...args: readonly unknown[]) => Promise<unknown> {
+	return (session[name] as (...args: readonly unknown[]) => Promise<unknown>).bind(session);
+}
+
+function missingMigration(record: LiveTaskRecord, definition: ErasedDefinition): Error {
+	return new Error(`Task ${record.kind} version ${definition.version} has no migration from ${record.version}`);
+}
+
 function erased(task: AnyTask): ErasedDefinition {
 	return task.definition as unknown as ErasedDefinition;
 }
 
 function endedError(invocation: Invocation): Error {
 	return new Error(`Task ${invocation.taskId} invocation has ended`);
-}
-
-function closedError(): Error {
-	return new Error("Harness is closed");
-}
-
-function terminal(outcome: TaskOutcome<JsonValue>): NextTaskState<JsonValue, JsonValue> {
-	return { status: "terminal", outcome };
-}
-
-function faulted(record: LiveTaskRecord, error: unknown): AnyTaskRecord {
-	const message = error instanceof Error ? error.message : String(error);
-	return withState(record, terminal({ status: "faulted", error: { message } }));
 }
 
 /** Replace a live record's state; memos disappear in the terminal replacement. */
@@ -637,45 +682,6 @@ function canReserve(task: AnyTask, record: LiveTaskRecord): boolean {
 	);
 }
 
-/** Wait in `waiters[key]` until settled or `context` is cancelled. */
-function addWaiter<K, T>(waiters: Map<K, Set<Waiter<T>>>, key: K, context: Context): Promise<T> {
-	return new Promise<T>((resolve, reject) => {
-		const signal = context.abortSignal;
-		if (signal?.aborted) return reject(signal.reason);
-		let set = waiters.get(key);
-		if (set === undefined) {
-			set = new Set();
-			waiters.set(key, set);
-		}
-		const own = set;
-		const remove = (): void => {
-			own.delete(waiter);
-			if (own.size === 0 && waiters.get(key) === own) waiters.delete(key);
-			signal?.removeEventListener("abort", onAbort);
-		};
-		const waiter: Waiter<T> = {
-			resolve: (value) => {
-				remove();
-				resolve(value);
-			},
-			reject: (error) => {
-				remove();
-				reject(error);
-			},
-		};
-		const onAbort = (): void => waiter.reject(signal!.reason);
-		signal?.addEventListener("abort", onAbort, { once: true });
-		own.add(waiter);
-	});
-}
-
-function settleWaiters<K, T>(waiters: Map<K, Set<Waiter<T>>>, key: K, settle: (waiter: Waiter<T>) => void): void {
-	const set = waiters.get(key);
-	if (set === undefined) return;
-	waiters.delete(key);
-	for (const waiter of [...set]) settle(waiter);
-}
-
 function delay(ms: number, signal: AbortSignal): Promise<void> {
 	return new Promise((resolve, reject) => {
 		const onAbort = (): void => {
@@ -690,6 +696,7 @@ function delay(ms: number, signal: AbortSignal): Promise<void> {
 	});
 }
 
+/** Structural equality of two JSON values; object key order is ignored. */
 function jsonEqual(left: JsonValue | undefined, right: JsonValue | undefined): boolean {
 	if (left === right) return true;
 	if (typeof left !== "object" || typeof right !== "object" || left === null || right === null) return false;

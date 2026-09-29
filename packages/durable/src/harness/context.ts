@@ -1,5 +1,6 @@
 import type { Context } from "@punch-bot/chord";
 import type { AssistantMessage, Message, ToolCall, ToolResultMessage } from "@punch-bot/ai";
+import type { SessionImpl } from "../session/session.ts";
 import type { ContextEdit, ConversationId, Cursor, EntryId, EntryRecord, Storage } from "../types.ts";
 import type { ContextView } from "./types.ts";
 
@@ -14,17 +15,39 @@ export type ContextBounds = {
 };
 
 /**
- * Capture the bounds of the current context with two O(1) reads. Run this on the Session line; entries at or below
- * the tail are immutable, so `deriveContext()` can then scan them off the line.
+ * Capture the bounds of the current context, or of the context cut off at the visible entry `at`, with two O(1)
+ * reads. Run this on the Session line; entries at or below the tail are immutable, so `deriveContext()` can then scan
+ * them off the line.
  */
 export async function captureContextBounds(
 	storage: Storage,
 	conversationId: ConversationId,
 	context: Context,
+	at?: EntryId,
 ): Promise<ContextBounds | undefined> {
-	const tail = (await storage.scanEntries({ conversationId }, 1, undefined, context)).items[0];
-	if (tail === undefined) return undefined;
-	return { head: await storage.findLatestHeadMarker(conversationId, tail.id, context), tail: tail.id };
+	let tail: EntryId | undefined;
+	if (at === undefined) {
+		tail = (await storage.scanEntries({ conversationId }, 1, undefined, context)).items[0]?.id;
+		if (tail === undefined) return undefined;
+	} else {
+		if ((await storage.entry(conversationId, at, context)) === undefined) {
+			throw new Error(`Entry ${at} is not visible from conversation ${conversationId}`);
+		}
+		tail = at;
+	}
+	return { head: await storage.findLatestHeadMarker(conversationId, tail, context), tail };
+}
+
+/** Committed context of one conversation: bounds captured on the Session line, entries derived off it. */
+export async function readContext(
+	session: SessionImpl,
+	storage: Storage,
+	conversationId: ConversationId,
+	context: Context,
+	at?: EntryId,
+): Promise<ContextView> {
+	const bounds = await session.readOnLine(() => captureContextBounds(storage, conversationId, context, at));
+	return deriveContext(storage, conversationId, bounds, context);
 }
 
 /**

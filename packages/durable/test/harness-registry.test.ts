@@ -1,6 +1,6 @@
 import type { JsonValue } from "@punch-bot/chord";
 import { Type } from "@punch-bot/ai";
-import { createRegistry, defineTask, type ToolRegistration } from "@punch-bot/durable";
+import { createRegistry, defineTask, GenerationTask, type ToolRegistration } from "@punch-bot/durable";
 import { describe, expect, it } from "vitest";
 
 type AppTool = ToolRegistration & { readonly snippet?: string };
@@ -202,7 +202,7 @@ describe("registry", () => {
 		const worker = task("worker");
 		registry.tasks.add(worker);
 		expect(() => registry.tasks.add(task("worker"))).toThrow("Task worker is already registered");
-		expect(registry.tasks.list()).toEqual([worker]);
+		expect(registry.tasks.list()).toEqual([GenerationTask, worker]);
 
 		const first = { beforeRun: () => {} };
 		const second = { beforeRun: () => {} };
@@ -220,6 +220,22 @@ describe("registry", () => {
 		expect(hooks.map((hook) => hook.handlers)).toEqual([first, second]);
 		hooks[0]!.handlers.beforeRun?.();
 		expect(hooks[1]!.scope).toEqual({ conversationId: 5, subtree: true });
+	});
+
+	it("starts with undisposable, non-overridable built-in tasks", () => {
+		const registry = createRegistry();
+		expect(registry.tasks.list()).toEqual([GenerationTask]);
+		expect(registry.snapshot().task("pi.generation")).toBe(GenerationTask);
+		expect(() => registry.tasks.add({ definition: { ...GenerationTask.definition } })).toThrow(
+			"Task pi.generation is already registered",
+		);
+		expect(
+			registry
+				.snapshot()
+				.conversationSetups()
+				.map(({ key }) => key),
+		).toEqual(["pi"]);
+		expect(() => registry.conversations.setup("pi", () => {})).toThrow("Setup pi is already registered");
 	});
 
 	it("keeps application tool fields on listed tools", () => {

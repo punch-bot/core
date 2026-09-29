@@ -1,8 +1,15 @@
 export { defineDoc, defineDocFamily } from "./documents.ts";
-export { defineEntry } from "./entries.ts";
-export { ReadAfterWrite, StorageRejected } from "./errors.ts";
+export { AssistantEntry, defineEntry, SystemEntry, ToolResultEntry, UserEntry } from "./entries.ts";
+export { ConversationBusy, ReadAfterWrite, StorageRejected } from "./errors.ts";
 export { ConversationConfig, type ConversationConfigState } from "./harness/config.ts";
+export {
+	type GenerationCheckpoint,
+	type GenerationInput,
+	type GenerationResult,
+	GenerationTask,
+} from "./harness/generation.ts";
 export { Harness } from "./harness/harness.ts";
+export { LiveDoc, type LiveState } from "./harness/live.ts";
 export { createRegistry } from "./harness/registry.ts";
 export type {
 	AnyTask,
@@ -11,8 +18,10 @@ export type {
 	ConversationCreateOptions,
 	ConversationHandle,
 	ConversationInit,
-	DocumentReader,
-	Entry,
+	ConversationRetryPolicy,
+	ConversationSetup,
+	ConversationStreamOptions,
+	HarnessInspection,
 	HarnessOptions,
 	HookRegistration,
 	HookScope,
@@ -31,6 +40,7 @@ export type {
 	SettledTask,
 	Submission,
 	SubmissionDraft,
+	TaskInspection,
 	ToolControl,
 	ToolExecutionApi,
 	ToolExecutionResult,
@@ -67,10 +77,12 @@ export type {
 	DocumentObserver,
 	DocumentPoint,
 	DocumentQuery,
+	DocumentReader,
 	DocumentRecord,
 	DocumentSemantics,
 	DocumentState,
 	DocumentWatch,
+	Entry,
 	EntryDraft,
 	EntryId,
 	EntryQuery,
@@ -94,7 +106,9 @@ export type {
 	StoredDocument,
 	SubmissionCreate,
 	SubmissionId,
+	SubmissionQuery,
 	SubmissionRecord,
+	SubmissionSettlement,
 	TableCommitChange,
 	Task,
 	TaskDefinition,
@@ -109,6 +123,8 @@ export type {
 	TaskRuntime,
 	TaskState,
 	Tx,
+	TypedEntry,
+	TypedEntryDraft,
 	WatchEnd,
 	WatchHandle,
 } from "./types.ts";

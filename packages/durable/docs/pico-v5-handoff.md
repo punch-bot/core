@@ -11,7 +11,7 @@ facades, membranes, document routing, view projection, events, or clone chains.
 
 - Obsolete `pico` and `pico4` prototypes were removed.
 - `pico3` remains.
-- Packages 1–14 are implemented in `packages/durable`; Package 10 was already satisfied by Chord's canonical structural diff implementation.
+- Packages 1–15 are implemented in `packages/durable`; Package 10 was already satisfied by Chord's canonical structural diff implementation.
 
 ## 1. Records, cursors, and memory tables
 
@@ -351,8 +351,8 @@ and the new definition can reserve the task.
 
 Deferred to later packages; do not stub them in Package 14:
 - Orphaning writes the terminal `orphaned` record and retires task documents.
-  Unanswered input submissions and clearing turn control are added in Package
-  15, when submissions and turn control exist.
+  Unanswered input submissions and clearing run control are added in Package
+  15, when submissions and run control exist.
 - `TaskRuntime.hooks` (the hook runner) is added in Package 16 with hook
   dispatch. Package 14 adds `runtime.registry` (the phase's registry snapshot)
   and `runtime.models`.
@@ -387,9 +387,9 @@ a public `markTask()` were dropped from §2.2.
 
 Implement the smallest real input-to-answer vertical path. Extend Package 14's
 `orphaned` settlement to mark affected input submissions unanswered and clear
-matching turn control in the same commit, through the Harness hook for
+matching run control in the same commit, through the Harness hook for
 scheduler-written outcomes (§5.4); the scheduler learns nothing about turns or
-task kinds. Implement the final `pi.live` document (§8.2) with `turn` and
+task kinds. Implement the final `pi.live` document (§8.2) with `run` and
 `generation`, the built-in entry kinds (§8.1), and the `pi.generation` task
 (§8.3). The inbox document is defined in Package 17 with its first writer. Add
 input `Submission` admission, request-ID deduplication, reacquisition and
@@ -539,6 +539,11 @@ Implement manual, threshold, and generation-overflow collapse; exchange-boundary
 range selection; summarization; retry policy; staleness checks; and headed
 summary entries. Wire generation's real overflow path directly to the collapse
 task, and complete `Conversation.collapse()` so it returns the admitted task ID.
+
+Generation preparation no longer rechecks the transcript before appending its
+system entries (§7.4, §12): only run tasks and turn boundaries write to a busy
+conversation. A collapse summary for a busy conversation must therefore be
+placed at a turn boundary or as a step of the run, never appended concurrently.
 
 Test model context before and after collapse, raw history preservation, provider
 failure, declined and stale work, manual/threshold/overflow admission, late-join

@@ -15,6 +15,11 @@
 - `RegistryReader` now requires `subscribe()`.
 - Removed `Tx.setTask()`; a task changes its own state by returning the next state from its `runtime.commit()` callback.
 - `Session.subscribeClose()` listeners now run synchronously when close begins, after admission is sealed.
+- `defineEntry<D>()` now takes the entry's `data` type instead of a record type; `Entry<D>.is()` narrows to `TypedEntry<D>`.
+- Added the required `Storage.scanSubmissions()` scan of submissions by conversation and status.
+- `createRegistry()` now pre-registers the built-in `pi.generation` task and `pi` conversation setup, which cannot be disposed or replaced, and `Harness.open()` rejects a registry whose snapshot lacks either.
+- `RegistrySnapshot` now requires `conversationSetups()`.
+- `Tx` now requires `settleSubmission()`.
 
 ### Added
 
@@ -28,6 +33,17 @@
 - Added `createRegistry()` for tools, tool wrappers, hooks, tasks, and system prompt sections with batched publication and stable keyed ordering.
 - Added `defineEntry()` typed entry kinds.
 - Added the durable task runtime: `defineTask()`, registry-resolved phase handlers with checkpoint progress rules decided on the Session line, migration at reservation, typed runtime commits, memos, `sleep()`, and invocation-owned watches, plus `Harness.resume()`, `getTask()`, `waitForTask()`, `abortTask()`, and task-aware `waitForIdle()` on the Harness and conversations. Open reconciles running tasks to pending; tasks without a fitting definition stay blocked until registration, and aborting them settles them as `orphaned`.
+- Added the first runnable chat turn: `Conversation.submit()` with request-ID deduplication, `Submission` handles (`status()`, `wait()`, `abort()`), `Harness.submission()`, `Harness.abortSubmission()`, and `ConversationBusy` for submissions to a busy conversation.
+- Added the built-in `pi.generation` task: positional system prompt preparation from registered sections (tags, wrappers, failures, minimal patches, order rewrites, and head-cut rebaselines), model requests through `Models`, durable throttled partials in the `pi.live` document (`LiveDoc`), retries with backoff, deferred-response polling and cancellation, and aborted-partial conversion.
+- Added `Tx.settleSubmission()`, which run tasks use to settle the inputs they answer.
+- Added built-in entry tokens `UserEntry`, `AssistantEntry`, `SystemEntry`, and `ToolResultEntry`, and token-first `tx.entry()` and `tx.appendEntry()` overloads.
+- Added `streamOptions` and `retry` to `ConversationConfig` with `get/setStreamOptions()` and `get/setRetryPolicy()` on conversations.
+- Added `snapshot()`, `snapshotAsOf()`, `context()`, `now()`, and `report()` to `TaskRuntime`.
+- Added `Harness.inspect()`: live tasks with their derived scheduler state (running, ready, waiting, or blocked with its reason), queued and placed submissions, and registry wrapper failures.
+- Entries appended by a task's runtime commits now record the task as `byTaskId`.
+- Added `registry.conversations.setup()`: setups run in every Harness commit that creates or forks a conversation, including raw `Tx.createConversation()` and `Tx.forkConversation()`, before host `init`. The built-in `pi` setup runs first and stages the default configuration with every registered tool active (forks keep their copied configuration) and an empty `pi.live`.
+- `Conversation.submit()`, `Submission.wait()`, `waitForTask()`, and `waitForIdle()` now enable task scheduling, so they never wait on a Harness whose `resume()` was not called.
+- Scheduler-written `faulted` and `orphaned` outcomes of a run task now settle the run's input submissions `unanswered` and clear its run control in the same commit.
 
 ### Fixed
 

@@ -1,14 +1,26 @@
 import type { Context, JsonValue } from "@punch-bot/chord";
-import type { Message, Models, ModelThinkingLevel, Tool, ToolResultMessage, UserMessage } from "@punch-bot/ai";
+import type {
+	CacheRetention,
+	Message,
+	Models,
+	ModelThinkingLevel,
+	Tool,
+	ToolResultMessage,
+	Transport,
+	UserMessage,
+} from "@punch-bot/ai";
 import type {
 	ConversationId,
 	ConversationOwnership,
+	ConversationRecord,
 	Cursor,
 	DocumentObserver,
+	DocumentReader,
 	EntryDraft,
 	EntryId,
 	EntryQuery,
 	EntryRecord,
+	JsonObject,
 	Page,
 	Session,
 	SubmissionId,
@@ -29,7 +41,7 @@ export type ModelRef = {
 
 export type UserInput = UserMessage["content"];
 
-/** Host submission: user input that may start a turn, or a passive entry write. */
+/** Host submission: user input that may start a run, or a passive entry write. */
 export type SubmissionDraft = {
 	readonly requestId?: string;
 } & (
@@ -80,9 +92,6 @@ export type AnyTask = {
 
 /** Hook handler map declared by a task definition. */
 export type HooksOf<K> = K extends Task<infer _I, infer _S, infer _R, infer H> ? H : never;
-
-/** Committed document reads. */
-export type DocumentReader = Pick<Session, "snapshot" | "snapshotAsOf">;
 
 /** Invocation-bound conversation operations available to tools. */
 export interface ConversationHandle {
@@ -209,6 +218,8 @@ export interface RegistrySnapshot<Tool extends ToolRegistration = ToolRegistrati
 	sections(): readonly PromptSection<Tool>[];
 	/** Wrapper failures of this state. */
 	failures(): readonly RegistryFailure[];
+	/** Conversation setups in registry order, the built-in `pi` setup first. */
+	conversationSetups(): readonly { readonly key: string; readonly setup: ConversationSetup }[];
 }
 
 /** Read side of a registry consumed by a Harness. */
@@ -239,6 +250,10 @@ export interface Registry<Tool extends ToolRegistration = ToolRegistration> exte
 		add(task: AnyTask): Registration;
 		list(): readonly AnyTask[];
 	};
+	readonly conversations: {
+		/** `key` orders setups and keeps its position on re-registration. */
+		setup(key: string, setup: ConversationSetup): Registration;
+	};
 	readonly systemPrompt: {
 		section(key: string, render: PromptSection<Tool>["render"], options?: { readonly tag?: boolean }): Registration;
 		wrap(key: string, wrapperKey: string, wrapper: PromptSectionWrapper<Tool>): Registration;
@@ -248,6 +263,18 @@ export interface Registry<Tool extends ToolRegistration = ToolRegistration> exte
 	/** Stage registrations and disposals made synchronously by `register`, then publish them at once. Cannot nest. */
 	batch(register: () => void): Registration;
 }
+
+/**
+ * Stages the documents every new conversation gets. Runs inside every Harness commit that creates or forks a
+ * conversation, including raw `Tx` creation, after fork copies and before host `init`. Table reads throw, since the
+ * conversation write came first; a fork (`conversation.parent`) already holds its copied documents. A throw fails the
+ * creating commit.
+ */
+export type ConversationSetup = (
+	tx: Tx,
+	conversation: ConversationRecord,
+	registry: RegistrySnapshot,
+) => void | Promise<void>;
 
 /**
  * Runs inside the creating commit, after the conversation and its configuration exist. The conversation creation is
@@ -260,6 +287,27 @@ export type ConversationCreateOptions = {
 	readonly init?: ConversationInit;
 };
 
+/** Curated pi-ai request options; absent fields use pi-ai defaults. */
+export type ConversationStreamOptions = {
+	transport?: Transport;
+	timeoutMs?: number;
+	/** Provider/SDK retries inside one request attempt. */
+	maxRetries?: number;
+	maxRetryDelayMs?: number;
+	headers?: Record<string, string>;
+	metadata?: JsonObject;
+	cacheRetention?: CacheRetention;
+	deferred?: boolean | { window?: "15m" | "1h" | "24h" };
+};
+
+/** Durable generation attempt retries; the JSON shape of pi-ai `RetryPolicy`. */
+export type ConversationRetryPolicy = {
+	enabled: boolean;
+	maxRetries: number;
+	baseDelayMs: number;
+	maxAgentDelayMs?: number;
+};
+
 export type HarnessOptions<Tool extends ToolRegistration = ToolRegistration> = {
 	/** pi-ai model access used by generation. */
 	readonly models: Models;
@@ -269,11 +317,32 @@ export type HarnessOptions<Tool extends ToolRegistration = ToolRegistration> = {
 	readonly onReport?: (error: unknown) => void;
 };
 
-/** Typed entry kind with a narrowing guard. */
-export interface Entry<E extends EntryRecord = EntryRecord> {
-	readonly kind: string;
-	is(entry: EntryRecord | undefined): entry is E;
-}
+/** Live task and what the scheduler would do with it under the current registry. */
+export type TaskInspection = {
+	readonly record: TaskRecord<JsonValue, JsonValue, JsonValue>;
+	readonly state: /** An invocation is active. */
+		| { readonly kind: "running" }
+		/** The next scheduling pass reserves it; `migrates` when its definition is newer and has `migrate`. */
+		| { readonly kind: "ready"; readonly migrates: boolean }
+		/** Pending until these tasks are terminal. */
+		| { readonly kind: "waiting"; readonly on: readonly TaskId[] }
+		/** No registered definition can take it; aborting it settles it as `orphaned`. */
+		| {
+				readonly kind: "blocked";
+				readonly reason: "missing_task" | "task_too_old" | "migration_failed";
+				readonly error?: unknown;
+		  };
+};
+
+/** Point-in-time view of live work: unfinished tasks and submissions, read on the Session line. */
+export type HarnessInspection = {
+	readonly scheduling: "paused" | "running" | "closing";
+	readonly tasks: readonly TaskInspection[];
+	/** Queued and placed submissions, in ID order. */
+	readonly submissions: readonly SubmissionRecord[];
+	/** Wrapper failures of the current registry snapshot. */
+	readonly registry: readonly RegistryFailure[];
+};
 
 /** Raw active transcript and derived model context. */
 export type ContextView = {
@@ -295,6 +364,19 @@ export interface Conversation {
 	setThinkingLevel(level: ModelThinkingLevel, context: Context): Promise<void>;
 	getActiveTools(context: Context): Promise<readonly string[]>;
 	setActiveTools(names: readonly string[], context: Context): Promise<void>;
+	/** `{}` when unset. */
+	getStreamOptions(context: Context): Promise<ConversationStreamOptions>;
+	setStreamOptions(options: ConversationStreamOptions, context: Context): Promise<void>;
+	/** The default policy when unset. */
+	getRetryPolicy(context: Context): Promise<ConversationRetryPolicy>;
+	/** `undefined` removes the configured policy. */
+	setRetryPolicy(policy: ConversationRetryPolicy | undefined, context: Context): Promise<void>;
+
+	/**
+	 * Durably admit user input or a passive entry write. Until the inbox exists, a busy conversation rejects every
+	 * submission with `ConversationBusy`.
+	 */
+	submit(submission: SubmissionDraft, context: Context): Promise<Submission>;
 
 	/** Session commit whose `tx.createTask()` defaults to this conversation. */
 	commit<T>(change: (tx: Tx) => T | Promise<T>, context: Context): Promise<T>;
@@ -315,16 +397,29 @@ export interface Conversation {
 // and must not throw or call Session APIs, and Harness close will also join task invocations.
 /** Durable agent harness over one Session. */
 export interface Harness extends Session {
-	/** Enable task scheduling. Idempotent; throws after close. */
+	/**
+	 * Enable task scheduling. Idempotent; throws after close. Calls that wait for progress (`Conversation.submit()`,
+	 * `Submission.wait()`, `waitForTask()`, `waitForIdle()`) enable it too.
+	 */
 	resume(): void;
 
 	/** Return the reserved root conversation, creating it with `init` in one commit when absent. */
 	root(context: Context, options?: { readonly init?: ConversationInit }): Promise<Conversation>;
-	// Conversation activity (active/idle notifications) is specified with turn control in Package 17.
+	// Conversation activity (active/idle notifications) is specified with run control in Package 17.
 	conversation(id: ConversationId, context: Context): Promise<Conversation | undefined>;
 	createConversation(options: ConversationCreateOptions, context: Context): Promise<Conversation>;
 
 	getTask<R>(id: TaskId<R>, context: Context): Promise<TaskRecord<JsonValue, JsonValue, R> | undefined>;
+	/** Live tasks, unsettled submissions, and registry failures. Writes nothing and runs no task code. */
+	inspect(context: Context): Promise<HarnessInspection>;
+	/** Reacquire a submission, for example after reopen. */
+	submission(id: SubmissionId, context: Context): Promise<Submission | undefined>;
+	/** `not_found` for an unknown submission or one of another conversation than `conversationId`. */
+	abortSubmission(
+		id: SubmissionId,
+		context: Context,
+		conversationId?: ConversationId,
+	): Promise<"aborted" | "already_placed" | "settled" | "not_found">;
 	/**
 	 * Commit the abort mark, signal and join an active run invocation, and schedule the abort invocation. A task whose
 	 * definition cannot take it settles as `orphaned` instead.

@@ -16,6 +16,7 @@ import type {
 	ConversationDocFamilyToken,
 	ConversationDocToken,
 	ConversationId,
+	ConversationRecord,
 	DocumentAddress,
 	DocumentCommitChange,
 	DocumentState,
@@ -36,7 +37,7 @@ import type {
 	Tx,
 } from "../types.ts";
 import { RETIREMENT_OPERATIONS, SessionDocumentSource, SessionDocumentWatch } from "./observation.ts";
-import { type LoadedDocument, Transaction, type TransactionHost } from "./transaction.ts";
+import { type LoadedDocument, Transaction, type TransactionHost, type TransactionScope } from "./transaction.ts";
 
 /** Open a Session kernel over one storage backend. */
 export function createSession(storage: Storage): Session {
@@ -71,33 +72,26 @@ export class SessionImpl implements Session {
 			evict: (id, recordId) => {
 				if (this.#documents.get(id)?.record.id === recordId) this.#documents.delete(id);
 			},
+			conversationCreated: (tx, record) => this.conversationCreated(tx, record),
 		};
 	}
 
 	commit<T>(change: (tx: Tx) => T | Promise<T>, context: Context): Promise<T> {
-		try {
-			this.#assertUsable();
-		} catch (error) {
-			return Promise.reject(error);
-		}
-		return this.#enqueue(() => this.#runCommit(change, context));
+		return this.commitWith(change, context);
 	}
 
 	/**
 	 * Internal commit exposing the concrete transaction and its internal operations, such as the reserved-ID root
-	 * bootstrap and task replacement. `tx.createTask()` defaults to `defaultConversationId`.
+	 * bootstrap and task replacement. `scope` sets the default `tx.createTask()` conversation and the task attributed to
+	 * appended entries.
 	 */
-	commitWith<T>(
-		change: (tx: Transaction) => T | Promise<T>,
-		context: Context,
-		defaultConversationId?: ConversationId,
-	): Promise<T> {
+	commitWith<T>(change: (tx: Transaction) => T | Promise<T>, context: Context, scope?: TransactionScope): Promise<T> {
 		try {
 			this.#assertUsable();
 		} catch (error) {
 			return Promise.reject(error);
 		}
-		return this.#enqueue(() => this.#runCommit(change, context, defaultConversationId));
+		return this.#enqueue(() => this.#runCommit(change, context, scope));
 	}
 
 	/** Internal: run a read-only job on the mutation line so multi-read derivations observe one committed state. */
@@ -201,27 +195,15 @@ export class SessionImpl implements Session {
 				this.#assertHealthy();
 				const loaded = await this.#loadDocument(definition, resolved.id, resolved.address, context);
 				if (loaded === undefined) return undefined;
-				checkRecordScope(definition, loaded.record);
-				checkRecordVersion(definition, loaded.record, loaded.storedVersion);
-				let unsubscribeCommit = (): void => {};
-				let unsubscribeClose = (): void => {};
-				const source = new SessionDocumentSource(loaded.tracker.value, () => {
-					unsubscribeCommit();
-					unsubscribeClose();
-				});
-				const observed = { version: loaded.valueVersion };
-				unsubscribeCommit = this.subscribeCommits((publication, commitContext) => {
-					for (const change of publication.changes) {
-						if (change.type !== "document" || change.record.id !== loaded.record.id) continue;
-						source.advance(change.value, observedOperations(observed, change), withoutAbortSignal(commitContext));
-					}
-				});
-				unsubscribeClose = this.subscribeClose(() => source.closeSession());
+				const { observer: source, detach } = this.#attachDocument(
+					definition,
+					loaded,
+					(value, release) => new SessionDocumentSource(value, release),
+				);
 				try {
 					return replicatedState(source) as DocumentState<JsonObject>;
 				} catch (error) {
-					unsubscribeCommit();
-					unsubscribeClose();
+					detach();
 					throw error;
 				}
 			});
@@ -276,23 +258,11 @@ export class SessionImpl implements Session {
 				const loaded = await this.#loadDocument(definition, resolved.id, resolved.address, context);
 				if (cancelled) throw cancellationError(signal!);
 				if (loaded === undefined) return undefined;
-				checkRecordScope(definition, loaded.record);
-				checkRecordVersion(definition, loaded.record, loaded.storedVersion);
-				let unsubscribeCommit = (): void => {};
-				let unsubscribeClose = (): void => {};
-				const watch = new SessionDocumentWatch(loaded.tracker.value, () => {
-					unsubscribeCommit();
-					unsubscribeClose();
-				});
-				const observed = { version: loaded.valueVersion };
-				unsubscribeCommit = this.subscribeCommits((publication, commitContext) => {
-					for (const change of publication.changes) {
-						if (change.type !== "document" || change.record.id !== loaded.record.id) continue;
-						watch.advance(change.value, observedOperations(observed, change), commitContext);
-					}
-				});
-				unsubscribeClose = this.subscribeClose(() => watch.closeSession());
-				return watch;
+				return this.#attachDocument(
+					definition,
+					loaded,
+					(value, release) => new SessionDocumentWatch(value, release),
+				).observer;
 			});
 			if (watch === undefined) return undefined;
 			if (cancelled) {
@@ -373,6 +343,14 @@ export class SessionImpl implements Session {
 		return awaitWithContext(this.#closing, context);
 	}
 
+	/**
+	 * Runs inside every transaction that creates or forks a conversation, after the conversation record is staged. A
+	 * plain Session stages nothing; a Harness stages its built-in documents.
+	 */
+	protected conversationCreated(_tx: Transaction, _record: ConversationRecord): Promise<void> {
+		return Promise.resolve();
+	}
+
 	/** Runs after close seals admission and before the line closes Storage; must not reject. */
 	protected beforeClose(): Promise<void> {
 		return Promise.resolve();
@@ -402,11 +380,11 @@ export class SessionImpl implements Session {
 	async #runCommit<T>(
 		change: (tx: Transaction) => T | Promise<T>,
 		context: Context,
-		defaultConversationId?: ConversationId,
+		scope?: TransactionScope,
 	): Promise<T> {
 		this.#assertHealthy();
 		context.abortSignal?.throwIfAborted();
-		const tx = new Transaction(this.#host, context, defaultConversationId);
+		const tx = new Transaction(this.#host, context, scope);
 		let result: T;
 		try {
 			result = await change(tx);
@@ -461,6 +439,37 @@ export class SessionImpl implements Session {
 		for (const document of documents) changes.push(document);
 		const publication: CommitPublication = { seq, changes };
 		for (const listener of [...this.#commitListeners]) listener(publication, context);
+	}
+
+	/**
+	 * Attach an observer to one committed incarnation: check the definition, then forward this incarnation's committed
+	 * changes and close. `detach` removes both subscriptions.
+	 */
+	#attachDocument<O extends SessionDocumentSource | SessionDocumentWatch>(
+		definition: AnyDocToken["definition"],
+		loaded: LoadedDocument,
+		create: (value: JsonObject, detach: () => void) => O,
+	): { observer: O; detach: () => void } {
+		checkRecordScope(definition, loaded.record);
+		checkRecordVersion(definition, loaded.record, loaded.storedVersion);
+		let unsubscribeCommit = (): void => {};
+		let unsubscribeClose = (): void => {};
+		const detach = (): void => {
+			unsubscribeCommit();
+			unsubscribeClose();
+		};
+		const observer = create(loaded.tracker.value, detach);
+		const observed = { version: loaded.valueVersion };
+		unsubscribeCommit = this.subscribeCommits((publication, context) => {
+			for (const change of publication.changes) {
+				if (change.type !== "document" || change.record.id !== loaded.record.id) continue;
+				// A document state's frames carry no caller cancellation; a watch observes its own cancellation.
+				const frameContext = observer instanceof SessionDocumentSource ? withoutAbortSignal(context) : context;
+				observer.advance(change.value, observedOperations(observed, change), frameContext);
+			}
+		});
+		unsubscribeClose = this.subscribeClose(() => observer.closeSession());
+		return { observer, detach };
 	}
 
 	async #loadDocument(

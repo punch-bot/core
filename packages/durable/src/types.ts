@@ -1,7 +1,7 @@
 import type { AttachedReplicatedState, Context, Draft, JsonValue } from "@punch-bot/chord";
 import type { Op } from "@punch-bot/chord/delta";
 import type { Message, Models } from "@punch-bot/ai";
-import type { RegistrySnapshot } from "./harness/types.ts";
+import type { ContextView, RegistrySnapshot } from "./harness/types.ts";
 
 /** JSON object used as the root of every durable document. */
 export type JsonObject = { [key: string]: JsonValue };
@@ -147,7 +147,7 @@ export type PhaseHandler<I, P, S, R, H extends object> = (
  * Operations of one task invocation. Every operation rejects after the invocation ends; watches acquired through it
  * stop at invocation end. `_H` is the task's hook map, consumed once the runtime gains its hook runner.
  */
-export interface TaskRuntime<I, S, R, _H extends object> extends DocumentObserver {
+export interface TaskRuntime<I, S, R, _H extends object> extends DocumentObserver, DocumentReader {
 	readonly taskId: TaskId<R>;
 	readonly conversationId: ConversationId;
 	/** Aborted when the run is signalled by `abortTask()` or the Harness closes. */
@@ -173,6 +173,12 @@ export interface TaskRuntime<I, S, R, _H extends object> extends DocumentObserve
 	memo<T extends JsonValue>(name: string, context: Context): Promise<T | undefined>;
 	/** Store `candidate` unless a memo already exists; return the durable winner. */
 	memo<T extends JsonValue>(name: string, candidate: T, context: Context): Promise<T>;
+	/** Committed raw active transcript and model context, optionally cut off at the visible entry `at`. */
+	context(conversationId: ConversationId, context: Context, at?: EntryId): Promise<ContextView>;
+	/** The Harness clock. */
+	now(): number;
+	/** Forward a non-fatal failure to `HarnessOptions.onReport`. */
+	report(error: unknown): void;
 	/** Resolve once the Harness clock reaches `until`; rejects when the invocation or `context` is cancelled. */
 	sleep(until: number, context: Context): Promise<void>;
 }
@@ -276,6 +282,20 @@ export type EntryDraft = Omit<EntryRecord, "id" | "conversationId" | "byTaskId" 
 	readonly head?: EntryId | "self";
 };
 
+/** Entry whose `data` has type `D`; `never` means the kind carries no data. */
+export type TypedEntry<D extends JsonValue> = Omit<EntryRecord, "data"> &
+	([D] extends [never] ? { readonly data?: never } : { readonly data: D });
+
+/** Entry content of a typed kind; the token supplies `kind`. */
+export type TypedEntryDraft<D extends JsonValue> = Omit<EntryDraft, "kind" | "data"> &
+	([D] extends [never] ? { readonly data?: never } : { readonly data: D });
+
+/** Typed entry kind with a narrowing guard. */
+export interface Entry<D extends JsonValue = never> {
+	readonly kind: string;
+	is(entry: EntryRecord | undefined): entry is TypedEntry<D>;
+}
+
 /** Identity fields shared by every durable submission state. */
 type SubmissionRecordBase = {
 	readonly id: SubmissionId;
@@ -298,7 +318,7 @@ export type SubmissionRecord =
 						readonly detail?: never;
 				  }
 				| {
-						/** Added to the transcript and owned by an active turn. */
+						/** Added to the transcript and owned by an active run. */
 						readonly status: "placed";
 						readonly entry: EntryId;
 						readonly answer?: never;
@@ -350,6 +370,11 @@ export type SubmissionRecord =
 						readonly detail?: JsonValue;
 				  }
 			));
+
+/** Terminal status staged for a submission; identity, type, and entry come from its current record. */
+export type SubmissionSettlement =
+	| { readonly status: "done"; readonly answer: EntryId }
+	| { readonly status: "unanswered"; readonly reason: string; readonly detail?: JsonValue };
 
 /** Submission fields supplied before the Session assigns an ID. */
 export type SubmissionCreate = SubmissionRecord extends infer Record
@@ -536,6 +561,12 @@ export type TaskQuery = {
 	readonly background?: boolean;
 };
 
+/** Optional filters for an ordered scan of submission records. */
+export type SubmissionQuery = {
+	readonly conversationId?: ConversationId;
+	readonly status?: SubmissionRecord["status"];
+};
+
 /** Current state or one historical commit sequence used for document membership and content reads. */
 export type DocumentPoint = Seq | "current";
 
@@ -644,6 +675,8 @@ export type CommitPublication = {
 export interface Tx {
 	conversation(id: ConversationId): Promise<ConversationRecord | undefined>;
 	entry(id: EntryId): Promise<EntryRecord | undefined>;
+	/** Undefined when the entry is absent or has another kind. */
+	entry<D extends JsonValue>(token: Entry<D>, id: EntryId): Promise<TypedEntry<D> | undefined>;
 	task(id: TaskId): Promise<TaskRecord<JsonValue, JsonValue, JsonValue> | undefined>;
 	scanConversations(
 		query: ConversationQuery,
@@ -667,11 +700,23 @@ export interface Tx {
 	): Promise<ConversationRecord>;
 	/** Returned records are Session-owned immutable values and may be shared with commit listeners. */
 	appendEntry(conversationId: ConversationId, value: EntryDraft): Promise<EntryRecord>;
+	/** The token supplies `kind` and types `data`. */
+	appendEntry<D extends JsonValue>(
+		token: Entry<D>,
+		conversationId: ConversationId,
+		value: TypedEntryDraft<NoInfer<D>>,
+	): Promise<TypedEntry<D>>;
 	createTask<I, S extends { phase: string }, R, H extends object>(
 		task: Task<I, S, R, H>,
 		input: I,
 		options?: TaskOptions,
 	): Promise<TaskId<R>>;
+	/**
+	 * Settle a queued or placed submission; only a placed input can be answered, and a settled submission stays
+	 * unchanged. Resolved against this transaction's latest record of the submission, so it works after table writes.
+	 * Run tasks settle the inputs they answer.
+	 */
+	settleSubmission(id: SubmissionId, settlement: SubmissionSettlement): void;
 
 	doc<T extends JsonObject>(token: SessionDocToken<T>): Promise<Draft<T>>;
 	doc<T extends JsonObject>(token: ConversationDocToken<T>, conversationId: ConversationId): Promise<Draft<T>>;
@@ -731,6 +776,9 @@ export interface WatchHandle<T> {
 }
 
 export type DocumentWatch<T extends JsonObject> = WatchHandle<Readonly<T> | null>;
+
+/** Committed document reads. */
+export type DocumentReader = Pick<Session, "snapshot" | "snapshotAsOf">;
 
 /** Non-creating document watch acquisition shared by Session and later invocation APIs. */
 export interface DocumentObserver {
@@ -919,6 +967,14 @@ export interface Storage {
 
 	/** Look up the latest complete record for one admitted submission. */
 	submission(id: SubmissionId, context: Context): Promise<SubmissionRecord | undefined>;
+
+	/** Scan submissions matching every supplied filter in ascending ID order. */
+	scanSubmissions(
+		query: SubmissionQuery,
+		limit: number,
+		cursor: Cursor | undefined,
+		context: Context,
+	): Promise<Page<SubmissionRecord, Cursor>>;
 
 	/** Find a submission by its conversation-scoped host deduplication key. */
 	submissionByRequest(
