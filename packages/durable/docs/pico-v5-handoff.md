@@ -589,9 +589,11 @@ without outcomes, and a host cancels everything by aborting what `inspect()`
 lists. No built-in subagent tool or supervisor task: two concise, product-style
 examples, `test/examples/22-subagent-foreground.ts` (child owned by the tool task,
 reported through `api.details({ conversationId })`, the UI attaching to the
-child's events) and `test/examples/23-subagent-background.ts` (supervisor task,
-`app.subagents` name→conversation document, request-ID-safe submission), show
-the patterns.
+child's events) and `test/examples/23-subagent-background.ts` (reworked in
+Package 19: persistent subagents behind one `subagent` tool with spawn, send,
+wait, stop, and status actions; a background anchor task owns each child, and a
+background reporter task per message delivers it and posts the answer back as a
+follow-up input, request-ID-safe across restarts), show the patterns.
 
 Test deep ownership trees, owner edges after terminal settlement, nested
 background boundaries, conversation abort/join with surviving passive writes and
@@ -601,7 +603,82 @@ current committed tail, empty source conversations, document fork policies,
 configuration overrides through `init`, foreground subagent cascade, and
 background supervisor recovery before and after submission admission.
 
-## 19. Compaction and overflow
+## 19. Structured concurrency
+
+Implement spec §5.5 and its consequences, replacing `after` and `pi.post-tools`.
+No backward compatibility.
+
+- Ownership: `TaskOptions.ownership` is required (`{ kind: "conversation" }` or
+  `{ kind: "task", taskId }`); `TaskRecord.owner?: TaskId`; child tasks live in
+  their owner's conversation; `background` only for conversation-owned tasks;
+  new task- or conversation-ownership requires a live owner (not `completing`
+  or `terminal`). Update every `createTask` call site, including tools'
+  `api.createTask`, examples, and tests. Storage: persist `owner` and the new
+  statuses (memory, JSONL, SQLite schema edited in place; no migrations while WIP), conformance cases. No owner
+  index: the scheduler derives edges from the live tasks it loads.
+- States: real `waiting { checkpoint, on, policy }` and `completing { outcome }`
+  statuses in `TaskState` and every backend and status scan; `NextTaskState`
+  gains `waiting`; `runtime.outcomes()`; `inspect()` reports `completing`.
+  Remove `after` (records, options, scheduler dependency handling).
+- Scheduler: a waiting task is never reserved until every task in `on` is
+  terminal (then reserved directly from `waiting` to `running` at its
+  checkpoint), unless an abort mark lets it reach its abort handler; `on` over
+  tasks it does not own requires `allSettled`; `on` rejects missing tasks, the
+  task itself, and its owner chain; failFast marks live owned siblings in `on` on a held or terminal
+  non-`completed` outcome, in reconcile. Terminal commits (task- and
+  scheduler-written) with live ordinary owned work become `completing`; a later
+  scheduler commit finalizes them when that work is gone, re-evaluated on every
+  commit and at open; scheduler-written holds defer their Harness cleanup
+  (`settleSchedulerOutcome`) to the final commit, task-written holds land their
+  other writes at hold; waiters and task-document retirement at the final
+  commit. Abort invocations start only when ordinary owned work is gone
+  (bottom-up, judged on committed records). Orphaning happens only where the
+  abort invocation would start, or directly in `abortTask()` when nothing owned
+  is live, so orphans never hold. Cascade (spec §5.4): only live owners cascade (abort mark or held
+  non-`completed` outcome); terminal owners never do; ordinary traversal and
+  idle follow task→task edges too. `Conversation.abort(context, { background:
+  true })` snapshot semantics.
+- Built-ins: generation owns its tool tasks and waits `allSettled` in a new
+  `tools` phase that runs the old post-tools body (§8.5); sequential rounds
+  create one tool at a time from `pending`; the next generation is
+  conversation-owned; the generation abort handler appends `aborted` results for
+  unstarted calls. Remove `pi.post-tools`, `PostToolsTask`, `PostToolsHooks`
+  (`afterTools` moves to `GenerationHooks`). Tool tasks that own conversations
+  hold `completing` after their result entry. Events: `turn_end` when a
+  generation's outcome is committed (hold or terminal, whichever first).
+- Docs: spec §5.5 and §12 footguns are written; update README (task ownership,
+  waiting, `completing`, abort order), CHANGELOG, and examples 12/22/23 plus a new
+  `test/examples/24-child-tasks.ts` (checkout with four payments: failFast,
+  `abortTask(checkout)`, crash and reopen, each printing outcomes).
+
+Exhaustive tests (new `test/harness-structured.test.ts` plus updates): ownership
+validation (missing ownership, cross-conversation child, background child,
+owner completing/terminal); waiting with allSettled and failFast (failed,
+aborted, faulted, orphaned children; held failures trigger failFast before the
+failing child drains); `on` with already-terminal and non-owned tasks
+(`allSettled` only); waiting on subsets in sequence; spawning without waiting;
+`completing` for task- and scheduler-written outcomes, including work created
+during the hold, finalization at open, `abortTask()` on a completing task, held
+failure aborting below, waiters and document retirement only at the final
+commit; bottom-up abort order across three levels (child terminal records before
+the parent's abort handler starts), including an aborted waiting parent; `on`
+validation (missing, self, owner chain, empty `on`); a waiting task whose
+definition is missing when it may resume (blocked, then orphaned when aborted);
+creating owned work in a finishing commit (task ownership rejects, a task in an
+owned conversation holds); cascades through
+task→task and task→conversation→task edges; background boundaries and the
+`{ background: true }` abort; a terminal owner never cascading (interrogating a
+finished or Esc'd subagent runs normally); crash/reopen at every point (before
+and after create+wait, after a child fails before siblings are marked, after all
+children terminal before the parent resumes, during holds and abort handlers);
+generation tool rounds parallel and sequential with Esc before, during, and
+after tools, unstarted sequential calls, faulted tool slots under generation
+abort, faulted generation keeping run control until its tools drain, `turn_end`
+before the successor's `turn_start` when a generation holds, and a tool holding
+`completing` while its subagent's extension work runs. Rerun every existing suite; migrate the post-tools,
+sequential-round, and dependency tests to the new shapes without weakening them.
+
+## 20. Compaction and overflow
 
 Implement manual, threshold, and generation-overflow compaction; exchange-boundary
 range selection; summarization; retry policy; staleness checks; and headed
@@ -618,7 +695,7 @@ failure, declined and stale work, manual/threshold/overflow admission, late-join
 presentation state, and reopen from every phase. Rerun generation overflow
 integration without a fake compaction kind.
 
-## 20. Reload and final conformance
+## 21. Reload and final conformance
 
 Complete any remaining §2.2 surface and lifecycle gates and the §7.5 in-process
 reload path through the registry: batch replacement while the Harness keeps
@@ -646,3 +723,12 @@ Session-selected storage checkpoint.
 Run all package-specific tests and the repository check. Finish with a local
 coding-agent turn and a reopened interrupted turn through the public Harness,
 then stop for final review.
+
+## 22. Task graph view
+
+A live, observable view of the Session's task graph for UIs and debugging, like
+`ConversationView` for a conversation: every live task with its owner edge
+(conversation or task), status (`running`, `waiting on …`, `completing`),
+background flag, and owned conversations, published after each commit as a
+replicated state or watch. `inspect()` already provides a one-off snapshot of
+the live task records. Specify and build it after the final conformance package.
