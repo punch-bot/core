@@ -6,6 +6,10 @@
 
 - Added the lightweight `@punch-bot/ai/models` entry point for model collections and provider construction without loading TypeBox, built-in catalogs, or provider SDKs.
 
+### Fixed
+
+- Fixed context overflow detection for Z.AI CN endpoint `Prompt exceeds max length` errors ([#10208](https://github.com/earendil-works/pi/issues/10208))
+
 ## [0.99.1] - 2026-09-29
 
 ### Added
