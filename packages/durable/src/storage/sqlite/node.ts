@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { SQLInputValue, StatementSync } from "node:sqlite";
 import { DatabaseSync } from "node:sqlite";
-import type { SqliteDatabase, SqliteExecutor, SqliteStatement, SqliteValue } from "./database.ts";
+import type { SqliteDatabase, SqliteExecutor, SqliteValue } from "./database.ts";
 import { SqliteStorage } from "./storage.ts";
 
 /** Node SQLite connection settings for a durable storage file. */
@@ -17,7 +17,6 @@ export type NodeSqliteStorageOptions = {
 const DEFAULT_WAL_AUTO_CHECKPOINT_PAGES = 1_000;
 const DEFAULT_BUSY_TIMEOUT_MS = 5_000;
 
-type RunOperation = <T>(operation: () => T | Promise<T>) => Promise<T>;
 type TransactionScope = { active: boolean };
 
 class SerialOperationQueue {
@@ -38,37 +37,17 @@ class SerialOperationQueue {
 	}
 }
 
-class NodeSqliteStatement implements SqliteStatement {
-	private readonly statement: StatementSync;
-	private readonly runOperation: RunOperation;
+/**
+ * Executes SQL on one connection. Prepared statements are cached per connection by SQL text, so the
+ * database and its transaction handles share them across transactions.
+ */
+abstract class NodeSqliteExecutor implements SqliteExecutor {
+	protected readonly database: DatabaseSync;
+	protected readonly statements: Map<string, StatementSync>;
 
-	constructor(statement: StatementSync, runOperation: RunOperation) {
-		this.statement = statement;
-		this.runOperation = runOperation;
-	}
-
-	run(...params: SqliteValue[]): Promise<void> {
-		return this.runOperation(() => {
-			this.statement.run(...(params as SQLInputValue[]));
-		});
-	}
-
-	get<T extends object>(...params: SqliteValue[]): Promise<T | undefined> {
-		return this.runOperation(() => this.statement.get(...(params as SQLInputValue[])) as T | undefined);
-	}
-
-	all<T extends object>(...params: SqliteValue[]): Promise<T[]> {
-		return this.runOperation(() => this.statement.all(...(params as SQLInputValue[])) as T[]);
-	}
-}
-
-class NodeSqliteTransaction implements SqliteExecutor {
-	private readonly database: DatabaseSync;
-	private readonly scope: TransactionScope;
-
-	constructor(database: DatabaseSync, scope: TransactionScope) {
+	constructor(database: DatabaseSync, statements: Map<string, StatementSync>) {
 		this.database = database;
-		this.scope = scope;
+		this.statements = statements;
 	}
 
 	exec(sql: string): Promise<void> {
@@ -77,40 +56,55 @@ class NodeSqliteTransaction implements SqliteExecutor {
 		});
 	}
 
-	prepare(sql: string): Promise<SqliteStatement> {
-		return this.runOperation(
-			() => new NodeSqliteStatement(this.database.prepare(sql), (operation) => this.runOperation(operation)),
-		);
+	run(sql: string, ...params: SqliteValue[]): Promise<void> {
+		return this.runOperation(() => {
+			this.statement(sql).run(...(params as SQLInputValue[]));
+		});
 	}
 
-	private async runOperation<T>(operation: () => T | Promise<T>): Promise<T> {
+	get<T extends object>(sql: string, ...params: SqliteValue[]): Promise<T | undefined> {
+		return this.runOperation(() => this.statement(sql).get(...(params as SQLInputValue[])) as T | undefined);
+	}
+
+	all<T extends object>(sql: string, ...params: SqliteValue[]): Promise<T[]> {
+		return this.runOperation(() => this.statement(sql).all(...(params as SQLInputValue[])) as T[]);
+	}
+
+	protected abstract runOperation<T>(operation: () => T): Promise<T>;
+
+	private statement(sql: string): StatementSync {
+		let statement = this.statements.get(sql);
+		if (statement === undefined) {
+			statement = this.database.prepare(sql);
+			this.statements.set(sql, statement);
+		}
+		return statement;
+	}
+}
+
+class NodeSqliteTransaction extends NodeSqliteExecutor {
+	private readonly scope: TransactionScope;
+
+	constructor(database: DatabaseSync, statements: Map<string, StatementSync>, scope: TransactionScope) {
+		super(database, statements);
+		this.scope = scope;
+	}
+
+	protected async runOperation<T>(operation: () => T): Promise<T> {
 		if (!this.scope.active) throw new Error("SQLite transaction handle is no longer active");
 		return operation();
 	}
 }
 
 /** `SqliteDatabase` adapter backed by Node's built-in `node:sqlite`. */
-export class NodeSqliteDatabase implements SqliteDatabase {
-	private readonly database: DatabaseSync;
+export class NodeSqliteDatabase extends NodeSqliteExecutor implements SqliteDatabase {
 	private readonly access = new SerialOperationQueue();
 	/** Detects database calls from inside a transaction callback, which would otherwise wait for that transaction forever. */
 	private readonly transactionScope = new AsyncLocalStorage<TransactionScope>();
 	private closed = false;
 
 	constructor(database: DatabaseSync) {
-		this.database = database;
-	}
-
-	exec(sql: string): Promise<void> {
-		return this.runOperation(() => {
-			this.database.exec(sql);
-		});
-	}
-
-	prepare(sql: string): Promise<SqliteStatement> {
-		return this.runOperation(
-			() => new NodeSqliteStatement(this.database.prepare(sql), (operation) => this.runOperation(operation)),
-		);
+		super(database, new Map());
 	}
 
 	transaction<T>(callback: (transaction: SqliteExecutor) => Promise<T>): Promise<T> {
@@ -122,7 +116,7 @@ export class NodeSqliteDatabase implements SqliteDatabase {
 			const scope = { active: true };
 			try {
 				const result = await this.transactionScope.run(scope, () =>
-					callback(new NodeSqliteTransaction(this.database, scope)),
+					callback(new NodeSqliteTransaction(this.database, this.statements, scope)),
 				);
 				scope.active = false;
 				this.database.exec("COMMIT");
@@ -146,6 +140,7 @@ export class NodeSqliteDatabase implements SqliteDatabase {
 		return this.access.run(() => {
 			if (this.closed) return;
 			this.closed = true;
+			this.statements.clear();
 			try {
 				this.database.exec("PRAGMA wal_checkpoint(TRUNCATE)");
 			} finally {
@@ -154,7 +149,7 @@ export class NodeSqliteDatabase implements SqliteDatabase {
 		});
 	}
 
-	private runOperation<T>(operation: () => T | Promise<T>): Promise<T> {
+	protected runOperation<T>(operation: () => T): Promise<T> {
 		if (this.insideTransaction()) {
 			return Promise.reject(new Error("Use the transaction handle inside a transaction callback"));
 		}

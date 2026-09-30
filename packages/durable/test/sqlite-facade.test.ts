@@ -1,11 +1,12 @@
+import { DatabaseSync, type StatementSync } from "node:sqlite";
 import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
 import { describe, expect, it } from "vitest";
 import { StorageRejected } from "../src/errors.ts";
 import { idFromNumber } from "../src/ids.ts";
-import type { SqliteDatabase, SqliteExecutor, SqliteStatement } from "../src/storage/sqlite/index.ts";
+import type { SqliteDatabase, SqliteExecutor, SqliteValue } from "../src/storage/sqlite/index.ts";
 import { SqliteStorage } from "../src/storage/sqlite/index.ts";
-import { type NodeSqliteDatabase, openNodeSqliteDatabase } from "../src/storage/sqlite/node.ts";
-import { type EntryId, ROOT_CONVERSATION_ID } from "../src/types.ts";
+import { NodeSqliteDatabase, openNodeSqliteDatabase } from "../src/storage/sqlite/node.ts";
+import { type DocumentId, type EntryId, ROOT_CONVERSATION_ID } from "../src/types.ts";
 
 type SettlementMode = "immediate" | "delay" | "reject";
 
@@ -13,8 +14,6 @@ class ControlledSettlementDatabase implements SqliteDatabase {
 	private readonly delegate: NodeSqliteDatabase;
 	private mode: SettlementMode = "immediate";
 	private pendingSettlement: (() => void) | undefined;
-	private readonly prepareCounts = new Map<string, number>();
-	private readonly transactionPrepareCounts = new Map<string, number>();
 
 	constructor(delegate: NodeSqliteDatabase) {
 		this.delegate = delegate;
@@ -24,25 +23,24 @@ class ControlledSettlementDatabase implements SqliteDatabase {
 		return this.delegate.exec(sql);
 	}
 
-	prepare(sql: string): Promise<SqliteStatement> {
-		this.prepareCounts.set(sql, (this.prepareCounts.get(sql) ?? 0) + 1);
-		return this.delegate.prepare(sql);
+	run(sql: string, ...params: SqliteValue[]): Promise<void> {
+		return this.delegate.run(sql, ...params);
+	}
+
+	get<T extends object>(sql: string, ...params: SqliteValue[]): Promise<T | undefined> {
+		return this.delegate.get<T>(sql, ...params);
+	}
+
+	all<T extends object>(sql: string, ...params: SqliteValue[]): Promise<T[]> {
+		return this.delegate.all<T>(sql, ...params);
 	}
 
 	transaction<T>(callback: (transaction: SqliteExecutor) => Promise<T>): Promise<T> {
 		const mode = this.mode;
 		this.mode = "immediate";
-		const counted = (transaction: SqliteExecutor): Promise<T> =>
-			callback({
-				exec: (sql) => transaction.exec(sql),
-				prepare: (sql) => {
-					this.transactionPrepareCounts.set(sql, (this.transactionPrepareCounts.get(sql) ?? 0) + 1);
-					return transaction.prepare(sql);
-				},
-			});
-		if (mode === "immediate") return this.delegate.transaction(counted);
+		if (mode === "immediate") return this.delegate.transaction(callback);
 		const settlement = this.delegate.transaction(async (transaction) => {
-			const value = await counted(transaction);
+			const value = await callback(transaction);
 			if (mode === "reject") throw new Error("controlled settlement rejection");
 			return value;
 		});
@@ -53,14 +51,6 @@ class ControlledSettlementDatabase implements SqliteDatabase {
 
 	close(): Promise<void> {
 		return this.delegate.close();
-	}
-
-	prepareCount(sql: string): number {
-		return this.prepareCounts.get(sql) ?? 0;
-	}
-
-	transactionPrepareCount(sql: string): number {
-		return this.transactionPrepareCounts.get(sql) ?? 0;
 	}
 
 	controlNextSettlement(mode: Exclude<SettlementMode, "immediate">): void {
@@ -76,10 +66,23 @@ class ControlledSettlementDatabase implements SqliteDatabase {
 	}
 }
 
+class PrepareCountingDatabaseSync extends DatabaseSync {
+	private readonly prepareCounts = new Map<string, number>();
+
+	override prepare(sql: string): StatementSync {
+		this.prepareCounts.set(sql, (this.prepareCounts.get(sql) ?? 0) + 1);
+		return super.prepare(sql);
+	}
+
+	repeatedPrepares(): string[] {
+		return [...this.prepareCounts].filter(([, count]) => count > 1).map(([sql]) => sql);
+	}
+}
+
 describe("portable SQLite facade settlement", () => {
-	it("reuses read statements across calls and write statements within a transaction", async () => {
-		const database = new ControlledSettlementDatabase(await openNodeSqliteDatabase(":memory:"));
-		const storage = await SqliteStorage.open(database);
+	it("prepares each storage statement once per connection and reuses it across transactions", async () => {
+		const connection = new PrepareCountingDatabaseSync(":memory:");
+		const storage = await SqliteStorage.open(new NodeSqliteDatabase(connection));
 		await storage.commit([{ type: "conversation", value: { id: ROOT_CONVERSATION_ID } }], BACKGROUND_CONTEXT);
 		await storage.commit(
 			Array.from({ length: 100 }, (_, index) => ({
@@ -103,13 +106,7 @@ describe("portable SQLite facade settlement", () => {
 			storage.commit([{ type: "conversation", value: { id: ROOT_CONVERSATION_ID } }], BACKGROUND_CONTEXT),
 		).rejects.toThrow("ID 1 already belongs to conversation");
 		expect((await storage.entry(idFromNumber<EntryId>(2), BACKGROUND_CONTEXT))?.entry.kind).toBe("cached");
-		expect(database.prepareCount("SELECT record, commit_seq FROM entries WHERE id = ?")).toBe(1);
-		// Two committing transactions insert 101 entries; each prepares the insert once.
-		expect(
-			database.transactionPrepareCount(
-				"INSERT INTO entries (id, conversation_id, head, commit_seq, record) VALUES (?, ?, ?, ?, ?)",
-			),
-		).toBe(2);
+		expect(connection.repeatedPrepares()).toEqual([]);
 		await storage.close(BACKGROUND_CONTEXT);
 	});
 
@@ -117,9 +114,9 @@ describe("portable SQLite facade settlement", () => {
 		const database = await openNodeSqliteDatabase(":memory:");
 		await database.transaction(async (transaction) => {
 			await transaction.exec("CREATE TABLE async_probe (value INTEGER)");
-			await (await transaction.prepare("INSERT INTO async_probe (value) VALUES (?)")).run(1);
+			await transaction.run("INSERT INTO async_probe (value) VALUES (?)", 1);
 		});
-		expect(await (await database.prepare("SELECT value FROM async_probe")).get()).toEqual({ value: 1 });
+		expect(await database.get("SELECT value FROM async_probe")).toEqual({ value: 1 });
 		await database.close();
 		await database.close();
 	});
@@ -152,7 +149,7 @@ describe("portable SQLite facade settlement", () => {
 
 		releaseFirst();
 		await Promise.all([first, second]);
-		expect(await (await database.prepare("SELECT value FROM transaction_queue ORDER BY value")).all()).toEqual([
+		expect(await database.all("SELECT value FROM transaction_queue ORDER BY value")).toEqual([
 			{ value: 1 },
 			{ value: 2 },
 		]);
@@ -162,7 +159,6 @@ describe("portable SQLite facade settlement", () => {
 	it("queues ordinary operations behind an active transaction", async () => {
 		const database = await openNodeSqliteDatabase(":memory:");
 		await database.exec("CREATE TABLE operation_queue (value INTEGER)");
-		const readStatement = await database.prepare("SELECT value FROM operation_queue ORDER BY value");
 		let markTransactionStarted!: () => void;
 		const transactionStarted = new Promise<void>((resolve) => {
 			markTransactionStarted = resolve;
@@ -183,7 +179,7 @@ describe("portable SQLite facade settlement", () => {
 			writeSettled = true;
 		});
 		let readSettled = false;
-		const read = readStatement.all().finally(() => {
+		const read = database.all("SELECT value FROM operation_queue ORDER BY value").finally(() => {
 			readSettled = true;
 		});
 		await Promise.resolve();
@@ -200,11 +196,9 @@ describe("portable SQLite facade settlement", () => {
 	it("rejects database operations from inside a transaction callback instead of waiting forever", async () => {
 		const database = await openNodeSqliteDatabase(":memory:");
 		await database.exec("CREATE TABLE misuse_probe (value INTEGER)");
-		const statement = await database.prepare("SELECT value FROM misuse_probe");
 		const misuse = "Use the transaction handle inside a transaction callback";
 		await expect(database.transaction(() => database.exec("SELECT 1"))).rejects.toThrow(misuse);
-		await expect(database.transaction(() => database.prepare("SELECT 1"))).rejects.toThrow(misuse);
-		await expect(database.transaction(() => statement.all())).rejects.toThrow(misuse);
+		await expect(database.transaction(() => database.all("SELECT value FROM misuse_probe"))).rejects.toThrow(misuse);
 		await expect(database.transaction(() => database.transaction(async () => undefined))).rejects.toThrow(
 			"Nested SQLite transactions are not supported",
 		);
@@ -218,15 +212,14 @@ describe("portable SQLite facade settlement", () => {
 		const database = await openNodeSqliteDatabase(":memory:");
 		await database.exec("CREATE TABLE stale_probe (value INTEGER)");
 		let handle!: SqliteExecutor;
-		let statement!: SqliteStatement;
 		await database.transaction(async (transaction) => {
 			handle = transaction;
-			statement = await transaction.prepare("INSERT INTO stale_probe (value) VALUES (?)");
+			await transaction.run("INSERT INTO stale_probe (value) VALUES (?)", 1);
 		});
 		const stale = "SQLite transaction handle is no longer active";
-		await expect(handle.exec("INSERT INTO stale_probe (value) VALUES (1)")).rejects.toThrow(stale);
-		await expect(statement.run(1)).rejects.toThrow(stale);
-		expect(await (await database.prepare("SELECT value FROM stale_probe")).all()).toEqual([]);
+		await expect(handle.exec("INSERT INTO stale_probe (value) VALUES (2)")).rejects.toThrow(stale);
+		await expect(handle.run("INSERT INTO stale_probe (value) VALUES (?)", 3)).rejects.toThrow(stale);
+		expect(await database.all("SELECT value FROM stale_probe")).toEqual([{ value: 1 }]);
 		await database.close();
 	});
 
@@ -240,7 +233,7 @@ describe("portable SQLite facade settlement", () => {
 				throw new StorageRejected("rejected after an escaped commit");
 			}),
 		).rejects.toThrow(AggregateError);
-		expect(await (await database.prepare("SELECT value FROM rollback_probe")).get()).toEqual({ value: 1 });
+		expect(await database.get("SELECT value FROM rollback_probe")).toEqual({ value: 1 });
 		await database.close();
 	});
 
@@ -294,5 +287,32 @@ describe("portable SQLite facade settlement", () => {
 		expect(await storage.mintId<EntryId>()).toBe(103);
 		expect(await storage.entry(idFromNumber<EntryId>(200), BACKGROUND_CONTEXT)).toBeUndefined();
 		await storage.close(BACKGROUND_CONTEXT);
+	});
+
+	it("reads a document from one committed state while a commit replaces its base", async () => {
+		const id = idFromNumber<DocumentId>(5);
+		// Each yield count starts the commit at a different point of the read's record and revision queries.
+		for (let yields = 0; yields < 16; yields++) {
+			const storage = await SqliteStorage.open(await openNodeSqliteDatabase(":memory:"));
+			await storage.commit(
+				[
+					{
+						type: "document.create",
+						record: { id, kind: "replaced", scope: { kind: "session" } },
+						content: { kind: "base", version: 1, value: { value: 1 } },
+					},
+				],
+				BACKGROUND_CONTEXT,
+			);
+			const read = storage.document(id, "current", BACKGROUND_CONTEXT);
+			for (let index = 0; index < yields; index++) await Promise.resolve();
+			const replace = storage.commit(
+				[{ type: "document.change", id, content: { kind: "base", version: 1, value: { value: 2 } } }],
+				BACKGROUND_CONTEXT,
+			);
+			const [stored] = await Promise.all([read, replace]);
+			expect([{ value: 1 }, { value: 2 }]).toContainEqual(stored?.value);
+			await storage.close(BACKGROUND_CONTEXT);
+		}
 	});
 });

@@ -107,12 +107,8 @@ export async function applySqliteMigrations(
 			singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
 			version INTEGER NOT NULL CHECK (version >= 0)
 		) STRICT`);
-		await (
-			await transaction.prepare("INSERT OR IGNORE INTO durable_schema (singleton, version) VALUES (1, 0)")
-		).run();
-		const row = await (
-			await transaction.prepare("SELECT version FROM durable_schema WHERE singleton = 1")
-		).get<SchemaRow>();
+		await transaction.run("INSERT OR IGNORE INTO durable_schema (singleton, version) VALUES (1, 0)");
+		const row = await transaction.get<SchemaRow>("SELECT version FROM durable_schema WHERE singleton = 1");
 		if (row === undefined) throw new Error("Durable SQLite schema metadata is missing");
 		const currentVersion = migrations.at(-1)?.version ?? 0;
 		if (row.version > currentVersion) {
@@ -123,9 +119,7 @@ export async function applySqliteMigrations(
 		for (const migration of migrations) {
 			if (migration.version <= row.version) continue;
 			for (const statement of migration.statements) await transaction.exec(statement);
-			await (await transaction.prepare("UPDATE durable_schema SET version = ? WHERE singleton = 1")).run(
-				migration.version,
-			);
+			await transaction.run("UPDATE durable_schema SET version = ? WHERE singleton = 1", migration.version);
 		}
 	});
 }
