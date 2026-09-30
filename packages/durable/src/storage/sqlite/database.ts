@@ -23,7 +23,9 @@ export interface SqliteExecutor {
  * `transaction` passes the callback a transaction handle. All work in the transaction
  * must use that handle; the handle is invalid after the callback settles. Adapters must
  * queue unrelated operations and other transactions until the transaction finishes. The
- * returned promise settles after commit or rollback.
+ * returned promise settles after commit or rollback. Calling the database itself (including
+ * `transaction` or `close`) from inside a callback therefore waits for that transaction and
+ * never settles.
  *
  * When the callback rejects, the adapter must roll the transaction back before rejecting
  * with that same error. If rollback fails, it must reject with a different error (for

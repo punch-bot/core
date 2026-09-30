@@ -131,6 +131,9 @@ export class SqliteStorage implements Storage {
 	private readonly db: SqliteDatabase;
 	private nextId: number;
 	private closed = false;
+	private closing: Promise<void> | undefined;
+	private admittedReads = 0;
+	private readsDrained: (() => void) | undefined;
 
 	private constructor(db: SqliteDatabase, nextId: number) {
 		this.db = db;
@@ -227,12 +230,36 @@ export class SqliteStorage implements Storage {
 		id: EntryId,
 		context: Context,
 	): Promise<{ readonly entry: EntryRecord; readonly commitSeq: Seq } | undefined>;
-	async entry(
+	entry(
 		idOrConversationId: EntryId | ConversationId,
 		idOrContext: EntryId | Context,
 		context?: Context,
 	): Promise<{ readonly entry: EntryRecord; readonly commitSeq: Seq } | undefined> {
-		this.assertOpen();
+		return this.admitRead(() => this.readEntry(idOrConversationId, idOrContext, context));
+	}
+
+	findLatestHeadMarker(
+		conversationId: ConversationId,
+		atOrBeforeEntryId: EntryId | undefined,
+		_context: Context,
+	): Promise<(EntryRecord & { readonly head: EntryId }) | undefined> {
+		return this.admitRead(() => this.readLatestHeadMarker(conversationId, atOrBeforeEntryId));
+	}
+
+	scanEntries(
+		query: EntryQuery,
+		limit: number,
+		cursor: Cursor | undefined,
+		_context: Context,
+	): Promise<Page<EntryRecord, Cursor>> {
+		return this.admitRead(() => this.readEntries(query, limit, cursor));
+	}
+
+	private async readEntry(
+		idOrConversationId: EntryId | ConversationId,
+		idOrContext: EntryId | Context,
+		context?: Context,
+	): Promise<{ readonly entry: EntryRecord; readonly commitSeq: Seq } | undefined> {
 		const id =
 			context === undefined
 				? idFromNumber<EntryId>(idOrConversationId)
@@ -261,12 +288,10 @@ export class SqliteStorage implements Storage {
 		return { entry, commitSeq: seqFromNumber(row.commit_seq) };
 	}
 
-	async findLatestHeadMarker(
+	private async readLatestHeadMarker(
 		conversationId: ConversationId,
 		atOrBeforeEntryId: EntryId | undefined,
-		_context: Context,
 	): Promise<(EntryRecord & { readonly head: EntryId }) | undefined> {
-		this.assertOpen();
 		let conversation = await this.readConversation(conversationId);
 		if (conversation === undefined) throw new Error(`Unknown conversation: ${conversationId}`);
 		let upper: number | undefined = atOrBeforeEntryId;
@@ -289,13 +314,11 @@ export class SqliteStorage implements Storage {
 		}
 	}
 
-	async scanEntries(
+	private async readEntries(
 		query: EntryQuery,
 		limit: number,
 		cursor: Cursor | undefined,
-		_context: Context,
 	): Promise<Page<EntryRecord, Cursor>> {
-		this.assertOpen();
 		let conversation = await this.readConversation(query.conversationId);
 		if (conversation === undefined) throw new Error(`Unknown conversation: ${query.conversationId}`);
 		const after = cursorId(cursor);
@@ -480,10 +503,35 @@ export class SqliteStorage implements Storage {
 		);
 	}
 
-	async close(_context: Context): Promise<void> {
-		if (this.closed) return;
-		this.closed = true;
+	close(_context: Context): Promise<void> {
+		if (this.closing === undefined) {
+			this.closed = true;
+			this.closing = this.closeDatabase();
+		}
+		return this.closing;
+	}
+
+	private async closeDatabase(): Promise<void> {
+		if (this.admittedReads > 0) {
+			await new Promise<void>((resolve) => {
+				this.readsDrained = resolve;
+			});
+		}
 		await this.db.close();
+	}
+
+	/**
+	 * Run a read that issues several queries. Close waits for admitted reads, so their later queries never reach a
+	 * closed database. Single-query reads and transactions are already ordered before close by the database.
+	 */
+	private async admitRead<T>(read: () => Promise<T>): Promise<T> {
+		this.assertOpen();
+		this.admittedReads++;
+		try {
+			return await read();
+		} finally {
+			if (--this.admittedReads === 0) this.readsDrained?.();
+		}
 	}
 
 	private async readConversation(id: ConversationId): Promise<ConversationRecord | undefined> {

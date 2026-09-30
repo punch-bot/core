@@ -156,6 +156,34 @@ describe("portable SQLite facade settlement", () => {
 		await database.close();
 	});
 
+	it("runs operations in call order whether they start immediately or wait", async () => {
+		const database = await openNodeSqliteDatabase(":memory:");
+		await database.exec("CREATE TABLE call_order (value INTEGER)");
+		// Operations called during a transaction must neither see its uncommitted rows nor join its rollback.
+		const transaction = database.transaction(async (handle) => {
+			await handle.run("INSERT INTO call_order (value) VALUES (?)", 1);
+			await Promise.resolve();
+			throw new Error("roll back");
+		});
+		const beforeWrite = database.all("SELECT value FROM call_order ORDER BY value");
+		const write = database.run("INSERT INTO call_order (value) VALUES (?)", 2);
+		const afterWrite = database.all("SELECT value FROM call_order ORDER BY value");
+		await expect(transaction).rejects.toThrow("roll back");
+		await write;
+		expect(await beforeWrite).toEqual([]);
+		expect(await afterWrite).toEqual([{ value: 2 }]);
+
+		const storage = await SqliteStorage.open(database);
+		const commit = storage.commit(
+			[{ type: "conversation", value: { id: ROOT_CONVERSATION_ID } }],
+			BACKGROUND_CONTEXT,
+		);
+		const read = storage.conversation(ROOT_CONVERSATION_ID, BACKGROUND_CONTEXT);
+		await commit;
+		expect(await read).toEqual({ id: ROOT_CONVERSATION_ID });
+		await storage.close(BACKGROUND_CONTEXT);
+	});
+
 	it("queues ordinary operations behind an active transaction", async () => {
 		const database = await openNodeSqliteDatabase(":memory:");
 		await database.exec("CREATE TABLE operation_queue (value INTEGER)");
@@ -193,19 +221,46 @@ describe("portable SQLite facade settlement", () => {
 		await database.close();
 	});
 
-	it("rejects database operations from inside a transaction callback instead of waiting forever", async () => {
+	it("queues database calls made synchronously by a transaction that started immediately", async () => {
 		const database = await openNodeSqliteDatabase(":memory:");
-		await database.exec("CREATE TABLE misuse_probe (value INTEGER)");
-		const misuse = "Use the transaction handle inside a transaction callback";
-		await expect(database.transaction(() => database.exec("SELECT 1"))).rejects.toThrow(misuse);
-		await expect(database.transaction(() => database.all("SELECT value FROM misuse_probe"))).rejects.toThrow(misuse);
-		await expect(database.transaction(() => database.transaction(async () => undefined))).rejects.toThrow(
-			"Nested SQLite transactions are not supported",
-		);
-		await expect(database.transaction(() => database.close())).rejects.toThrow(
-			"Cannot close SQLite during an active transaction",
-		);
+		await database.exec("CREATE TABLE barrier_probe (value INTEGER)");
+		let outside!: Promise<void>;
+		const transaction = database.transaction(async (handle) => {
+			// Misuse: this call must wait for the transaction instead of joining it.
+			outside = database.run("INSERT INTO barrier_probe (value) VALUES (?)", 2);
+			await handle.run("INSERT INTO barrier_probe (value) VALUES (?)", 1);
+			await Promise.resolve();
+			throw new Error("roll back");
+		});
+		await expect(transaction).rejects.toThrow("roll back");
+		await outside;
+		expect(await database.all("SELECT value FROM barrier_probe")).toEqual([{ value: 2 }]);
 		await database.close();
+	});
+
+	it("lets admitted multi-query reads finish before storage closes", async () => {
+		const storage = await SqliteStorage.open(await openNodeSqliteDatabase(":memory:"));
+		const entryId = idFromNumber<EntryId>(2);
+		await storage.commit(
+			[
+				{ type: "conversation", value: { id: ROOT_CONVERSATION_ID } },
+				{ type: "entry", value: { id: entryId, conversationId: ROOT_CONVERSATION_ID, kind: "probe" } },
+			],
+			BACKGROUND_CONTEXT,
+		);
+		const scan = storage.scanEntries({ conversationId: ROOT_CONVERSATION_ID }, 10, undefined, BACKGROUND_CONTEXT);
+		const entry = storage.entry(ROOT_CONVERSATION_ID, entryId, BACKGROUND_CONTEXT);
+		const head = storage.findLatestHeadMarker(ROOT_CONVERSATION_ID, undefined, BACKGROUND_CONTEXT);
+		const closed = storage.close(BACKGROUND_CONTEXT);
+		// A repeated close settles only when the database is closed.
+		expect(storage.close(BACKGROUND_CONTEXT)).toBe(closed);
+		expect((await scan).items.map((item) => item.id)).toEqual([entryId]);
+		expect((await entry)?.entry.kind).toBe("probe");
+		expect(await head).toBeUndefined();
+		await closed;
+		await expect(
+			storage.scanEntries({ conversationId: ROOT_CONVERSATION_ID }, 10, undefined, BACKGROUND_CONTEXT),
+		).rejects.toThrow("SqliteStorage is closed");
 	});
 
 	it("rejects a transaction handle used after its transaction settles", async () => {
