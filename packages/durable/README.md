@@ -419,12 +419,12 @@ const usage = await harness.usage(context); // { models: { "openai/gpt-6-sol": U
 
 One process owns a storage at a time; there is no cross-process locking. The portable SQLite and JSONL cores (`/storage/sqlite`, `/storage/jsonl`) run without Node APIs, for example on Bun or in Cloudflare Durable Objects, given an asynchronous `SqliteDatabase` facade or a `FileSystem` from `@punch-bot/durable/env`.
 
-SQLite adapters implement promise-based `exec`, `prepare`, statement `run`/`get`/`all`, transactions, and close. Operations started by a transaction callback use that transaction; adapters must queue unrelated operations and other transactions until the callback settles:
+SQLite adapters implement promise-based `exec`, `prepare`, statement `run`/`get`/`all`, transactions, and close. A transaction callback receives a transaction handle; all work in the transaction must use it, and the handle expires when the callback settles. Adapters must queue unrelated operations and other transactions until the transaction finishes:
 
 ```typescript
-await database.transaction(async () => {
-	await database.exec("CREATE TABLE example (value TEXT)");
-	const insert = await database.prepare("INSERT INTO example (value) VALUES (?)");
+await database.transaction(async (transaction) => {
+	await transaction.exec("CREATE TABLE example (value TEXT)");
+	const insert = await transaction.prepare("INSERT INTO example (value) VALUES (?)");
 	await insert.run("stored atomically");
 });
 ```

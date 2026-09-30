@@ -1,13 +1,10 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
 import { describe, expect, it } from "vitest";
 import { StorageRejected } from "../src/errors.ts";
 import { idFromNumber } from "../src/ids.ts";
-import type { SqliteDatabase, SqliteStatement } from "../src/storage/sqlite/index.ts";
+import type { SqliteDatabase, SqliteExecutor, SqliteStatement } from "../src/storage/sqlite/index.ts";
 import { SqliteStorage } from "../src/storage/sqlite/index.ts";
-import { type NodeSqliteDatabase, openNodeSqliteDatabase, openNodeSqliteStorage } from "../src/storage/sqlite/node.ts";
+import { type NodeSqliteDatabase, openNodeSqliteDatabase } from "../src/storage/sqlite/node.ts";
 import { type EntryId, ROOT_CONVERSATION_ID } from "../src/types.ts";
 
 type SettlementMode = "immediate" | "delay" | "reject";
@@ -17,6 +14,7 @@ class ControlledSettlementDatabase implements SqliteDatabase {
 	private mode: SettlementMode = "immediate";
 	private pendingSettlement: (() => void) | undefined;
 	private readonly prepareCounts = new Map<string, number>();
+	private readonly transactionPrepareCounts = new Map<string, number>();
 
 	constructor(delegate: NodeSqliteDatabase) {
 		this.delegate = delegate;
@@ -31,12 +29,20 @@ class ControlledSettlementDatabase implements SqliteDatabase {
 		return this.delegate.prepare(sql);
 	}
 
-	transaction<T>(callback: () => Promise<T>): Promise<T> {
+	transaction<T>(callback: (transaction: SqliteExecutor) => Promise<T>): Promise<T> {
 		const mode = this.mode;
 		this.mode = "immediate";
-		if (mode === "immediate") return this.delegate.transaction(callback);
-		const settlement = this.delegate.transaction(async () => {
-			const value = await callback();
+		const counted = (transaction: SqliteExecutor): Promise<T> =>
+			callback({
+				exec: (sql) => transaction.exec(sql),
+				prepare: (sql) => {
+					this.transactionPrepareCounts.set(sql, (this.transactionPrepareCounts.get(sql) ?? 0) + 1);
+					return transaction.prepare(sql);
+				},
+			});
+		if (mode === "immediate") return this.delegate.transaction(counted);
+		const settlement = this.delegate.transaction(async (transaction) => {
+			const value = await counted(transaction);
 			if (mode === "reject") throw new Error("controlled settlement rejection");
 			return value;
 		});
@@ -53,6 +59,10 @@ class ControlledSettlementDatabase implements SqliteDatabase {
 		return this.prepareCounts.get(sql) ?? 0;
 	}
 
+	transactionPrepareCount(sql: string): number {
+		return this.transactionPrepareCounts.get(sql) ?? 0;
+	}
+
 	controlNextSettlement(mode: Exclude<SettlementMode, "immediate">): void {
 		if (this.pendingSettlement !== undefined) throw new Error("A settlement is already pending");
 		this.mode = mode;
@@ -67,7 +77,7 @@ class ControlledSettlementDatabase implements SqliteDatabase {
 }
 
 describe("portable SQLite facade settlement", () => {
-	it("prepares each storage statement once and rebinds it across commits", async () => {
+	it("reuses read statements across calls and write statements within a transaction", async () => {
 		const database = new ControlledSettlementDatabase(await openNodeSqliteDatabase(":memory:"));
 		const storage = await SqliteStorage.open(database);
 		await storage.commit([{ type: "conversation", value: { id: ROOT_CONVERSATION_ID } }], BACKGROUND_CONTEXT);
@@ -94,20 +104,20 @@ describe("portable SQLite facade settlement", () => {
 		).rejects.toThrow("ID 1 already belongs to conversation");
 		expect((await storage.entry(idFromNumber<EntryId>(2), BACKGROUND_CONTEXT))?.entry.kind).toBe("cached");
 		expect(database.prepareCount("SELECT record, commit_seq FROM entries WHERE id = ?")).toBe(1);
-		expect(database.prepareCount("INSERT OR IGNORE INTO record_ids (id, record_type) VALUES (?, ?)")).toBe(1);
+		// Two committing transactions insert 101 entries; each prepares the insert once.
 		expect(
-			database.prepareCount(
+			database.transactionPrepareCount(
 				"INSERT INTO entries (id, conversation_id, head, commit_seq, record) VALUES (?, ?, ?, ?, ?)",
 			),
-		).toBe(1);
+		).toBe(2);
 		await storage.close(BACKGROUND_CONTEXT);
 	});
 
-	it("supports asynchronous Node transaction callbacks and closes idempotently", async () => {
+	it("commits work done through the transaction handle and closes idempotently", async () => {
 		const database = await openNodeSqliteDatabase(":memory:");
-		await database.transaction(async () => {
-			await database.exec("CREATE TABLE async_probe (value INTEGER)");
-			await (await database.prepare("INSERT INTO async_probe (value) VALUES (?)")).run(1);
+		await database.transaction(async (transaction) => {
+			await transaction.exec("CREATE TABLE async_probe (value INTEGER)");
+			await (await transaction.prepare("INSERT INTO async_probe (value) VALUES (?)")).run(1);
 		});
 		expect(await (await database.prepare("SELECT value FROM async_probe")).get()).toEqual({ value: 1 });
 		await database.close();
@@ -125,17 +135,17 @@ describe("portable SQLite facade settlement", () => {
 		const firstGate = new Promise<void>((resolve) => {
 			releaseFirst = resolve;
 		});
-		const first = database.transaction(async () => {
-			await database.exec("INSERT INTO transaction_queue (value) VALUES (1)");
+		const first = database.transaction(async (transaction) => {
+			await transaction.exec("INSERT INTO transaction_queue (value) VALUES (1)");
 			markFirstStarted();
 			await firstGate;
 		});
 		await firstStarted;
 
 		let secondStarted = false;
-		const second = database.transaction(async () => {
+		const second = database.transaction(async (transaction) => {
 			secondStarted = true;
-			await database.exec("INSERT INTO transaction_queue (value) VALUES (2)");
+			await transaction.exec("INSERT INTO transaction_queue (value) VALUES (2)");
 		});
 		await Promise.resolve();
 		expect(secondStarted).toBe(false);
@@ -161,8 +171,8 @@ describe("portable SQLite facade settlement", () => {
 		const transactionGate = new Promise<void>((resolve) => {
 			releaseTransaction = resolve;
 		});
-		const transaction = database.transaction(async () => {
-			await database.exec("INSERT INTO operation_queue (value) VALUES (1)");
+		const pending = database.transaction(async (transaction) => {
+			await transaction.exec("INSERT INTO operation_queue (value) VALUES (1)");
 			markTransactionStarted();
 			await transactionGate;
 		});
@@ -181,50 +191,42 @@ describe("portable SQLite facade settlement", () => {
 		expect(readSettled).toBe(false);
 
 		releaseTransaction();
-		await transaction;
+		await pending;
 		await write;
 		await expect(read).resolves.toEqual([{ value: 1 }, { value: 2 }]);
 		await database.close();
 	});
 
-	it("does not share an in-flight prepare across transaction contexts after reopening", async () => {
-		const directory = await mkdtemp(join(tmpdir(), "pi-durable-sqlite-cache-"));
-		const path = join(directory, "storage.sqlite");
-		try {
-			const initial = await openNodeSqliteStorage(path);
-			await initial.close(BACKGROUND_CONTEXT);
-
-			const database = await openNodeSqliteDatabase(path);
-			const storage = await SqliteStorage.open(database);
-			let markTransactionStarted!: () => void;
-			const transactionStarted = new Promise<void>((resolve) => {
-				markTransactionStarted = resolve;
-			});
-			let releaseTransaction!: () => void;
-			const transactionGate = new Promise<void>((resolve) => {
-				releaseTransaction = resolve;
-			});
-			const transaction = database.transaction(async () => {
-				markTransactionStarted();
-				await transactionGate;
-				return storage.conversation(ROOT_CONVERSATION_ID, BACKGROUND_CONTEXT);
-			});
-			await transactionStarted;
-
-			const concurrentRead = storage.conversation(ROOT_CONVERSATION_ID, BACKGROUND_CONTEXT);
-			releaseTransaction();
-			await expect(Promise.all([transaction, concurrentRead])).resolves.toEqual([undefined, undefined]);
-			await storage.close(BACKGROUND_CONTEXT);
-		} finally {
-			await rm(directory, { recursive: true, force: true });
-		}
-	});
-
-	it("rejects close from an active transaction", async () => {
+	it("rejects database operations from inside a transaction callback instead of waiting forever", async () => {
 		const database = await openNodeSqliteDatabase(":memory:");
-		await expect(database.transaction(async () => database.close())).rejects.toThrow(
+		await database.exec("CREATE TABLE misuse_probe (value INTEGER)");
+		const statement = await database.prepare("SELECT value FROM misuse_probe");
+		const misuse = "Use the transaction handle inside a transaction callback";
+		await expect(database.transaction(() => database.exec("SELECT 1"))).rejects.toThrow(misuse);
+		await expect(database.transaction(() => database.prepare("SELECT 1"))).rejects.toThrow(misuse);
+		await expect(database.transaction(() => statement.all())).rejects.toThrow(misuse);
+		await expect(database.transaction(() => database.transaction(async () => undefined))).rejects.toThrow(
+			"Nested SQLite transactions are not supported",
+		);
+		await expect(database.transaction(() => database.close())).rejects.toThrow(
 			"Cannot close SQLite during an active transaction",
 		);
+		await database.close();
+	});
+
+	it("rejects a transaction handle used after its transaction settles", async () => {
+		const database = await openNodeSqliteDatabase(":memory:");
+		await database.exec("CREATE TABLE stale_probe (value INTEGER)");
+		let handle!: SqliteExecutor;
+		let statement!: SqliteStatement;
+		await database.transaction(async (transaction) => {
+			handle = transaction;
+			statement = await transaction.prepare("INSERT INTO stale_probe (value) VALUES (?)");
+		});
+		const stale = "SQLite transaction handle is no longer active";
+		await expect(handle.exec("INSERT INTO stale_probe (value) VALUES (1)")).rejects.toThrow(stale);
+		await expect(statement.run(1)).rejects.toThrow(stale);
+		expect(await (await database.prepare("SELECT value FROM stale_probe")).all()).toEqual([]);
 		await database.close();
 	});
 
@@ -232,9 +234,9 @@ describe("portable SQLite facade settlement", () => {
 		const database = await openNodeSqliteDatabase(":memory:");
 		await database.exec("CREATE TABLE rollback_probe (value INTEGER)");
 		await expect(
-			database.transaction(async () => {
-				await database.exec("INSERT INTO rollback_probe (value) VALUES (1)");
-				await database.exec("COMMIT");
+			database.transaction(async (transaction) => {
+				await transaction.exec("INSERT INTO rollback_probe (value) VALUES (1)");
+				await transaction.exec("COMMIT");
 				throw new StorageRejected("rejected after an escaped commit");
 			}),
 		).rejects.toThrow(AggregateError);

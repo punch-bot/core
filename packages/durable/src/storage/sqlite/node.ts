@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { SQLInputValue, StatementSync } from "node:sqlite";
 import { DatabaseSync } from "node:sqlite";
-import type { SqliteDatabase, SqliteStatement, SqliteValue } from "./database.ts";
+import type { SqliteDatabase, SqliteExecutor, SqliteStatement, SqliteValue } from "./database.ts";
 import { SqliteStorage } from "./storage.ts";
 
 /** Node SQLite connection settings for a durable storage file. */
@@ -18,6 +18,7 @@ const DEFAULT_WAL_AUTO_CHECKPOINT_PAGES = 1_000;
 const DEFAULT_BUSY_TIMEOUT_MS = 5_000;
 
 type RunOperation = <T>(operation: () => T | Promise<T>) => Promise<T>;
+type TransactionScope = { active: boolean };
 
 class SerialOperationQueue {
 	private tail = Promise.resolve();
@@ -61,11 +62,39 @@ class NodeSqliteStatement implements SqliteStatement {
 	}
 }
 
+class NodeSqliteTransaction implements SqliteExecutor {
+	private readonly database: DatabaseSync;
+	private readonly scope: TransactionScope;
+
+	constructor(database: DatabaseSync, scope: TransactionScope) {
+		this.database = database;
+		this.scope = scope;
+	}
+
+	exec(sql: string): Promise<void> {
+		return this.runOperation(() => {
+			this.database.exec(sql);
+		});
+	}
+
+	prepare(sql: string): Promise<SqliteStatement> {
+		return this.runOperation(
+			() => new NodeSqliteStatement(this.database.prepare(sql), (operation) => this.runOperation(operation)),
+		);
+	}
+
+	private async runOperation<T>(operation: () => T | Promise<T>): Promise<T> {
+		if (!this.scope.active) throw new Error("SQLite transaction handle is no longer active");
+		return operation();
+	}
+}
+
 /** `SqliteDatabase` adapter backed by Node's built-in `node:sqlite`. */
 export class NodeSqliteDatabase implements SqliteDatabase {
 	private readonly database: DatabaseSync;
 	private readonly access = new SerialOperationQueue();
-	private readonly transactionContext = new AsyncLocalStorage<{ active: boolean }>();
+	/** Detects database calls from inside a transaction callback, which would otherwise wait for that transaction forever. */
+	private readonly transactionScope = new AsyncLocalStorage<TransactionScope>();
 	private closed = false;
 
 	constructor(database: DatabaseSync) {
@@ -84,20 +113,22 @@ export class NodeSqliteDatabase implements SqliteDatabase {
 		);
 	}
 
-	transaction<T>(callback: () => Promise<T>): Promise<T> {
-		if (this.transactionContext.getStore()?.active === true) {
+	transaction<T>(callback: (transaction: SqliteExecutor) => Promise<T>): Promise<T> {
+		if (this.insideTransaction()) {
 			return Promise.reject(new Error("Nested SQLite transactions are not supported"));
 		}
 		return this.access.run(async () => {
 			this.database.exec("BEGIN IMMEDIATE");
-			const context = { active: true };
+			const scope = { active: true };
 			try {
-				const result = await this.transactionContext.run(context, callback);
-				context.active = false;
+				const result = await this.transactionScope.run(scope, () =>
+					callback(new NodeSqliteTransaction(this.database, scope)),
+				);
+				scope.active = false;
 				this.database.exec("COMMIT");
 				return result;
 			} catch (error) {
-				context.active = false;
+				scope.active = false;
 				try {
 					this.database.exec("ROLLBACK");
 				} catch (rollbackError) {
@@ -109,7 +140,7 @@ export class NodeSqliteDatabase implements SqliteDatabase {
 	}
 
 	close(): Promise<void> {
-		if (this.transactionContext.getStore()?.active === true) {
+		if (this.insideTransaction()) {
 			return Promise.reject(new Error("Cannot close SQLite during an active transaction"));
 		}
 		return this.access.run(() => {
@@ -123,9 +154,15 @@ export class NodeSqliteDatabase implements SqliteDatabase {
 		});
 	}
 
-	private async runOperation<T>(operation: () => T | Promise<T>): Promise<T> {
-		if (this.transactionContext.getStore()?.active === true) return operation();
+	private runOperation<T>(operation: () => T | Promise<T>): Promise<T> {
+		if (this.insideTransaction()) {
+			return Promise.reject(new Error("Use the transaction handle inside a transaction callback"));
+		}
 		return this.access.run(operation);
+	}
+
+	private insideTransaction(): boolean {
+		return this.transactionScope.getStore()?.active === true;
 	}
 }
 
