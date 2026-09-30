@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { SQLInputValue, StatementSync } from "node:sqlite";
+import type { StatementSync } from "node:sqlite";
 import { DatabaseSync } from "node:sqlite";
 import type { SqliteDatabase, SqliteExecutor, SqliteValue } from "./database.ts";
 import { SqliteStorage } from "./storage.ts";
@@ -24,15 +24,13 @@ class SerialOperationQueue {
 
 	async run<T>(operation: () => T | Promise<T>): Promise<T> {
 		const previous = this.tail;
-		let release: () => void;
-		this.tail = new Promise<void>((resolve) => {
-			release = resolve;
-		});
+		const { promise, resolve: release } = Promise.withResolvers<void>();
+		this.tail = promise;
 		await previous;
 		try {
 			return await operation();
 		} finally {
-			release!();
+			release();
 		}
 	}
 }
@@ -58,16 +56,16 @@ abstract class NodeSqliteExecutor implements SqliteExecutor {
 
 	run(sql: string, ...params: SqliteValue[]): Promise<void> {
 		return this.runOperation(() => {
-			this.statement(sql).run(...(params as SQLInputValue[]));
+			this.statement(sql).run(...params);
 		});
 	}
 
 	get<T extends object>(sql: string, ...params: SqliteValue[]): Promise<T | undefined> {
-		return this.runOperation(() => this.statement(sql).get(...(params as SQLInputValue[])) as T | undefined);
+		return this.runOperation(() => this.statement(sql).get(...params) as T | undefined);
 	}
 
 	all<T extends object>(sql: string, ...params: SqliteValue[]): Promise<T[]> {
-		return this.runOperation(() => this.statement(sql).all(...(params as SQLInputValue[])) as T[]);
+		return this.runOperation(() => this.statement(sql).all(...params) as T[]);
 	}
 
 	protected abstract runOperation<T>(operation: () => T): Promise<T>;
