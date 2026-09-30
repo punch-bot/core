@@ -822,36 +822,79 @@ updates):
 - Rerun every existing suite; generation, inbox, events, and view tests keep
   passing unchanged except for the new optional fields.
 
-## 21. Reload and final conformance
+## 21. Extensions and per-conversation agents
 
-Complete any remaining §2.2 surface and lifecycle gates and the §7.5 in-process
-reload path through the registry: batch replacement while the Harness keeps
-running, pinned in-flight work, and task handover at phase boundaries.
-Close/reopen is not required for reload.
+Implement the design agreed with Mario, now specified in `pico-v5.md` (§2.2,
+§5.1/§5.4 runtime surface, §6 queue modes, §7.1–§7.5, §8 where tasks read the
+agent and settings, §9.3/§9.4 view mount and events, §12 footguns): extensions
+installed by name replace keys, positions, `batch()`, wrappers-by-key, hook
+scopes, and public conversation setups; the rewindable `pi.agent` document
+(model, thinking level, extension and tool selection, `instructions`, `cwd`)
+replaces `pi.conversation.config` and its getters and setters; run policies
+become Harness-wide live `HarnessSettings`; the environment is built per call
+by one host `env` function. The `Tool` generic stays. `CodingTools` bundles
+read, write, edit, and bash; grep, find, and ls are not ported.
 
-Test that close seals commit and mutation admission, lets already-admitted
-storage settlement finish despite caller cancellation, stops future state/watch
-delivery, joins task/tool/hook invocations outside the Session line, writes no
-abort or terminal outcome, starts no fresh abort invocation, and never runs old
-and new Harness generations concurrently. Include cancellation during watch
-acquisition and an already-running callback that remains caller-owned across
-shutdown. Verify service withdrawal and client detach.
+Implement in parts, each with tests: registry and extensions (install/replace,
+uninstall, catalogue views, task-name collisions, wrapper failures); `pi.agent`,
+`configure()`, and resolution (selection arrays and `add`/`remove`, same-name
+replacement, wrappers, uninstalled names, `addTools`); settings resolution and
+every reader (generation request options and retry, compaction thresholds, tool
+execution, queue modes on the line); `env` for tools, `prepare`, and
+`runtime.env()`; hooks resolved from the conversation's selected extensions per
+phase; reload of an extension while work runs (running phases keep their
+snapshot, pinned tools finish under old code, task definitions hand over at the
+next phase boundary as in §5.4); view and events. Rewrite the examples,
+including 22 and 23, to the new surface.
 
-Run the exhaustive public conformance matrix: stable persisted root identity;
-all root/create/lookup/fork/reset/compact/abort/idle paths; every configuration
-getter/setter and fork override; typed input/write submissions; task wait/abort;
-generic document access; registry changes before open, between open and resume,
-and while work runs; structural watches; and blocked tasks surviving open. Compile-test every §2.2 and §3 owner/key/seed overload,
-the normative usage sequences, and the Chord guide. The erased registry test must
-use a concrete narrowed-input task with multiple checkpoint phases and custom
-hooks. Verify that a Chord root-replacement delta remains distinct from a
-Session-selected storage checkpoint.
+## 22. Lifecycle and final conformance
 
-Run all package-specific tests and the repository check. Finish with a local
-coding-agent turn and a reopened interrupted turn through the public Harness,
-then stop for final review.
+Package 21 of the previous plan was audited (three reviewers); these findings
+remain and apply to the new surface.
 
-## 22. Task graph view
+Bugs:
+- `runtime.now()` and `runtime.report()` stay usable after the invocation ends
+  (`scheduler.ts` runtime); §5.4 says every runtime operation rejects.
+- A commit that only migrates a document through a newer token (version base, no
+  ops) is not published (`transaction.ts` `publishes()`), so observers of the
+  older shape keep a stale value until the next edit.
+- A failed `Harness.open` closes with the caller's possibly cancelled context,
+  masking the original error; close without the caller's signal and rethrow.
+- `ConversationWatch` alias missing; stale TODO at `types.ts` about
+  `subscribeCommits`; `resume()` doc comment omits progress calls.
+
+Spec wording to settle with Mario first: close stops state and watch delivery at
+seal (§2.2 says states close after the join); cancelling `close()` cancels only
+that wait and a second `close()` awaits the same shutdown; add
+`Conversation.abort()` to the progress calls; "old and new Harness generations"
+means that after `await close()` no invocation code of the old Harness runs;
+"service withdrawal and client detach" is proposed as a runnable Chord guide
+test (facet host, in-process remote binding, host dispose before Harness close);
+"normative usage sequences" are the spec's example code blocks, copied into one
+compile-checked test.
+
+Tests to add or strengthen: a committer cancelled while its commit is in
+Storage still settles durably; a cancelled `close()` still completes shutdown;
+a task handler, tool `execute`, and hook that ignore the signal keep `close()`
+pending and Storage open until they return (the current tests pass with
+`join()` deleted); a state receives no frame from a commit settling during
+close; watch acquisition cancelled mid-line leaves no subscription; conversation
+handle methods and `inspect()` (`scheduling: "closing"`) around close; each
+progress call enables scheduling on a paused Harness and each read-only viewer
+does not; registry change between open and resume; handover keeps memos;
+compile tests for every §3.3/§9.1 overload (including `snapshotAsOf` rejecting a
+non-rewindable token, token overloads of `tx.entry`/`appendEntry`), the
+`SubmissionDraft` never-fields, `waitForTask<R>`, `compact()` result type, and
+an erased extension/task with narrowed input, several phases, and custom hooks;
+the Chord guide compiles (it uses a bare `Id` today) and runs.
+
+Already covered, rerun only: root-replacement delta versus checkpoint, blocked
+tasks surviving open, root identity across reopen, handover cases, a reopened
+interrupted turn. Run all package tests and the repository check, finish with a
+local coding-agent turn and a reopened interrupted turn through the public
+Harness, then stop for final review.
+
+## 23. Task graph view
 
 A live, observable view of the Session's task graph for UIs and debugging, like
 `ConversationView` for a conversation: every live task with its owner edge

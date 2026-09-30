@@ -138,7 +138,7 @@ applied before `toolsAdded` within one message. Replaying every system message
 in transcript order yields the effective prompt and tool set.
 
 Pico always writes `content: ""`. Every prompt part, including the preamble, is
-a named section produced by the registry's system prompt slot (section 7.4).
+a named section resolved from the conversation's agent (section 7.4).
 
 ```ts
 type ContextEdit = {
@@ -319,11 +319,13 @@ type SubmissionDraft = {
 
 type InputSubmissionDraft = Extract<SubmissionDraft, { readonly type: "input" }>;
 
-/** Runs inside the creating commit, after the conversation and its configuration exist. */
+/** Runs inside the creating commit, after the creation hook and the `agent` change. */
 type ConversationInit = (tx: Tx, conversationId: ConversationId) => void | Promise<void>;
 
 type ConversationCreateOptions = {
   readonly ownership: ConversationOwnership;
+  /** Applied in the creating commit after the creation hook's copy, before `init`. */
+  readonly agent?: AgentChange;
   readonly init?: ConversationInit;
 };
 
@@ -342,8 +344,14 @@ type AnyTask = {
 type HarnessOptions<Tool extends ToolRegistration = ToolRegistration> = {
   readonly models: Models; // the pi-ai Models interface
   readonly registry: RegistryReader<Tool>; // section 7.1
-  /** Default execution environment offered to tools (section 7.3). */
-  readonly env?: ExecutionEnv;
+  readonly settings?: HarnessSettings;
+  /** Builds a conversation's environment. Never called on the Session line; may be async. */
+  readonly env?: (
+    target: { readonly conversationId: ConversationId; readonly cwd?: string; readonly read: DocumentReader },
+    context: Context,
+  ) => ExecutionEnv | undefined | Promise<ExecutionEnv | undefined>;
+  /** Runs in every commit that creates or forks a conversation, after the built-in creation hook (below). */
+  readonly conversationCreated?: (tx: Tx, conversation: ConversationRecord) => void | Promise<void>;
   readonly now?: () => number;
   readonly onReport?: (error: unknown) => void;
 };
@@ -386,24 +394,73 @@ type ToolExecutionMode = "parallel" | "sequential";
 /** How many queued items of one mode a boundary selects (section 6). */
 type QueueMode = "all" | "one-at-a-time";
 
-type ConversationConfigState = {
-  model?: ModelRef;
-  thinkingLevel: ModelThinkingLevel;
-  activeTools: string[];
-  streamOptions?: ConversationStreamOptions;
-  retry?: ConversationRetryPolicy;
-  /** Default `parallel`; see section 8.3. */
-  toolExecution?: ToolExecutionMode;
-  /** Default `one-at-a-time`; see section 6. */
-  steeringMode?: QueueMode;
-  /** Default `one-at-a-time`; see section 6. */
-  followUpMode?: QueueMode;
-  /** Default `DEFAULT_COMPACTION_POLICY`; see section 8.7. */
-  compaction?: CompactionPolicy;
+/** Read at every resolution and never copied; getters are fine. Synchronous: some readers run on the Session line. */
+type HarnessSettings = {
+  /** Default extension selection; absent: every installed extension, in install order. */
+  readonly extensions?: readonly Extension[];
+  readonly stream?: ConversationStreamOptions;
+  readonly retry?: Partial<ConversationRetryPolicy>;
+  readonly compaction?: Partial<CompactionPolicy>;
+  readonly toolExecution?: ToolExecutionMode;
+  readonly steeringMode?: QueueMode;
+  readonly followUpMode?: QueueMode;
 };
 
-/** Built-in rewindable configuration document; see below. */
-declare const ConversationConfig: RewindableConversationDocToken<ConversationConfigState>;
+/** Resolved: every field over its built-in default, object fields merged. */
+type Settings = {
+  readonly extensions?: readonly Extension[]; // default: every installed extension, in install order
+  readonly stream: ConversationStreamOptions; // default {}
+  readonly retry: ConversationRetryPolicy; // { enabled: true, maxRetries: 3, baseDelayMs: 2000, maxAgentDelayMs: 60000 }
+  readonly compaction: CompactionPolicy; // { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000, backgroundTokens: 32768 }
+  readonly toolExecution: ToolExecutionMode; // "parallel"
+  readonly steeringMode: QueueMode; // "one-at-a-time"
+  readonly followUpMode: QueueMode; // "one-at-a-time"
+};
+
+/** Stored choices of one conversation; names, not objects. Unset fields follow the host. */
+type AgentState = {
+  model?: ModelRef;
+  thinkingLevel?: ModelThinkingLevel;
+  /** An array selects exactly these extensions, in order. An object edits the host default selection. */
+  extensions?: string[] | { add?: string[]; remove?: string[] };
+  /** Filters the selected extensions' tools. An array offers exactly these, in order. */
+  tools?: string[] | { remove: string[] };
+  /** Rendered after every extension section, as the section `instructions`. */
+  instructions?: string;
+  /** Directory within the environment's file system, passed to `HarnessOptions.env`. */
+  cwd?: string;
+};
+
+/** Built-in rewindable agent document; see below. */
+declare const AgentDoc: RewindableConversationDocToken<AgentState>;
+
+/** Objects are handles for their names. */
+type AgentChange = {
+  readonly model?: ModelRef | null;
+  readonly thinkingLevel?: ModelThinkingLevel | null;
+  readonly extensions?:
+    | readonly Extension[]
+    | { readonly add?: readonly Extension[]; readonly remove?: readonly Extension[] }
+    | null;
+  readonly tools?: readonly ToolRegistration[] | { readonly remove: readonly ToolRegistration[] } | null;
+  readonly instructions?: string | null;
+  readonly cwd?: string | null;
+};
+
+/** One change in any commit. A given field replaces the stored one; `null` clears it; `undefined` changes nothing. */
+function configure(tx: Tx, conversationId: ConversationId, change: AgentChange): Promise<void>;
+
+/** A conversation's agent resolved against a registry snapshot and the settings (section 7.1). */
+type Agent<Tool extends ToolRegistration = ToolRegistration> = {
+  readonly model?: ModelRef;
+  readonly thinkingLevel: ModelThinkingLevel;
+  readonly extensions: readonly Extension<Tool>[];
+  readonly tools: readonly Tool[];
+  /** Extension sections, then `instructions` when set. */
+  readonly sections: readonly PromptSection<Tool>[];
+  readonly instructions?: string;
+  readonly cwd?: string;
+};
 
 /** Entry whose `data` has type `D`; `never` means the kind carries no data. */
 type TypedEntry<D extends JsonValue> = Omit<EntryRecord, "data"> &
@@ -462,7 +519,6 @@ type HarnessInspection = {
   readonly tasks: readonly TaskInspection[];
   /** Queued and placed submissions in ID order. */
   readonly submissions: readonly SubmissionRecord[];
-  readonly registry: readonly RegistryFailure[];
 };
 
 type ConversationWatch = WatchHandle<ConversationView>;
@@ -474,25 +530,10 @@ type HooksOf<K> = K extends Task<infer _I, infer _S, infer _R, infer H>
 interface Conversation {
   readonly id: ConversationId;
   submit(submission: SubmissionDraft, context: Context): Promise<Submission>;
-
-  getModel(context: Context): Promise<ModelRef | undefined>;
-  setModel(model: ModelRef | undefined, context: Context): Promise<void>;
-  getThinkingLevel(context: Context): Promise<ModelThinkingLevel>;
-  setThinkingLevel(level: ModelThinkingLevel, context: Context): Promise<void>;
-  getActiveTools(context: Context): Promise<readonly string[]>;
-  setActiveTools(names: readonly string[], context: Context): Promise<void>;
-  getStreamOptions(context: Context): Promise<ConversationStreamOptions>;
-  setStreamOptions(options: ConversationStreamOptions, context: Context): Promise<void>;
-  getRetryPolicy(context: Context): Promise<ConversationRetryPolicy>;
-  setRetryPolicy(policy: ConversationRetryPolicy | undefined, context: Context): Promise<void>;
-  getToolExecution(context: Context): Promise<ToolExecutionMode>;
-  setToolExecution(mode: ToolExecutionMode | undefined, context: Context): Promise<void>;
-  getSteeringMode(context: Context): Promise<QueueMode>;
-  setSteeringMode(mode: QueueMode | undefined, context: Context): Promise<void>;
-  getFollowUpMode(context: Context): Promise<QueueMode>;
-  setFollowUpMode(mode: QueueMode | undefined, context: Context): Promise<void>;
-  getCompaction(context: Context): Promise<CompactionPolicy>;
-  setCompaction(policy: CompactionPolicy | undefined, context: Context): Promise<void>;
+  /** Resolved with the current registry snapshot and settings. */
+  agent(context: Context): Promise<Agent>;
+  /** `configure()` in its own commit. */
+  configure(change: AgentChange, context: Context): Promise<void>;
 
   commit<T>(
     change: (tx: Tx) => T | Promise<T>,
@@ -524,7 +565,7 @@ interface Harness extends Session {
 
   root(
     context: Context,
-    options?: { readonly init?: ConversationInit },
+    options?: { readonly agent?: AgentChange; readonly init?: ConversationInit },
   ): Promise<Conversation>;
   conversation(id: ConversationId, context: Context): Promise<Conversation | undefined>;
   createConversation(options: ConversationCreateOptions, context: Context): Promise<Conversation>;
@@ -561,9 +602,8 @@ user input or passive entry write and returns one `Submission` that tracks its
 settlement.
 
 `Harness.open()` binds the Session to one application-owned registry (section
-7.1). `createRegistry()` pre-registers the built-in task definitions (section 8);
-they cannot be disposed or replaced, and open rejects a registry whose snapshot
-lacks any of them or the built-in `pi` conversation setup.
+7.1). `createRegistry()` always holds the built-in task definitions (section 8),
+and open rejects a registry whose snapshot lacks any of them.
 Open changes surviving `running` tasks to `pending`, keeps `waiting` tasks
 waiting, and re-evaluates finalization and `failFast` for `completing` and
 `waiting` tasks (section 5.5). It never migrates or terminalizes a task because
@@ -571,127 +611,208 @@ its definition is missing or unmigratable. Such a task stays `pending` or `waiti
 scheduler skips it and reconsiders it whenever the registry changes (section
 5.4). Any built-in document touched by recovery migrates through its ordinary
 typed access path. Open does not scan or migrate other documents. No handler
-dispatches during open. Applications should register tasks before open so
-recovered work can resume immediately; registration after open also unblocks it.
+dispatches during open. Applications should install their extensions before
+open so recovered work can resume immediately; an install after open also
+unblocks it.
 
 The root conversation always has reserved ID `ROOT_CONVERSATION_ID` (`1`).
-`root(context, { init })` creates it lazily: when the root is absent, one commit
-on the Session line creates the ownerless root, its default configuration, and
-runs `init(tx, rootId)`. When the root already exists, `init` is ignored and no
-write occurs. Reopen finds the same root by its reserved ID. A conversation with
-no configured model produces a durable `no_model` generation failure.
+`root(context, { agent, init })` creates it lazily: when the root is absent, one
+commit on the Session line creates the ownerless root, runs the creation hook
+(below), applies `agent` with `configure()`, and runs `init(tx, rootId)`. When
+the root already exists, `agent` and `init` are ignored and no write occurs.
+Reopen finds the same root by its reserved ID. A conversation whose agent has no
+model produces a durable `no_model` generation failure.
 
 `resume()` is idempotent while running and only enables scheduling. It does not
 repeat open-time reconciliation, and it throws after close. Work that must happen
-before any task runs, such as registration or seeding, happens before
+before any task runs, such as installing extensions or seeding, happens before
 `resume()`. Calls that ask for progress also enable scheduling, so they never
 wait on a paused Harness: `Conversation.submit()`, `Conversation.compact()`, `Submission.wait()`,
 `Harness.waitForTask()`, `Harness.waitForIdle()`, and
 `Conversation.waitForIdle()`. Recovered work starts with them. A viewer that only
 reads never enables scheduling.
 
-`createConversation({ ownership, init })` and
-`fork(at, { ownership, init })` commit atomically: the conversation, its
-explicitly selected ownership, its configuration, and every write made by `init`.
+`createConversation({ ownership, agent, init })` and
+`fork(at, { ownership, agent, init })` commit atomically: the conversation, its
+explicitly selected ownership, the creation hook's documents, the `agent`
+change, and every write made by `init`.
 A first input is an ordinary `submit()` afterward. A request ID makes a retried
 `submit()` to the same conversation exactly-once; a host that must survive a
 crash between the two calls first finds its conversation again, for example
 through a key written by `init`. Host callers must choose ownerless or task
 ownership; neither the Harness nor a conversation handle infers ownership from
-call context. A new independent conversation receives the default configuration
-before `init` runs. A fork receives the configuration visible at `at` through
-the ordinary `asOf` fork policy; `init` may then override it with
-`tx.doc(ConversationConfig, id)`. Other documents follow their own definitions
-without special handling.
+call context.
 
-Every Harness commit that creates or forks a conversation runs the registry's
-conversation setups (section 7.1) in the same commit, whether through the
-conveniences or through raw `tx.createConversation()` and `tx.forkConversation()`,
-for example inside a tool commit. The built-in `pi` setup runs first: an
-independent conversation gets the default configuration and a fork keeps its
-`asOf` copy, and both get empty `pi.live`, `pi.inbox`, and `pi.usage`.
-Applications register setups for their own documents the same way. The
-conveniences add only `init` and its checks, which run after every setup. A conversation created by a plain Session has no
-built-in documents; its configuration reads as
-`ConversationConfig.definition.initial()` until something writes it.
+Every Harness commit that creates or forks a conversation runs the built-in
+creation hook in the same commit, whether through the conveniences or through
+raw `tx.createConversation()` and `tx.forkConversation()`, for example inside a
+tool commit. It runs inside `tx.createConversation()` and
+`tx.forkConversation()`, before they return, so a `configure()` later in the
+same callback overrides its copy. It creates empty `pi.live`, `pi.inbox`, and
+`pi.usage`, and handles `pi.agent`:
 
-The built-in conversation configuration document is final at version 1:
+- A fork keeps the `asOf` copy of its parent's `pi.agent` (section 3.7),
+  whatever its ownership.
+- A new task-owned conversation gets a copy of the stored `pi.agent` of the
+  owner task's conversation, every field, `instructions` included. A later
+  change to the owner does not reach the child. Fields the owner leaves unset
+  stay unset and follow the host.
+- A new ownerless conversation gets an empty `pi.agent`, `{}`.
 
-| field | value |
-|---|---|
-| kind | `pi.conversation.config` |
-| version | `1` (no migration) |
-| scope/history/fork | conversation, `rewindable`, `asOf` |
-| schema | `ConversationConfigState` |
-| `initial()` | `{ thinkingLevel: "off", activeTools: [] }` |
-| checkpoint | complete base on every change |
-| view mount | `docs["pi.conversation.config"]` |
+`HarnessOptions.conversationCreated`, if given, then runs in the same commit
+with the new record, for every creation path, so the host can create the
+documents its application needs in every conversation; the record's `parent`
+and `owner` tell forks and task-owned conversations apart. Table reads throw
+`ReadAfterWrite` there, as in `init`, and a throw fails the creating commit.
+The conveniences then apply their `agent` change and run `init`. Extensions
+have no creation hook, so their hooks and sections treat an absent document of
+their own as its default. A conversation created by a plain Session has no
+built-in documents.
 
-It has no prompt sections: prompt text is produced per request by the registry
-(section 7.4). Any code may edit it with
-`tx.doc(ConversationConfig, id)`, including in the same commit as a create or
-fork. The getters return immutable committed values, falling back to
-`initial()` when the document is absent; they never write. `getStreamOptions()`
-returns `{}` and `getRetryPolicy()` returns the default policy
-`{ enabled: true, maxRetries: 3, baseDelayMs: 2000, maxAgentDelayMs: 60000 }`
-when the field is absent; `setRetryPolicy(undefined)` removes the field.
-`getToolExecution()` returns `parallel` when the field is absent;
-`setToolExecution(undefined)` removes it. `getSteeringMode()` and
-`getFollowUpMode()` return `one-at-a-time` when their field is absent; their
-setters remove the field for `undefined`. `getCompaction()` returns
-`DEFAULT_COMPACTION_POLICY`, `{ enabled: true, reserveTokens: 16384,
-keepRecentTokens: 20000, backgroundTokens: 32768 }`, when the field is absent;
-`setCompaction(undefined)` removes it.
-`streamOptions` are forwarded to every generation request of the conversation;
-`streamOptions.maxRetries` are provider retries inside one request, while `retry`
-governs durable generation attempts (section 8). Each setter performs
-one ordinary Session commit against the document. A setter does not start
-generation or append a system entry. Request preparation later compares the
-desired configuration with transcript history and appends the required
-positional system baseline or delta.
-
-Default active tools for a root or independent conversation, including one
-created through `tx.createConversation()` in a Harness commit, are the names of
-every tool registered when its creation commit runs, in registry order.
-`setActiveTools()` rejects the whole operation without a write when a name is
-duplicated or when a name that was not already active in that conversation is
-not registered. The create/fork conveniences check only one thing about `init`
-writes: names that `init` newly activates must be registered. Names that were
-already active are never revalidated, so stale unregistered names survive every
-edit. All other raw document writes are trusted and unchecked, so other writers,
-such as the generation's `addTools` handling, never fault because of registry movement. Readers tolerate what raw
-writes can produce: request preparation offers the first occurrence of a
-duplicated name, and the generation's `tools` phase appends only `addTools`
-names not already active.
+```ts
+// In a tool's commit. The child starts as a copy of this conversation's agent: model, extensions, tools, cwd.
+const child = await tx.createConversation({ ownership: { kind: "task", taskId: api.taskId } });
+// A cheaper model, only the read tool, and its own worktree; everything else stays as copied.
+await configure(tx, child.id, { model: haiku, tools: [readTool], cwd: worktree });
+```
 
 `init` runs after the conversation creation, which is a table write, so table
 reads inside it throw `ReadAfterWrite` (section 4). Document access remains
 available.
 
-The configuration document records the desired loadout; the registry records
-what this process can execute now. An active name may therefore be unregistered,
-for example during extension reload, after restart before registration, or in a
-fork opened by a process that lacks an extension. The document is never
-rewritten because of registry movement, so a re-registered tool becomes available
-again without host action. Hosts derive current availability as active names
-that are currently registered.
+The built-in agent document is final at version 1:
+
+| field | value |
+|---|---|
+| kind | `pi.agent` |
+| version | `1` (no migration) |
+| scope/history/fork | conversation, `rewindable`, `asOf` |
+| schema | `AgentState` |
+| `initial()` | `{}` |
+| checkpoint | complete base on every change |
+| view mount | `docs["pi.agent"]` |
+
+It stores only what someone chose for the conversation: extension and tool
+names, never code, and no prompt text other than `instructions`. Code comes
+from the registry by name when the agent is resolved (section 7.1).
+`configure(tx, id, change)` edits it in any commit, including the one that
+creates or forks the conversation; `Conversation.configure()` does so in its own
+commit. `Conversation.agent()` resolves it with the current registry snapshot
+and settings, reading an absent document as `{}`; it never writes.
+
+`configure()` replaces whole fields: a given field replaces the stored one,
+`null` clears it, and `undefined` leaves it. Extension and tool objects stand
+for their names, so an old object of an extension that was installed again
+still selects it.
+
+```ts
+await root.configure({ tools: { remove: [editTool] } }, context);
+await root.configure({ tools: { remove: [bashTool] } }, context); // edit is offered again
+await root.configure({ tools: null }, context); // every tool of the selected extensions again
+```
+
+A UI toggle therefore reads the current value and writes the new one. An
+`extensions` object `{ add, remove }` always edits the host default selection
+(section 7.1), never a copied selection, whether that is an array or an
+`{ add, remove }` object; to edit a copied selection, write an array computed
+from the resolved agent's `extensions`.
+
+Nothing checks that a stored extension or tool name is installed. The document
+records choices; the registry records what this process can execute now. A
+stored name may therefore be uninstalled, for example during extension reload,
+after restart before installation, or in a fork opened by a process that lacks
+an extension. Resolution skips it, the document is never rewritten because of
+registry movement, and the name takes effect again when it is installed again.
+
+A change neither starts generation nor appends a system entry. Request
+preparation later compares the desired prompt and tools with transcript history
+and appends the required positional system baseline or delta (section 7.4).
 
 A missing tool implementation never fails a request. Request preparation offers
-only active names that are currently registered. If the replayed tool state still
-offers an unregistered name, the appended system delta lists it in
-`toolsRemoved`; when the name is registered again, a later delta adds its current
-declaration. When the model calls a tool that its request did not offer, or whose
-implementation is unregistered when its tool task runs, an error tool result with
+only the agent's resolved tools. If the replayed tool state still offers a tool
+that no longer resolves, the appended system delta lists it in `toolsRemoved`;
+when it resolves again, a later delta adds its current declaration. When the
+model calls a tool that its request did not offer, or whose implementation does
+not resolve when its tool task runs (section 7.3), an error tool result with
 an error diagnostic with code `tool_unavailable` (section 7.3) states that the tool is not available,
 and the run continues so the model can react (section 8.3).
 
-Configuration takes effect at turn boundaries. Generation preparation reads it
-once per request and fixes that turn's prompt, offered tools, model, and request
-options. A configuration change made while the turn runs, such as deactivating a
-tool the model already called, applies at the next preparation; the current
-turn's calls still execute. The retry policy is the exception: generation reads
-it when it classifies an attempt's result, because it governs the next attempt
-(section 8.3).
+`HarnessOptions.settings` holds Harness-wide run policy: the default extension
+selection, request options, retry, compaction thresholds, tool execution, and
+queue modes. Nothing copies or stores it. Every reader resolves it anew into
+`Settings`, each absent field over its built-in default and object fields merged
+key by key, and uses that value for one decision (section 7.1 lists the
+readers). A settings object with getters therefore follows the user's
+preferences without a Session write. Settings are synchronous because queue
+modes are read on the Session line. `stream` is forwarded to generation
+requests; `stream.maxRetries` are provider retries inside one request, while
+`retry` governs durable generation attempts (section 8.3). Settings changes make
+no commit and emit no event.
+
+```ts
+// The user's settings, read live through getters.
+class UserSettings implements HarnessSettings {
+  readonly manager: SettingsManager;
+  constructor(manager: SettingsManager) {
+    this.manager = manager;
+  }
+  get stream() {
+    return { timeoutMs: this.manager.get("timeoutMs") };
+  }
+  get compaction() {
+    return { enabled: this.manager.get("autoCompact") };
+  }
+}
+manager.set("autoCompact", false); // no Session write; every conversation follows at its next threshold check
+```
+
+`HarnessOptions.env` builds a conversation's execution environment from its ID,
+its agent's `cwd`, and a `DocumentReader` for committed documents. The Harness
+never calls it on the Session line and calls it at each use:
+
+- The tool task calls it for each execution and passes the result as `api.env`
+  (section 7.3). A rerun after recovery gets the conversation's environment at
+  that time, including its current `cwd`. A throw becomes an ordinary error
+  result of the call.
+- Generation `prepare` calls it once for the section renderers (`input.env`,
+  section 7.4). A throw is reported, and the sections render with
+  `env: undefined`.
+- `runtime.env(context)` calls it for custom tasks and rejects with its error.
+
+Without an `env` option, or when it returns `undefined`, there is no
+environment. The host caches what is expensive, such as one environment per
+directory. Extensions read the built environment, such as `env.cwd`, never a
+descriptor. An application that needs more than a directory per conversation
+keeps that in its own document and reads it through `target.read`:
+
+```ts
+// Absent: the conversation runs locally. Only conversations with this document run in a container.
+// Subagents do not copy it: their creator writes it too when they should run in the container.
+const ContainerDoc = defineDoc<{ image: string }>({
+  kind: "app.container", version: 1, scope: "conversation", history: "latest", fork: "current",
+  initial: () => ({ image: "node:22" }),
+});
+const harness = await Harness.open(storage, {
+  models,
+  registry,
+  env: async ({ conversationId, cwd, read }, context) => {
+    const container = await read.snapshot(ContainerDoc, conversationId, context);
+    return container !== undefined
+      ? containers.env(container.image, cwd ?? "/work", context)
+      : localEnv(cwd ?? process.cwd()); // cached NodeExecutionEnv per directory
+  },
+}, context);
+```
+
+Agent and settings changes take effect when their readers resolve them (section
+7.1). Generation preparation resolves the agent once per request and fixes that
+turn's prompt, offered tools, model, and request options. A change made while
+the turn runs applies at the next preparation. A tool the model already called
+is resolved when its tool task runs; when its name is no longer among the
+agent's tools, because the filter, the selection, or the registry changed, the
+call produces `tool_unavailable` (section 7.3). The retry
+policy is read when generation classifies an attempt's result, because it
+governs the next attempt (section 8.3).
 
 A `Conversation.commit()` is a Session commit bound to that conversation.
 `tx.createTask()` defaults `TaskOptions.conversationId` to the bound conversation.
@@ -760,7 +881,7 @@ part of its `on`, or, when abort-marked, its live ordinary owned work (section
 when its definition is newer and has `migrate`; or `blocked` (section 5.4). A migration shows as failed only after the scheduler
 tried it, or when the newer definition has no `migrate`; inspection never runs
 one to find out. Blocked reasons are derived, never stored. Queued and placed
-submissions and the registry's wrapper failures complete the view. Finished
+submissions complete the view. Finished
 tasks, settled submissions, transcripts, and documents use their own APIs.
 
 `Conversation.viewState()` returns its current structural mount as a disposable
@@ -1020,6 +1141,7 @@ interface Tx {
   scanConversations(query: ConversationQuery, limit: number, cursor?: Cursor): Promise<Page<ConversationRecord, Cursor>>;
   scanEntries(query: EntryQuery, limit: number, cursor?: Cursor): Promise<Page<EntryRecord, Cursor>>;
   scanTasks(query: TaskQuery, limit: number, cursor?: Cursor): Promise<Page<TaskRecord<JsonValue, JsonValue, JsonValue>, Cursor>>;
+  submissionByRequest(conversationId: ConversationId, requestId: string): Promise<SubmissionRecord | undefined>;
 
   createConversation(options: { readonly ownership: ConversationOwnership }): Promise<ConversationRecord>;
   forkConversation(
@@ -1035,6 +1157,8 @@ interface Tx {
   createTask<I, S extends { phase: string }, R, H extends object>(
     task: Task<I, S, R, H>, input: I, options: TaskOptions,
   ): Promise<TaskId<R>>;
+  /** Raw submission record; no admission rules (busy check, inbox, placement). Hosts use `Conversation.submit()`. */
+  createSubmission(create: SubmissionCreate): Promise<SubmissionRecord>;
   /** Settle a queued or placed submission; only a placed input can be answered. A settled one stays unchanged. */
   settleSubmission(id: SubmissionId, settlement: SubmissionSettlement): void;
   /** Newest visible entry of the conversation that carries a `head`. */
@@ -1500,11 +1624,15 @@ interface TaskRuntime<I, S, R, H extends object> extends DocumentObserver, Docum
   readonly conversationId: ConversationId;
   readonly signal: AbortSignal;
   /** Registry snapshot of the current phase; refreshed at every phase boundary. */
-  readonly registry: RegistrySnapshot<ToolRegistration>;
+  readonly registry: RegistrySnapshot;
+  /** The task's conversation's agent, resolved once for this phase (section 7.1). */
+  agent(context: Context): Promise<Agent>;
+  /** `HarnessOptions.settings`, resolved at each access. */
+  readonly settings: Settings;
   readonly models: Models;
   readonly hooks: HookRunner<H>;
-  /** `HarnessOptions.env`; the tool task passes it to tools as `api.env`. */
-  readonly env: ExecutionEnv | undefined;
+  /** Calls `HarnessOptions.env` for the task's conversation; rejects with its error. */
+  env(context: Context): Promise<ExecutionEnv | undefined>;
 
   commit(
     change: (
@@ -1663,7 +1791,7 @@ waiting, and `completing` and `waiting` tasks are re-evaluated (section 5.5). Ta
 reservation, atomically with `pending` or `waiting` -> `running`. One callback handles every
 supported older version. A task whose definition is missing, older than the
 stored version, or fails migration stays `pending` or `waiting` and blocked until a fitting
-definition is registered or the task is aborted (section 5.4).
+definition is installed or the task is aborted (section 5.4).
 `close()` marks the runtime closing, seals admission and reservation, signals
 invocations, and stops watches. Outside the Session line it settles admitted
 commits and joins invocations before closing storage. Already-running watch callbacks remain
@@ -1864,6 +1992,9 @@ no outcome. For a `pi.tool` task it marks the task's tool slot `done`
 without an entry; the run continues, and context derivation synthesizes the
 missing result (section 2.1). For a `pi.compaction` task it removes the task's
 compaction status (section 8.7). Outcomes a task commits for itself do their own settlement.
+The Harness also supplies the per-phase agent resolution behind `runtime.hooks`
+and `runtime.agent()` (section 7.1); the scheduler only passes each phase's
+registry snapshot to it.
 
 At every normal phase boundary (section 5.1, rule 5), the step refreshes the
 invocation's registry snapshot. If the task definition resolved by name is a different object
@@ -2036,9 +2167,10 @@ queued submission, reports `already_placed` for a placed input, and reports
 `settled` for any terminal submission. Conversation abort withdraws queued
 steer/follow-up submissions but keeps writes for later placement.
 
-Boundary selection is deterministic by item ID, with the conversation's
-configured `steeringMode` and `followUpMode` (section 2.2): `one-at-a-time`
-selects the first item of that mode, `all` every item of that mode.
+Boundary selection is deterministic by item ID, with the settings'
+`steeringMode` and `followUpMode` (section 2.2), read at each boundary on the
+Session line: `one-at-a-time` selects the first item of that mode, `all` every
+item of that mode.
 
 | boundary | write | steer | follow-up |
 |---|---|---|---|
@@ -2096,75 +2228,70 @@ preserved. Chord's Astra operation generator must express scattered removals
 without carrying retained values; IDs are not substituted for positional inbox
 semantics.
 
-## 7. Registry, hooks, tools, and system prompt
+## 7. Extensions, hooks, tools, and system prompt
 
-### 7.1 Registry
+### 7.1 Extensions, registry, and agent resolution
 
-Extension code reaches the Harness through one application-owned registry. The
-registry is process-local, may outlive a Harness, and is the only place tools,
-tool wrappers, hooks, tasks, and the system prompt are registered. Nothing
-in it is persisted; durable state stays in conversations, entries, tasks, and
-documents.
+Extension code reaches the Harness through one application-owned registry of
+extensions. An extension is a named bundle of tools, prompt sections, hooks,
+tool and section wrappers, and task definitions. The registry is process-local,
+may outlive a Harness, and is not persisted; durable state stays in
+conversations, entries, tasks, and documents. A conversation selects extensions
+by name in its `pi.agent` document (section 2.2).
 
 ```ts
 type DocumentReader = Pick<Session, "snapshot" | "snapshotAsOf">;
 
-interface Registration {
-  /** Idempotent; removes exactly the registrations this token covers. */
-  dispose(): void;
-}
-
-type ToolWrapper<Tool extends ToolRegistration> = (tool: Tool) => Tool;
-
-type HookScope = {
+type PromptInput<Tool extends ToolRegistration = ToolRegistration> = {
   readonly conversationId: ConversationId;
-  /** Also match conversations owned, transitively, by tasks of this conversation. */
-  readonly subtree?: boolean;
-};
-
-type PromptInput<Tool extends ToolRegistration> = {
-  readonly conversationId: ConversationId;
-  /** Active and registered tools in configured order, as offered in this request. */
-  readonly tools: readonly Tool[];
+  /** The request's resolution; `agent.tools` are the tools offered in this request. */
+  readonly agent: Agent<Tool>;
+  /** Built by `HarnessOptions.env` for this preparation (section 2.2). */
+  readonly env: ExecutionEnv | undefined;
   /** Sections already in effect after replaying the active transcript. */
   readonly shown: Readonly<Record<string, string>>;
-  readonly model?: ModelRef;
-  readonly thinkingLevel: ModelThinkingLevel;
   /** Committed document reads. */
   readonly read: DocumentReader;
 };
 
-type PromptSection<Tool extends ToolRegistration> = {
+type PromptSection<Tool extends ToolRegistration = ToolRegistration> = {
   readonly key: string;
-  render(
-    input: PromptInput<Tool>,
-    context: Context,
-  ): string | undefined | Promise<string | undefined>;
+  render(input: PromptInput<Tool>, context: Context): string | undefined | Promise<string | undefined>;
   /** Default true: wrap the text as `<key>\n...\n</key>`. */
   readonly tag?: boolean;
 };
 
-type PromptSectionWrapper<Tool extends ToolRegistration> = (
-  section: PromptSection<Tool>,
-) => PromptSection<Tool>;
+/** Built by `hook()`; matches tasks by name. */
+type HookRegistration = { readonly task: string; readonly handlers: object };
 
-/**
- * Stages the documents every new conversation gets, inside the creating commit, after fork copies and before host
- * `init`. Table reads throw; a fork (`conversation.parent`) already holds its copied documents. A throw fails the
- * creation.
- */
-type ConversationSetup = (
-  tx: Tx,
-  conversation: ConversationRecord,
-  registry: RegistrySnapshot<ToolRegistration>,
-) => void | Promise<void>;
+/** Built by `wrapTool()` and `wrapSection()`; targets a tool name or a section key. */
+type Wrap<Tool extends ToolRegistration = ToolRegistration> =
+  | { readonly tool: string; wrap(tool: Tool): Tool }
+  | { readonly section: string; wrap(section: PromptSection<Tool>): PromptSection<Tool> };
 
-type RegistryFailure = {
-  readonly kind: "tool" | "section";
-  /** Tool name or section key. */
+interface Extension<Tool extends ToolRegistration = ToolRegistration> {
   readonly name: string;
-  readonly error: unknown;
-};
+  readonly tools?: readonly Tool[];
+  readonly sections?: readonly PromptSection<Tool>[];
+  readonly hooks?: readonly HookRegistration[];
+  /** Apply where this extension is selected, in order. */
+  readonly wraps?: readonly Wrap<Tool>[];
+  /** Resolved by name for every task, whichever conversations select this extension. */
+  readonly tasks?: readonly AnyTask[];
+}
+
+function defineExtension<Tool extends ToolRegistration = ToolRegistration>(extension: Extension<Tool>): Extension<Tool>;
+function section<Tool extends ToolRegistration = ToolRegistration>(
+  key: string,
+  render: PromptSection<Tool>["render"],
+  options?: { readonly tag?: boolean },
+): PromptSection<Tool>;
+function hook<K extends AnyTask>(task: K, handlers: Partial<HooksOf<K>>): HookRegistration;
+function wrapTool<Tool extends ToolRegistration>(tool: Tool, wrapper: (tool: Tool) => Tool): Wrap<Tool>;
+function wrapSection<Tool extends ToolRegistration = ToolRegistration>(
+  key: string,
+  wrapper: (section: PromptSection<Tool>) => PromptSection<Tool>,
+): Wrap<Tool>;
 
 interface RegistryReader<Tool extends ToolRegistration = ToolRegistration> {
   /** Immutable view of the whole current registry. */
@@ -2173,138 +2300,202 @@ interface RegistryReader<Tool extends ToolRegistration = ToolRegistration> {
   subscribe(listener: () => void): () => void;
 }
 
-interface RegistrySnapshot<Tool extends ToolRegistration> {
-  /** Composed tools in registry order; a tool whose wrapper failed is absent. */
-  tools(): readonly Tool[];
-  tool(name: string): Tool | undefined;
-  /** Base tool names in registry order, including tools whose wrappers fail. */
-  toolNames(): readonly string[];
+interface RegistrySnapshot<Tool extends ToolRegistration = ToolRegistration> {
+  installed(): readonly Extension<Tool>[];
+  extension(name: string): Extension<Tool> | undefined;
+  /** Every installed tool with its extension, in install order. Names may repeat across extensions. */
+  tools(): readonly { readonly extension: Extension<Tool>; readonly tool: Tool }[];
+  sections(): readonly { readonly extension: Extension<Tool>; readonly section: PromptSection<Tool> }[];
+  /** Built-in and installed task definitions. */
+  tasks(): readonly AnyTask[];
   task(name: string): AnyTask | undefined;
-  /** Hooks registered for tasks with `task`'s name, in registry order. */
-  hooks<K extends AnyTask>(task: K): readonly {
-    readonly handlers: Partial<HooksOf<K>>;
-    readonly scope?: HookScope;
-  }[];
-  /** Composed sections in registry order; a section whose wrapper failed is absent. */
-  sections(): readonly PromptSection<Tool>[];
-  /** Wrapper failures of this state; the Harness reports them where it uses them. */
-  failures(): readonly RegistryFailure[];
-  /** Conversation setups in registry order, the built-in `pi` setup first. */
-  conversationSetups(): readonly { readonly key: string; readonly setup: ConversationSetup }[];
 }
 
 interface Registry<Tool extends ToolRegistration = ToolRegistration> extends RegistryReader<Tool> {
-  readonly tools: {
-    add(tool: Tool): Registration;
-    wrap(name: string, key: string, wrapper: ToolWrapper<Tool>): Registration;
-    list(): readonly Tool[];
-  };
-  readonly hooks: {
-    add<K extends AnyTask>(
-      task: K,
-      handlers: Partial<HooksOf<K>>,
-      options?: { readonly scope?: HookScope; readonly key?: string },
-    ): Registration;
-  };
-  readonly tasks: {
-    add(task: AnyTask): Registration;
-    list(): readonly AnyTask[];
-  };
-  readonly conversations: {
-    setup(key: string, setup: ConversationSetup): Registration;
-  };
-  readonly systemPrompt: {
-    section(
-      key: string,
-      render: PromptSection<Tool>["render"],
-      options?: { readonly tag?: boolean },
-    ): Registration;
-    wrap(key: string, wrapperKey: string, wrapper: PromptSectionWrapper<Tool>): Registration;
-    sections(): readonly PromptSection<Tool>[];
-  };
-  batch(register: () => void): Registration;
+  /** Installs `extension`, or replaces the installed extension with its name in place. Publishes at once. */
+  install(extension: Extension<Tool>): void;
+  /** Removes the installed extension with `extension.name`, whichever object it is. A later install appends. */
+  uninstall(extension: Extension): void;
 }
 
 function createRegistry<Tool extends ToolRegistration = ToolRegistration>(): Registry<Tool>;
 ```
 
-The `Tool` parameter lets applications attach metadata such as prompt snippets to
-their tools; the Harness only relies on `ToolRegistration`. Pi-ai declarations
-derived from a registered tool keep only pi-ai `Tool` fields (`toToolDeclaration`),
-so application metadata never enters the transcript.
+The `Tool` parameter lets an application attach metadata, such as prompt
+snippets, to its tools and read it typed in its section renderers. The Harness
+only relies on `ToolRegistration`; its own surfaces, such as `runtime.agent()`,
+use the default. Metadata fields must be optional: the registry does not check
+them, and a default-typed extension may be installed. Pi-ai declarations derived from a tool keep only pi-ai `Tool`
+fields (`toToolDeclaration`), so application metadata never enters the
+transcript.
 
-Registration rules:
+```ts
+type CodingAgentTool = ToolRegistration & { readonly promptSnippet?: string };
+// The renderer sees CodingAgentTool: no cast needed to read promptSnippet.
+export const ToolList = defineExtension<CodingAgentTool>({
+  name: "tool-list",
+  sections: [section("tools", ({ agent }) => agent.tools.map((tool) => `- ${tool.name}: ${tool.promptSnippet ?? tool.description}`).join("\n") || undefined)],
+});
+const registry = createRegistry<CodingAgentTool>();
+```
 
-- `createRegistry()` starts with the built-in task definitions of section 8 and
-  the built-in `pi` conversation setup registered first. They have no
-  `Registration`, so they cannot be disposed, and the duplicate rule rejects
-  another task with a built-in name or another `pi` setup. `tasks.list()`
-  includes them. Hooks register against built-in tasks like any other task.
-  Setup keys are unique and ordered like section keys.
-- Tool names, section keys, and task names are unique among published
-  registrations. Tool wrapper keys are unique per tool name, section wrapper
-  keys per section key, and hook keys per task name. Duplicates reject.
-  Section keys match `^[a-z][a-z0-9_-]*$`.
-- Keyed slots are ordered by the position at which their key was first
-  registered. The registry remembers that position forever, so re-registering an
-  existing key, as a reload does, keeps its position; a new key appends. Hooks
-  without a key append.
-- Registered objects are immutable and wrappers are pure: a wrapper returns a
-  new object and never mutates its input.
-- Every call outside `batch()` publishes immediately. Publication is synchronous,
-  invokes no extension callback, and notifies subscribers.
+Rules:
 
-`batch(register)` stages every registration and disposal made while `register`
-runs and publishes once when it returns. It validates only the final staged
-state, so order inside the block does not matter: disposing an old tool and
-adding its replacement is a gapless reload. If `register` throws, returns a
-thenable, or the final state is invalid, nothing is published, staged disposals
-are rolled back, and `batch()` throws. Only registrations made synchronously
-inside `register` belong to the batch; a registration made later by a detached
-continuation is an ordinary immediate registration. Calling `batch()` inside a
-batch is a programming error and throws. The returned `Registration` covers every
-registration added in the batch that was not disposed inside it.
+- The built-in tasks of section 8 are always present and are not an extension:
+  `tasks()` includes them, and nothing uninstalls or replaces them. Any
+  extension registers hooks against them.
+- Tool names and section keys are unique within one extension; across
+  extensions they may repeat. Section keys match `^[a-z][a-z0-9_-]*$`, and the
+  key `instructions` is reserved for the agent's instructions (below).
+- Task names are unique across the built-in tasks and every installed
+  extension. `install()` validates the registry as it would be after the
+  replacement, including the rules above, and throws without publishing
+  anything when it is invalid. `defineExtension()` and `section()` check
+  nothing.
+- Publication is synchronous, invokes no extension callback, and notifies
+  subscribers. There is no batch: an extension is the unit of reload, and
+  installing it again replaces its tools, sections, hooks, wrappers, and tasks
+  in one publication at its install position.
+- Extensions, tools, and task definitions are immutable, and wrappers are pure:
+  a wrapper returns a new object and never mutates its input.
+- An extension or tool object passed as a selection or wrapper target stands
+  for its name: `settings.extensions` holding an old `Skills` object resolves to
+  the installed `skills` extension.
 
 A snapshot is a plain immutable value; nothing is released. The scheduler takes
 one per phase-handler invocation and passes it through the runtime; handlers and
-hooks read that snapshot and never take their own. At every normal phase boundary
-the scheduler takes a fresh one (section 5.4). A tool task keeps the composed tool
-it pinned until execution settles. Different phases may observe different
-registry states; nothing requires one run to see a single registry state across
-its generation and tool tasks. Host operations, such as the create
-conveniences, take one snapshot inside their commit.
+hooks read that snapshot and never take their own. At every normal phase
+boundary the scheduler takes a fresh one, and task definitions hand over as in
+section 5.4. Different phases may observe different registry states; nothing
+requires one run to see a single registry state across its generation and tool
+tasks.
 
 ```ts
-// ToolTask is the built-in tool task's token; its hooks are listed in section 7.2.
-const registration = registry.batch(() => {
-  registry.tools.add(grep);
-  registry.hooks.add(ToolTask, { beforeTool: audit }, { key: "audit" });
+export const ContextFiles = defineExtension({ name: "context-files", sections: [section("agents-md", renderAgentsMd)] });
+export const Skills = defineExtension({ name: "skills", sections: [section("skills", renderSkills)] });
+export const Coding = defineExtension({
+  name: "coding",
+  sections: [
+    section("preamble", () => "You are an expert coding assistant.", { tag: false }),
+    // The environment the host built for this conversation, in the conversation's directory.
+    section("cwd", (input) => input.env && `Working directory: ${input.env.cwd}`),
+  ],
 });
-// later, reload: publish the replacement at once
-registry.batch(() => {
-  registration.dispose();
-  registry.tools.add(grepV2);
-  registry.hooks.add(ToolTask, { beforeTool: audit2 }, { key: "audit" });
+export const Permissions = defineExtension({
+  name: "permissions",
+  hooks: [hook(ToolTask, { beforeTool: async (call) => (isDangerous(call) ? { block: "Needs approval" } : undefined) })],
 });
+// A role and a review loop, for conversations that select it.
+export const Reviewer = defineExtension({
+  name: "reviewer",
+  sections: [section("role", () => "You review diffs. Report problems as a list. Never edit files.")],
+  hooks: [hook(GenerationTask, { onYield: requestSecondPass })],
+});
+
+const registry = createRegistry();
+for (const extension of [CodingTools, Coding, ContextFiles, Skills, Permissions, Reviewer]) registry.install(extension);
+const harness = await Harness.open(storage, {
+  models,
+  registry,
+  // Reviewer is installed but not selected by default: only conversations that select it get its role and hooks.
+  settings: { extensions: [CodingTools, Coding, ContextFiles, Skills, Permissions] },
+  env: ({ cwd }) => localEnv(cwd ?? process.cwd()), // cached NodeExecutionEnv per directory
+}, context);
+// The conversation remembers its model and directory; a restart elsewhere keeps both.
+const root = await harness.root(context, { agent: { model: sonnet, cwd: process.cwd() } });
 ```
 
-The registry does not track which running work still uses a disposed
-registration. Work that already started keeps using the code it took, so an
-extension that frees resources right after `dispose()` can make a still-running
-call fail with an ordinary error result. Extensions that need graceful disposal
-manage their resources' lifetime themselves, for example by reference counting.
+The registry does not track which running work still uses a replaced or
+uninstalled extension. Work that already started keeps using the code it took,
+so an extension that frees resources right after `uninstall()` can make a
+still-running call fail with an ordinary error result. Extensions that need
+graceful disposal manage their resources' lifetime themselves, for example by
+reference counting.
+
+**Resolution.** A conversation's `Agent` is resolved from its stored `pi.agent`
+(absent: every field unset), a registry snapshot, and the resolved settings:
+
+```text
+extensions  base = settings.extensions ?? every installed extension; in that order
+            array: exactly these, in array order; { add, remove }: base, then add appended, minus remove
+            duplicates keep their first position; names not installed are skipped
+tools       the selected extensions' tools in extension order; a later same-name tool replaces an earlier one in place
+            then every selected extension's tool wrappers, in extension order, then in each extension's order
+            then the filter: an array keeps exactly these names in its order, a repeated name at its first position;
+            { remove } drops these names
+sections    the selected extensions' sections, same-key replacement in place, then their section wrappers,
+            then `instructions` when set
+hooks       the selected extensions' hooks for the task's name, in extension order
+model       stored, else none: the request fails no_model
+thinking    stored, else "off"
+cwd         stored, else undefined
+```
+
+A wrapper that throws or returns a tool or section with a different name drops
+its target for that resolution: the tool is not offered, and calls to it produce
+`tool_unavailable`; the failure is reported through `onReport`. A wrapper that
+finds no target does nothing, so `Timing` below may be selected where no `bash`
+is. When `instructions` is set, `Agent.sections` ends
+with the tagged section `instructions` rendering that text; wrappers do not
+apply to it.
+
+A later extension's same-name tool overrides an earlier one for the
+conversations that select both, and wrappers apply to whichever tool won:
+
+```ts
+export const Timing = defineExtension({
+  name: "timing",
+  wraps: [wrapTool(bashTool, (tool) => ({
+    ...tool,
+    execute: async (args, api, context) => {
+      const start = Date.now();
+      try {
+        return await tool.execute(args, api, context);
+      } finally {
+        metrics.record("bash", Date.now() - start);
+      }
+    },
+  }))],
+});
+// A bash inside a Python virtualenv for one conversation: it replaces CodingTools' bash in place,
+// and Timing, if selected, wraps it.
+export const Venv = defineExtension({
+  name: "venv",
+  tools: [createBashTool({ commandPrefix: "source .venv/bin/activate" })],
+});
+registry.install(Venv); // installed, but not in the default selection
+await conversation.configure({ extensions: { add: [Venv] } }, context);
+```
+
+**Who resolves what, and when.** Each reader resolves once per decision:
+
+| reader | resolves | when |
+|---|---|---|
+| generation `prepare` | agent (tools, sections, model, thinking level), stream options, compaction thresholds | once per request; model, stream options, and offered tools are fixed in the request checkpoint (section 8.3) |
+| every task phase | extension selection for hooks; `runtime.agent()` | at most once per phase handler, at its first hook dispatch or `agent()` call, from that phase's snapshot and the committed `pi.agent`, off the Session line, with the invocation's context; fixed for the rest of the phase |
+| tool task | the implementation of an accepted call | at `call` and `execute`: the name among the phase agent's `tools`, the current selection after the tools filter; no such tool, for example one removed after preparation: `tool_unavailable`. Replay policy on reopen uses the same lookup (section 7.3) |
+| generation, when a tool round starts | tool execution mode | once per round (section 8.3) |
+| generation, compaction | retry policy | at each attempt's classification |
+| compaction `select` | model, thinking level, stream options, compaction thresholds | once; the summary request stays pinned across its retries (section 8.7) |
+| boundaries and idle admission, on the Session line | queue modes | per boundary (section 6) |
+| tool task, `prepare`, `runtime.env()` | environment | at each call (section 2.2) |
+
+Registry installs and settings changes make no commit, so they emit nothing
+(section 9.4). A conversation on the default selection changes when the
+settings or the installed extensions change; its next preparation appends the
+system delta (section 7.4). A UI showing resolved tools or a resolved model
+resolves again through `Conversation.agent()`.
 
 ### 7.2 Hooks
 
 A hook is a typed question asked by a task before it commits a decision. Hooks
-are declared by task definition and registered through `registry.hooks.add()`
-Session-wide or, with `scope`, for one conversation and optionally its owned
-subtree. Subtree matching follows conversation ownership, not history parents.
-Registration is typed by the task token, but dispatch matches the task's name,
-so hooks survive a reload of their task; keeping hook signatures compatible
-across task versions is the task author's responsibility. Hooks run in registry
-order off the line; a crash before the consuming commit may rerun them. Abort
-errors always propagate.
+are declared by task definition and come with an extension, built by
+`hook(task, handlers)` (section 7.1). A task asks the hooks of the extensions
+its conversation selects. `hook()` is typed by the task token, but dispatch
+matches the task's name, so hooks survive a reload of their task; keeping hook
+signatures compatible across task versions is the task author's
+responsibility. Hooks run in extension order off the line; a crash before the
+consuming commit may rerun them. Abort errors always propagate.
 
 | hook | composition | ordinary throw |
 |---|---|---|
@@ -2383,18 +2574,39 @@ interface CompactionHooks {
 
 `GenerationTask`, `ToolTask`, and `CompactionTask` are the exported built-in task
 tokens whose `H` parameters are these interfaces. `runtime.hooks.each(name,
-invoke)` calls `invoke` with every handler registered under `name` whose
-registration matches the task's conversation, in registry order of the phase
-snapshot. A registration matches when it has no scope, when its scope names the
-task's conversation, or, with `subtree`, when the task's conversation is owned
-transitively through tasks of the scope's conversation. Owner edges never change,
-so the Harness may cache each conversation's owner chain. An ordinary throw from
+invoke)` calls `invoke` with every handler under `name` among the phase's
+resolved hooks: those of the extensions the task's conversation selects, for the
+task's name, in extension order (section 7.1). An ordinary throw from
 `invoke` is reported through `onReport` and `each` continues with the next
 handler; once the invocation is signalled, the error propagates. A task that
 composes differently, such as `beforeTool` turning a throw into a block, or stops
 after a first decision, does so inside its own `invoke`. Hooks receive the task's
 runtime as their `HookApi`; hook memos and the task's own memos share one
 namespace, so hook authors prefix their memo names.
+
+Selection decides which behavior a conversation has; the extension's own
+document holds that behavior's state:
+
+```ts
+const PlanModeDoc = defineDoc<{ enabled: boolean }>({
+  kind: "app.plan-mode", version: 1, scope: "conversation", history: "latest", fork: "current",
+  initial: () => ({ enabled: false }),
+});
+export const PlanMode = defineExtension({
+  name: "plan-mode",
+  hooks: [hook(ToolTask, {
+    // An absent document means plan mode is off.
+    beforeTool: async (call, api, context) =>
+      (await api.snapshot(PlanModeDoc, api.conversationId, context))?.enabled && writes(call)
+        ? { block: "Plan mode: read-only" }
+        : undefined,
+  })],
+});
+// PlanMode is in the default selection; /plan toggles this conversation's state.
+await root.commit(async (tx) => {
+  (await tx.doc(PlanModeDoc, root.id)).enabled = true;
+}, context);
+```
 
 ### 7.3 Tools
 
@@ -2412,10 +2624,10 @@ type ToolDiagnostic = {
   readonly code?: string;
 };
 
-type ToolExecutionResult = {
+type ToolExecutionResult<TDetails extends JsonValue = JsonValue> = {
   readonly content?: ToolResultMessage["content"];
   readonly isError?: boolean;
-  readonly details?: JsonValue;
+  readonly details?: TDetails;
   readonly diagnostics?: readonly ToolDiagnostic[];
   /** Spend of the execution itself, such as a model call; stored on the result and in `pi.usage.tools`. */
   readonly usage?: Usage;
@@ -2429,15 +2641,19 @@ interface ConversationHandle {
   waitForIdle(context: Context): Promise<void>;
 }
 
-interface ToolExecutionApi extends DocumentObserver, DocumentReader {
+interface ToolExecutionApi<TDetails extends JsonValue = JsonValue> extends DocumentObserver, DocumentReader {
   readonly taskId: TaskId;
   readonly conversationId: ConversationId;
   readonly callId: string;
-  /** `HarnessOptions.env` unless a wrapper supplies another environment. */
+  /** The tool task's phase snapshot. */
+  readonly registry: RegistrySnapshot;
+  /** The calling conversation's agent, as the tool task's phase resolved it. */
+  agent(context: Context): Promise<Agent>;
+  /** Built by `HarnessOptions.env` for this call. */
   readonly env: ExecutionEnv | undefined;
   output(chunk: string | Uint8Array): void;
   diagnostic(diagnostic: ToolDiagnostic): void;
-  details(value: JsonValue, context: Context): Promise<void>;
+  details(value: TDetails, context: Context): Promise<void>;
   commit<T>(change: (tx: Tx) => T | Promise<T>, context: Context): Promise<T>;
   memo<T extends JsonValue>(name: string, context: Context): Promise<T | undefined>;
   memo<T extends JsonValue>(name: string, candidate: T, context: Context): Promise<T>;
@@ -2452,49 +2668,48 @@ interface ToolExecutionApi extends DocumentObserver, DocumentReader {
   conversation(id: ConversationId, context: Context): Promise<ConversationHandle | undefined>;
 }
 
-type ToolRegistration = Tool & {
+type ToolRegistration<TParameters extends TSchema = TSchema, TDetails extends JsonValue = JsonValue> =
+  Tool<TParameters> & {
   readonly replay?: "safe" | "unsafe";
   readonly executionMode?: ToolExecutionMode;
-  /** Pure repair of commonly malformed arguments; runs before validation and must not mutate `args`. */
-  prepareArguments?(args: JsonValue): JsonValue;
+  /** Pure repair of commonly malformed arguments; runs before validation, which still checks its result. */
+  prepareArguments?(args: unknown): Static<TParameters>;
   readonly outputLimits?: {
     readonly maxBytes?: number;
     readonly maxLines?: number;
     readonly retain?: "head" | "tail";
   };
   execute(
-    args: JsonValue,
-    api: ToolExecutionApi,
+    args: Static<TParameters>,
+    api: ToolExecutionApi<TDetails>,
     context: Context,
-  ): Promise<ToolExecutionResult>;
+  ): Promise<ToolExecutionResult<TDetails>>;
 };
+
+/** Identity function that infers `TParameters` from `parameters` and `TDetails` from the reported details. */
+function defineTool<TParameters extends TSchema, TDetails extends JsonValue = JsonValue>(
+  tool: ToolRegistration<TParameters, TDetails>,
+): ToolRegistration<TParameters, TDetails>;
 ```
 
+`execute()` receives `args` typed by `parameters`: the Harness validates the
+call's arguments against that schema before it runs. `defineTool()` makes an
+inline tool literal infer its types, as in `tools: [defineTool({ ... })]`.
+`execute` is a method, so differently typed tools share one `tools` array.
+
 Omitted `replay` is `unsafe`. Omitted `outputLimits` are 50 KiB, 2,000 lines,
-and `retain: "head"`. Omitted `executionMode` follows the conversation's
+and `retain: "head"`. Omitted `executionMode` follows the settings'
 `toolExecution`; one `sequential` call makes its whole round sequential
 (section 8.3).
 
 Tools reach files and processes only through `api.env`, never through an
-environment captured at registration, so the environment is chosen per call. The
-Harness supplies `HarnessOptions.env`. A wrapper may supply another, for example
-a per-conversation working directory or sandbox:
-
-```ts
-registry.tools.wrap("bash", "workspace", (tool) => ({
-  ...tool,
-  execute: async (args, api, context) => {
-    const workspace = await api.snapshot(WorkspaceDoc, api.conversationId, context);
-    return tool.execute(args, { ...api, env: environmentFor(workspace) }, context);
-  },
-}));
-```
-
-A tool rerun after recovery must get the same environment. When the state a
-wrapper reads can change while a call runs, the wrapper memoizes its choice with
-`api.memo()`. `api` is a plain object so wrappers can spread
-it. A tool that needs an environment and receives none throws, which produces an
-ordinary error result.
+environment captured when the tool was built. The tool task builds it for each
+call with `HarnessOptions.env` from the conversation's ID and `cwd` (section
+2.2), so a conversation's directory or sandbox needs no wrapper. A throw from
+`env` becomes an ordinary error result of the call. A rerun after recovery gets
+the conversation's environment at that time. `api` is a plain object so
+wrappers can spread it. A tool that needs an environment and receives none
+throws, which produces an ordinary error result.
 
 A running tool reports output and details to the UI, mirroring the two halves of
 its final result, plus diagnostics (below):
@@ -2569,26 +2784,26 @@ discarded, while admitted commits settle. Cancellation, callback, tracker
 preparation, and checkpoint failures occur before Storage admission and do not
 poison the Session. An uncertain Storage failure follows the fatal Session rule.
 
-Tools are registry entries (section 7.1) with name, description, JSON schema,
-replay policy, and execute function. `registry.tools.wrap(name, key, wrapper)`
-decorates a tool without replacing it. Each snapshot composes the current base
-tool with its wrappers in registry order; a wrapper never captures a base, so
-reloading the base keeps its wrappers. A wrapper that throws or returns a tool
-with a different name makes that tool absent from the snapshot (fail closed:
-not offered, and calls produce `tool_unavailable`) and is reported. A wrapper
-without a base contributes nothing. The composite supplies the declaration,
-argument validation, replay policy, and execution.
+Tools come with extensions (section 7.1) and have a name, description, JSON
+schema, replay policy, and execute function. `wrapTool(tool, wrapper)` decorates
+a tool without replacing it. Each resolution composes the winning tool of that
+name with the selected extensions' wrappers (section 7.1); a wrapper never
+captures a base, so reloading the base keeps its wrappers. The composite
+supplies the declaration, argument validation, replay policy, and execution.
 
 A tool call is accepted only if its request offered the tool. Generation checks
 this against the tool set replayed from the committed model context through the
 request's `cutoff`; `beforeRequest` replacements do not change it. It answers a
 call to a tool it did not offer with the `tool_unavailable` result described in
-section 2.2, without a tool task. A configuration change after preparation does
-not affect this check (section 2.2). The tool task resolves the composed tool
-once from its phase snapshot and uses that implementation until execution
-settles: one phase handler resolves, validates, runs `beforeTool`, records intent,
-executes, and commits the result, so no phase boundary separates resolution from
-settlement. An unregistered implementation produces `tool_unavailable`.
+section 2.2, without a tool task. An agent change after preparation does not
+affect this check (section 2.2). The tool task resolves the called name among
+the `tools` of the phase's agent resolution, the tools filter applied. It uses
+that implementation
+until execution settles: one phase handler resolves, validates, runs
+`beforeTool`, records intent, executes, and commits the result, so no phase
+boundary separates resolution from settlement. A name that does not resolve, for
+example because its extension was uninstalled or deselected, or the tools filter
+dropped it after the request was prepared, produces `tool_unavailable`.
 The implementation's `prepareArguments`, if any, first repairs the call's
 arguments, for example `edits` sent as a JSON string; the stored call keeps what
 the model sent. Arguments are validated against the resolved implementation's
@@ -2647,6 +2862,42 @@ terminalizing the tool task cascades through the owned scope. The tool reports
 the child in its running details, for example `api.details({ conversationId })`,
 so a UI that sees the call can attach to the child's view or events.
 
+```ts
+export const Subagent = defineExtension({
+  name: "subagent",
+  tools: [defineTool({
+    name: "subagent",
+    description: "Delegate a self-contained task to a subagent and get its answer back.",
+    parameters: Type.Object({ task: Type.String() }),
+    replay: "safe",
+    execute: async (args, api, context) => {
+      const { task } = args;
+      const child = await api.commit(async (tx) => {
+        const existing = (await tx.scanConversations({ ownerTaskId: api.taskId }, 1)).items[0];
+        if (existing !== undefined) return existing.id;
+        // Starts as a copy of this conversation's agent: model, thinking level, cwd, extensions, tools.
+        const created = await tx.createConversation({ ownership: { kind: "task", taskId: api.taskId } });
+        // Without this extension, the child is not offered this tool.
+        await configure(tx, created.id, { extensions: { remove: [Subagent] } });
+        return created.id;
+      }, context);
+      await api.details({ conversationId: child }, context);
+      const handle = (await api.conversation(child, context))!;
+      const request = { type: "input", content: task, requestId: `subagent:${api.taskId}` } as const;
+      const settled = await (await handle.submit(request, context)).wait(context);
+      if (settled.status !== "done" || settled.type !== "input") throw new Error(`Subagent failed: ${settled.status}`);
+      return { content: [{ type: "text", text: await answerText(api, settled.answer, context) }] };
+    },
+  })],
+});
+```
+
+`{ remove: [Subagent] }` edits the host default selection (section 2.2). The
+main conversation here leaves its selection unset, so that is its selection
+too. A parent with any stored selection, an array or an `{ add, remove }`
+object, computes the child's array from `(await api.agent(context)).extensions`
+instead, before the commit.
+
 A persistent background subagent outlives the parent's turns and can be
 messaged, steered, stopped, and listed later. One transaction, after
 deduplicating by the subagent's name in an application registry document,
@@ -2667,15 +2918,31 @@ for that submission's settlement, and posts the answer to the parent as an
 input with `whenBusy: "followUp"`, under another request ID derived from its
 task ID. A crash before either admission retries it; a crash after returns the
 existing `Submission`, so the child gets the message once and the parent gets
-the answer once. Submission admission therefore needs no private transaction
-shortcut and does not move onto `Tx`. A registry of names uses `fork:
-"initial"` so forks of the parent do not inherit it. A UI lists subagents from
-the registry; a child is working while its `pi.live.run` is set. Owner edges
-alone drive abort and idle traversal.
+the answer once. The reporter therefore needs no transaction-level admission;
+`tx.createSubmission()` writes a raw record without admission rules. The
+application's name document uses
+`fork: "initial"` so forks of the parent do not inherit it. A UI lists
+subagents from that document; a child is working while its `pi.live.run` is
+set. Owner edges alone drive abort and idle traversal. The anchor and reporter
+task definitions come with the subagent extension, so pending reporters resume
+after a restart once the host installs it again:
+
+```ts
+export const SubagentTools = defineExtension({ name: "subagent-tools", tasks: [Anchor, Reporter], tools: [subagentTool] });
+
+// In subagentTool's spawn commit, after the name checks:
+const anchor = await tx.createTask(Anchor, null, { ownership: { kind: "conversation" }, background: true });
+// Owned by a task of the parent: starts as a copy of the parent's agent.
+const child = await tx.createConversation({ ownership: { kind: "task", taskId: anchor } });
+await configure(tx, child.id, {
+  extensions: { remove: [SubagentTools] },
+  instructions: `You are the subagent "${name}". Answer the main agent's requests.`,
+});
+```
 
 A tool result may request `addTools`, `terminate`, or `handoff`. The
-generation's `tools` phase (section 8.5) appends added tool names to the
-configured loadout; they take effect at the next preparation. The round
+generation's `tools` phase (section 8.5) adds the named tools to the
+conversation's stored tools filter; they take effect at the next preparation. The round
 terminates only when every result of the round requests `terminate`, as in the
 pi agent loop; the `tools` phase then uses a final boundary. Any
 `handoff` in the round, the last one in call order when several ask, ends the
@@ -2689,9 +2956,9 @@ tool that runs an owned conversation must not report that conversation's spend
 again: the child's own `pi.usage` already counts it (section 12).
 
 On reopen, a tool reruns only when both its stored intent policy and the current
-registered declaration say `safe`. A current `unsafe` declaration may veto a
-stored-safe replay; a current-safe declaration never upgrades stored unsafe. A
-tool with no current registration is treated as `unsafe`. Every other orphaned
+declaration, resolved as at `call`, say `safe`. A current `unsafe` declaration
+may veto a stored-safe replay; a current-safe declaration never upgrades stored
+unsafe. A tool that no longer resolves is treated as `unsafe`. Every other orphaned
 effect produces an interrupted result containing the
 durable partial output. Completed, failed, and aborted tool terminal outcomes
 retain their tool-result entry ID for the generation's `tools` phase.
@@ -2702,14 +2969,19 @@ diagnostic with one of the codes `tool_unavailable`, `invalid_arguments`,
 and the error text as its message. Their content is the durable partial output,
 if any, and `details` is the tool's last reported value, if any.
 
-`@punch-bot/durable/tools` provides `read`, `bash`, `edit`, and `write`
-factories, ported from the agent harness tools. They use only `api.env` and are
-registered like any other tool; nothing registers them automatically. `read`
-does not return images yet.
+`@punch-bot/durable/tools` provides `read`, `write`, `edit`, and `bash`
+factories, ported from the agent harness tools, and the `CodingTools` extension
+with all four. They use only `api.env`; nothing
+installs them automatically. `read` does not return images yet. `edit` and
+`write` serialize their read-modify-write of one file within the process, keyed
+by the environment's `FileSystem.id` (equal ids see the same files at the same
+paths) and the canonical path, so two calls with fresh environment objects for
+one file system still queue, and other files and file systems never wait. It
+is not a lock against `bash` or other processes.
 
 ### 7.4 System prompt and dynamic tools
 
-Pico has no durable prompt sections. The registry's system prompt slot produces
+Pico has no durable prompt sections. The conversation's resolved agent produces
 the desired sections for each request; the transcript's `pi.system` entries are
 the only durable record of what the model saw. Pico stores prompt and tool
 changes directly as PR #9548 `SystemMessage` values at their transcript
@@ -2741,14 +3013,14 @@ const delta: SystemMessage = {
 
 Generation preparation takes these steps against its phase snapshot:
 
-1. Read the committed configuration and replay the active transcript's system
-   messages into the shown sections and offered tools.
-2. Compute the desired tools: active names that the snapshot resolves, in
-   configured order, as composed by their wrappers.
-3. Render every registered section, in registry order, with `PromptInput`: the
-   conversation, those tools, the shown sections, the configured model and
-   thinking level, and a `DocumentReader` for committed documents (the task
-   runtime). The results are the desired sections.
+1. Resolve the conversation's agent (section 7.1) and replay the active
+   transcript's system messages into the shown sections and offered tools.
+2. The desired tools are the agent's `tools`, in order.
+3. Build the environment with `HarnessOptions.env` (section 2.2) and render the
+   agent's `sections`, in order, with `PromptInput`: the conversation, the
+   agent, the environment, the shown sections, and a `DocumentReader` for
+   committed documents (the task runtime). The results are the desired
+   sections.
 4. Compare desired sections and tool declarations with the replayed state and
    append one positional `pi.system` entry when they differ.
 
@@ -2759,29 +3031,33 @@ blocking compaction, which appends only while its generation waits for it
 
 Model and thinking level are request options, not prompt state.
 
-Registered sections are the only source of prompt text; there is no separate
-builder. `systemPrompt.section(key, render, { tag })` adds a section, and
-`systemPrompt.wrap(key, wrapperKey, wrapper)` decorates one, composed per
-snapshot like tool wrappers. Sections render in registry order: the position at
-which each key was first registered. A section whose `render` returns
-`undefined` is omitted, which is how a section varies by conversation. With
-`tag` omitted or true, text is wrapped as `<key>\n...\n</key>`. A section that
-throws keeps its shown text, if any, and is reported; the request is still sent.
-Errors thrown after the generation invocation is cancelled propagate; an abort
-error of the section's own, such as its fetch timing out, is an ordinary failure. With no registered sections, the desired section set is
-empty.
+The selected extensions' sections and the agent's `instructions` are the only
+source of prompt text; there is no separate builder. `section(key, render,
+{ tag })` builds a section, and `wrapSection(key, wrapper)` decorates one,
+composed per resolution like tool wrappers. Sections render in the agent's
+order: extension order, a later extension's same-key section replacing the
+earlier one in place, and `instructions` last (section 7.1). A section whose
+`render` returns `undefined` is omitted. With `tag` omitted or true, text is
+wrapped as `<key>\n...\n</key>`. A section that throws keeps its shown text, if
+any, and is reported; the request is still sent. Errors thrown after the
+generation invocation is cancelled propagate; an abort error of the section's
+own, such as its fetch timing out, is an ordinary failure. With no sections, the
+desired section set is empty.
 
 A minimal prompt is one untagged section:
 
 ```ts
-registry.systemPrompt.section("preamble", () => "You are a helpful assistant.", { tag: false });
+const Chat = defineExtension({
+  name: "chat",
+  sections: [section("preamble", () => "You are a helpful assistant.", { tag: false })],
+});
+registry.install(Chat);
 ```
 
-Sections read per-conversation data through `input.read`. For example, a
-coding agent keeps its own conversation document with the agent kind, preamble,
-and working directory; its preamble and cwd sections render from that document,
-and its AGENTS.md and skills sections return `undefined` for subagent
-conversations.
+A conversation's prompt varies through its extension selection, its
+`instructions`, `input.env`, and `input.read`. A subagent that should not see
+skills does not select the skills extension, and a cwd section renders
+`input.env.cwd`; no section checks whether it runs in a subagent.
 Renderers must be deterministic for equal inputs: any change in rendered text,
 such as an embedded timestamp, appends a system delta and invalidates provider
 prompt caches.
@@ -2832,12 +3108,19 @@ compatibility.
 
 ### 7.5 Extension reload
 
-Extension code is reloaded in process through the registry. The host publishes
-the new registrations and disposes the old ones in one `batch()`. The Harness
-keeps running; no close or reopen is required.
+Extension code is reloaded in process through the registry. The host installs
+the new extension object under the installed name, which replaces the old one
+in place in one publication. The Harness keeps running; no close or reopen is
+required.
 
-- New phase invocations and tool tasks use the new registrations immediately;
-  running invocations see them at their next phase boundary.
+```ts
+registry.install(SkillsV2); // same name: conversations selecting skills render v2 at their next request
+registry.uninstall(Skills); // selecting conversations get a system delta removing its section; nothing is rewritten
+// Restart: the host installs its extensions again; stored names resolve against them.
+```
+
+- New phase invocations and tool tasks use the new extension immediately;
+  running invocations see it at their next phase boundary.
 - Work already running keeps its snapshot until its phase handler settles, and a
   pinned tool keeps its implementation until its execution settles. Replacement
   never signals or interrupts it. Resources the old code uses are the
@@ -2846,8 +3129,11 @@ keeps running; no close or reopen is required.
   (section 5.4). A task definition must increase its version when the meaning
   of persisted input or checkpoint state changes and migrate supported older
   state; a failed migration blocks the task rather than terminalizing it.
-- Keyed registrations re-registered under the same key keep their position, so a
-  reload does not reorder hooks, tools, or sections.
+- A replaced extension keeps its install position, so a reload does not move
+  its hooks, tools, and sections relative to other extensions; within the
+  extension, the new object's order applies. Moving a task definition from one extension to
+  another leaves a gap between the two installs in which its pending tasks are
+  blocked.
 - Document definitions are passed explicitly to typed access and need no
   registration; changed tokens take effect on their next access.
 
@@ -2863,14 +3149,15 @@ The initial implementation provides:
 
 | kind | responsibility |
 |---|---|
-| `pi.generation` | prepare system/loadout, request or poll model, retry, classify response |
+| `pi.generation` | prepare system prompt and tools, request or poll model, retry, classify response |
 | `pi.tool` | validate, hook, execute, persist output and details, append result |
 | `pi.compaction` | select a transcript range, summarize, place a headed summary |
 
 Generation uses `HarnessOptions.models` without a Pico-specific model adapter. It
 resolves `models.getModel(ref.provider, ref.modelId)`, builds a pi-ai `Context`
 from the prepared prompt/messages/tools, and calls `models.streamSimple()` with
-the task invocation's abort signal and configured reasoning/options. Deferred
+the task invocation's abort signal, the agent's thinking level, and the
+settings' stream options. Deferred
 continuation calls `models.fetchDeferred()` and `models.cancelDeferred()` with
 that same model and signal. Missing models and synchronous/streamed pi-ai errors
 are classified into the durable generation outcomes below.
@@ -3023,7 +3310,6 @@ type GenerationCheckpoint =
       model: ModelRef;
       thinkingLevel: ModelThinkingLevel;
       streamOptions: ConversationStreamOptions;
-      toolExecution: ToolExecutionMode;
       /** Newest entry included in the request. */
       cutoff: EntryId;
     }
@@ -3033,7 +3319,6 @@ type GenerationCheckpoint =
       attempt: number;
       compacted?: TaskId<CompactionResult>;
       model: ModelRef;
-      toolExecution: ToolExecutionMode;
       cutoff: EntryId;
       handle: DeferredHandle;
       pollAt: number;
@@ -3052,17 +3337,17 @@ type GenerationResult = { entryId: EntryId };
 `pi.generation` is version 1 and starts at `{ phase: "prepare", attempt: 1 }`.
 The run's inputs live in `pi.live.run`, not in the task input.
 
-- `prepare` runs section 7.4 against the committed configuration. When no model
-  is configured or `models.getModel()` does not know it, the task fails with
-  `no_model`. When it resumes with `overflow` and its compaction did not
-  complete with an `entryId`, the run fails with `model_error` and the overflow
-  text as detail. Otherwise one commit appends the planned `pi.system` entries and
-  moves to `request` with the new tail as `cutoff` and the configuration's model,
-  thinking level, stream options, and tool execution mode. These stay fixed for
-  this request attempt; a retry prepares again. `compacted` carries over to
+- `prepare` runs section 7.4 with the phase's agent resolution and resolves
+  the settings once. When the agent has no model or `models.getModel()` does
+  not know it, the task fails with `no_model`. When it resumes with `overflow`
+  and its compaction did not complete with an `entryId`, the run fails with
+  `model_error` and the overflow text as detail. Otherwise one commit appends
+  the planned `pi.system` entries and moves to `request` with the new tail as
+  `cutoff`, the agent's model and thinking level, and the settings' stream
+  options. These stay fixed for this request attempt; a retry prepares again. `compacted` carries over to
   `request`, `retry`, `poll`, and the next `prepare`.
 - Before that commit, `prepare` checks the compaction thresholds (section 8.7)
-  when the conversation's compaction policy is enabled, the model's
+  when the settings' compaction policy is enabled, the model's
   `contextWindow` is positive, and `compacted` is absent. The estimate starts at
   the newest assistant message in the committed model context whose entry was
   appended after the head marker (all qualify without one) and whose usage is
@@ -3080,9 +3365,9 @@ The run's inputs live in `pi.live.run`, not in the task input.
     `backgroundTokens > 0` and no compaction status in `pi.live`: the commit that
     moves to `request` also creates a background compaction, owned by the
     conversation, with reason `threshold`, and adds its status. The generation
-    does not wait for it. The retry policy is read when the
+    does not wait for it. The settings' retry policy is read when the
   attempt's result is classified, because it governs the next attempt (section
-  2.2).
+  7.1).
 - `request` and `poll` resolve the checkpoint's model through
   `models.getModel()`; an unknown model fails the task with `no_model`, like
   `prepare`. `request` converts a leftover partial (below) before it resolves
@@ -3112,8 +3397,8 @@ The run's inputs live in `pi.live.run`, not in the task input.
   - `toolUse` with at least one tool call: the commit appends the assistant
     entry and starts the tool round described below, moving to `waiting` in the
     `tools` phase. A `toolUse` message without calls is classified like `stop`.
-  - `error` that pi-ai `isContextOverflow()` recognizes, while the compaction
-    policy is enabled, `compacted` is absent, and range selection finds a cut:
+  - `error` that pi-ai `isContextOverflow()` recognizes, while the settings'
+    compaction policy is enabled, `compacted` is absent, and range selection finds a cut:
     the commit appends the error entry, removes `generation`, creates a
     compaction owned by the generation with reason `overflow`, adds its status,
     and commits `waiting` on it with `allSettled` and checkpoint `{ phase:
@@ -3122,7 +3407,7 @@ The run's inputs live in `pi.live.run`, not in the task input.
     including a second one, is never retried and fails like the non-retryable
     errors below. A `stop` or `length` response is never classified as overflow;
     the next threshold check handles silent overflow.
-  - `error` that `isRetryableAssistantError()` accepts while the conversation's
+  - `error` that `isRetryableAssistantError()` accepts while the settings'
     retry policy allows another attempt (`enabled` and `attempt <= maxRetries`,
     so `maxRetries` counts retries after the first attempt): append the error entry and move to
     `retry` with `until = now + retryDelayMs(policy, attempt)`.
@@ -3131,7 +3416,7 @@ The run's inputs live in `pi.live.run`, not in the task input.
     `generation`, and fail.
   - `deferred`: move to `poll` with `pollAt = now + (handle.pollAfterMs ?? 5000)`.
 - `retry` sleeps until `until`, then returns to `prepare` with the next attempt,
-  so configuration changes made during the backoff apply.
+  so agent and settings changes made during the backoff apply.
 - `poll` sleeps until `pollAt` and calls `models.fetchDeferred()`. A still
   deferred result moves `pollAt` strictly later; any other result is classified
   as above.
@@ -3146,9 +3431,10 @@ A tool round starts in the commit that appends the tool-calling answer:
    `poll` derives it again. A call to a tool not offered gets its
    `tool_unavailable` result entry here, without a task.
 2. Every other call gets a `pi.tool` task owned by the generation, with input
-   `{ assistant, callId }`. The round is sequential when the pinned
-   `toolExecution` is `sequential` or any called tool's registration in the phase
-   snapshot has `executionMode: "sequential"`: then only the first call gets its
+   `{ assistant, callId }`. The round is sequential when the settings'
+   `toolExecution`, read as the round starts, is `sequential` or any called
+   tool, resolved from the phase's agent as the tool task resolves it (section
+   7.3), has `executionMode: "sequential"`: then only the first call gets its
    task now and the rest wait in `pending`. Otherwise every call gets its task at
    once and they run in parallel. The checkpoint's `tools` lists the tasks
    created so far and grows by one per started sequential call, while
@@ -3177,16 +3463,18 @@ type ToolTaskResult = { entryId: EntryId; control?: ToolControl };
 `pi.tool` is version 1 and starts at `{ phase: "call" }`. The input stays small
 because the terminal record keeps it; the call is read from the assistant entry.
 
-- `call` reads the call with `runtime.entry()`, resolves the composed tool from
-  its phase snapshot, validates the arguments with pi-ai
+- `call` reads the call with `runtime.entry()`, resolves the tool among the
+  phase's agent `tools` (section 7.3), validates
+  the arguments with pi-ai
   `validateToolArguments()`, runs the `beforeTool` chain, and validates again
   (section 7.3). One commit then records intent: it moves to `execute` with the
   final arguments and the tool's replay policy and sets the slot `running`. The
   same handler executes the tool, runs the `afterTool` chain, and commits the
-  result. An unregistered tool, invalid arguments, or a block commits the
-  corresponding error result instead, without intent.
-- `execute` is reached only by recovery. When both the stored and the currently
-  registered policy are `safe`, it executes again with the stored arguments,
+  result; it builds `api.env` with `HarnessOptions.env` right before executing
+  (section 2.2). A tool that does not resolve, invalid arguments, or a block
+  commits the corresponding error result instead, without intent.
+- `execute` is reached only by recovery. When both the stored and the current
+  policy, resolved as in `call`, are `safe`, it executes again with the stored arguments,
   without `beforeTool`, and settles like `call`. Otherwise it commits an
   `interrupted` error result from the slot's durable partial output, details, and
   diagnostics, and ends `failed` with `{ entryId }`.
@@ -3195,7 +3483,8 @@ because the terminal record keeps it; the call is read from the assistant entry.
   toolCallId, toolName, content, details, isError, timestamp }]` and
   `data: { diagnostics }`, marks the slot `done`, and
   completes with `{ entryId, control }`. An `isError` result still completes.
-- A throw from `execute()` becomes a `tool_error` result and the task ends
+- A throw from `execute()`, or from `HarnessOptions.env` building its
+  environment, becomes a `tool_error` result and the task ends
   `failed` with `{ entryId }`; once the invocation is signalled it propagates
   instead. Ending `failed`, like `aborted`, records cancellation intent (section
   5.4), so conversations the call owns, which nothing supervises any more, are
@@ -3216,8 +3505,11 @@ Otherwise it reads the tool records with `runtime.getTask()` and the round's
 result entries from the `pi.live.tools` slots, runs the `afterTools` observers,
 and then commits once:
 
-- It appends every `addTools` name not already active to the configured
-  loadout; the next preparation offers it.
+- It edits the conversation's stored `pi.agent` `tools` for every `addTools`
+  name: an array gets the name appended unless it holds it already, and
+  `{ remove }` loses the name. With `tools` unset, every tool is already
+  offered, and nothing is written. The next preparation offers the tool when it
+  resolves.
 - When every result of the round requests `terminate`, or any requests
   `handoff`, it appends the handoff's `pi.reset` entry, if any, settles the
   run's inputs `done` with the tool-calling answer, removes `run` and `tools`,
@@ -3317,7 +3609,7 @@ between their summaries.
 **Range selection** is a pure function of a `ContextView`, whose
 `contributions` give each active entry's model messages after every edit in the
 range (section 2.1, rules 4 and 9), including edits carried by older in-range
-markers, and `keepRecentTokens`.
+markers, and the settings' `keepRecentTokens`.
 
 1. Cut candidates are the non-marker entries whose contribution begins with a
    user or assistant message. Tool results and system entries are never
@@ -3346,14 +3638,15 @@ The summary covers 1-3; the model context becomes [summary, 4, 5, 6].
 
 Phases:
 
-- `select` reads the committed configuration and captures the committed
-  context. When no model is configured or `models.getModel()` does not know it,
+- `select` takes the phase's agent resolution, resolves the settings once, and
+  captures the committed context. When the agent has no model or
+  `models.getModel()` does not know it,
   the task fails with `no_model`. With nothing to compact it completes with
   `{}`. Otherwise the `beforeCompact` hooks (section 7.2) run with the
   summarized entries and messages; the first decision wins. `{ decline: true }` completes
   with `{}`, and `{ summary }` is placed as below in the same commit. Without a
-  decision, one commit moves to `summarize` with attempt 1, the configured model,
-  thinking level, and stream options, `maxTokens` = `min(floor(0.8 *
+  decision, one commit moves to `summarize` with attempt 1, the agent's model
+  and thinking level, the settings' stream options, `maxTokens` = `min(floor(0.8 *
   reserveTokens), model.maxTokens)` (the model's value only when positive), the
   captured tail, and the cut as `firstKept`.
 - `summarize` derives the summarized messages again from the context at `tail`,
@@ -3371,8 +3664,8 @@ Phases:
   that adds its usage to `pi.usage` (section 8.6):
   - `stop` with non-empty text and no tool call: the text is the summary, placed
     as below.
-  - `error` that `isRetryableAssistantError()` accepts while the conversation's
-    retry policy allows another attempt: move to `retry` with `until = now +
+  - `error` that `isRetryableAssistantError()` accepts while the settings'
+    retry policy, read at classification, allows another attempt: move to `retry` with `until = now +
     retryDelayMs(policy, attempt)`, and set the status's `attempt` and `retry`.
   - anything else, including a `length` stop, which leaves the summary
     incomplete: fail with `model_error`.
@@ -3593,7 +3886,7 @@ type ConversationView = {
   readonly conversation: ConversationRecord;
   /** Raw active entries, as `ContextView.entries` (section 2.1): the head marker, then the non-head entries from its head. */
   readonly entries: readonly EntryRecord[];
-  /** `pi.conversation.config`, `pi.live`, `pi.inbox`, and `pi.usage`, keyed by kind; absent documents are absent. */
+  /** `pi.agent`, `pi.live`, `pi.inbox`, and `pi.usage`, keyed by kind; absent documents are absent. */
   readonly docs: Readonly<Record<string, JsonObject>>;
 };
 ```
@@ -3655,7 +3948,8 @@ type AgentEvent =
       /** `pi.live.compactions` (section 8.2). */
       compactions: readonly CompactionStatus[];
       inbox: readonly { id: SubmissionId; mode: InboxItem["mode"] }[];
-      config: ConversationConfigState;
+      /** `pi.agent`; `{}` when absent. */
+      agent: AgentState;
       usage: UsageState;
     }
   | { type: "run_start"; inputs: readonly SubmissionId[] }
@@ -3683,7 +3977,7 @@ type AgentEvent =
   | { type: "auto_retry_end"; attempt: number }
   | { type: "deferred_poll"; pollAt: number }
   | { type: "entry_appended"; entry: EntryRecord }
-  | { type: "config_changed"; config: ConversationConfigState }
+  | { type: "agent_changed"; agent: AgentState }
   | { type: "usage_changed"; usage: UsageState }
   | { type: "task_failed"; taskId: TaskId; kind: string; message: string }
   | { type: "compaction_start"; taskId: TaskId; reason: CompactionReason; blocking: boolean }
@@ -3748,8 +4042,10 @@ Events derive from committed changes:
   orphan. An unfinished slot that disappears because its run ended ends with the
   result entry appended in the same commit, as for the unstarted calls of an
   aborted round, directly before its `message_start`, or without an entry.
-- `inbox_update`, `config_changed`, `usage_changed`: the document changed; a
-  retired one reads as its initial value, as in a snapshot.
+- `inbox_update`, `agent_changed`, `usage_changed`: the document changed; a
+  retired one reads as its initial value, as in a snapshot. Registry installs
+  and settings changes make no commit and emit nothing; a UI showing resolved
+  tools or a resolved model resolves again through `Conversation.agent()`.
 - `auto_retry_start`/`auto_retry_end`, `deferred_poll`: `pi.live.generation`
   gains or drops `retry`, or gains `deferred` or moves its `pollAt`.
 - `task_failed`: a task of the conversation settles `faulted` or `orphaned`.
@@ -3765,7 +4061,7 @@ and retry/deferred events; then entries in append order with their
 `tool_execution_end` directly precedes its `message_start`, as in the coding
 agent; then the `tool_execution_end` of tools ending without an entry;
 then `compaction_end`, `task_failed`, `turn_end`, `run_end`; then `submission`
-events in ID order; then `inbox_update`, `config_changed`, and `usage_changed`;
+events in ID order; then `inbox_update`, `agent_changed`, and `usage_changed`;
 and last `compaction_start`, `run_start`, and `turn_start`. A stream buffers at most 100 undelivered
 batches; adding another replaces every undelivered batch with one `snapshot` of
 the newest committed state. The stream therefore converges but does not promise
@@ -4141,16 +4437,28 @@ These are contracts, not invitations to add defensive machinery:
   with `pi.` belong to built-ins by convention. Nothing enforces it; reusing one
   collides with Harness behavior, such as `pi.system` entries being replayed as
   system messages.
-- **Early resource disposal:** disposing a `Registration` only stops new use.
-  Freeing resources immediately can fail calls that are still running.
-- **Async batches:** `batch()` callbacks are synchronous. A callback that returns
-  a promise publishes nothing and throws.
+- **Early resource disposal:** uninstalling or replacing an extension only stops
+  new use. Freeing resources immediately can fail calls that are still running.
+- **Guards left out of a selection:** a conversation with an array selection
+  that omits a guard extension, such as a permissions hook, runs without it.
+  Extensions are selected whole; there is no registry-wide hook or wrapper.
+- **Selection edits and copies:** `{ add, remove }` always edits the host default
+  selection. Written to a child that copied any selection from its owner, an
+  array or an `{ add, remove }` object, it replaces that selection, so the child
+  gets the host default with the edit, not the owner's selection. Compute the child's array from the resolved agent
+  instead (section 7.3).
+- **Copies are one-time:** a new task-owned conversation copies its owner's
+  `pi.agent` at creation; later owner changes do not reach it. A fork keeps its
+  `asOf` copy instead (section 2.2).
+- **Environment on recovery:** a tool rerun after recovery builds its
+  environment again, with the conversation's current `cwd`, which may differ
+  from the first attempt's.
+- **Moving default selections:** a conversation on the default selection changes
+  whenever the settings or the installed extensions change; each change appends
+  `pi.system` entries and misses the provider prompt cache.
 - **Unstable prompt text:** a section renderer whose output changes without a
   real content change, for example by embedding the time, appends system deltas
   and defeats provider prompt caching.
-- **Durable stream options:** `streamOptions.headers` and `metadata` are stored
-  in the conversation configuration history and copied into forks. Never put
-  credentials there; `Models` resolves auth.
 - **Fatal storage errors:** after an uncertain storage failure the Session is
   poisoned. Do not catch the error and continue using it.
 - **JSONL durability:** default JSONL ordering handles ordinary process crashes;
