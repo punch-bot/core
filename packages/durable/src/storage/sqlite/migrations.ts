@@ -102,13 +102,15 @@ export async function applySqliteMigrations(
 		}
 	}
 
-	await database.transaction(() => {
-		database.exec(`CREATE TABLE IF NOT EXISTS durable_schema (
+	await database.transaction(async () => {
+		await database.exec(`CREATE TABLE IF NOT EXISTS durable_schema (
 			singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
 			version INTEGER NOT NULL CHECK (version >= 0)
 		) STRICT`);
-		database.prepare("INSERT OR IGNORE INTO durable_schema (singleton, version) VALUES (1, 0)").run();
-		const row = database.prepare("SELECT version FROM durable_schema WHERE singleton = 1").get<SchemaRow>();
+		await (await database.prepare("INSERT OR IGNORE INTO durable_schema (singleton, version) VALUES (1, 0)")).run();
+		const row = await (
+			await database.prepare("SELECT version FROM durable_schema WHERE singleton = 1")
+		).get<SchemaRow>();
 		if (row === undefined) throw new Error("Durable SQLite schema metadata is missing");
 		const currentVersion = migrations.at(-1)?.version ?? 0;
 		if (row.version > currentVersion) {
@@ -118,8 +120,10 @@ export async function applySqliteMigrations(
 		}
 		for (const migration of migrations) {
 			if (migration.version <= row.version) continue;
-			for (const statement of migration.statements) database.exec(statement);
-			database.prepare("UPDATE durable_schema SET version = ? WHERE singleton = 1").run(migration.version);
+			for (const statement of migration.statements) await database.exec(statement);
+			await (await database.prepare("UPDATE durable_schema SET version = ? WHERE singleton = 1")).run(
+				migration.version,
+			);
 		}
 	});
 }

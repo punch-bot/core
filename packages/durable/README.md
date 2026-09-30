@@ -417,7 +417,17 @@ const usage = await harness.usage(context); // { models: { "openai/gpt-6-sol": U
 | SQLite | `openNodeSqliteStorage(file)` from `@punch-bot/durable/storage/sqlite/node` | One database file. WAL mode with `synchronous = NORMAL`: commits survive process crashes; the newest may be lost on power or host failure. |
 | JSONL | `openNodeJsonlStorage(directory, context)` from `@punch-bot/durable/storage/jsonl/node` | Append-only files in one directory. Pass `{ fsync: true }` to flush before each commit marker. |
 
-One process owns a storage at a time; there is no cross-process locking. The portable SQLite and JSONL cores (`/storage/sqlite`, `/storage/jsonl`) run without Node APIs, for example on Bun or in Cloudflare Durable Objects, given a synchronous SQLite database or a `FileSystem` from `@punch-bot/durable/env`.
+One process owns a storage at a time; there is no cross-process locking. The portable SQLite and JSONL cores (`/storage/sqlite`, `/storage/jsonl`) run without Node APIs, for example on Bun or in Cloudflare Durable Objects, given an asynchronous `SqliteDatabase` facade or a `FileSystem` from `@punch-bot/durable/env`.
+
+SQLite adapters implement promise-based `exec`, `prepare`, statement `run`/`get`/`all`, transactions, and close. Operations started by a transaction callback use that transaction; adapters must queue unrelated operations and other transactions until the callback settles:
+
+```typescript
+await database.transaction(async () => {
+	await database.exec("CREATE TABLE example (value TEXT)");
+	const insert = await database.prepare("INSERT INTO example (value) VALUES (?)");
+	await insert.run("stored atomically");
+});
+```
 
 Custom backends can run the shared conformance suite with any Vitest- or Jest-compatible runner:
 

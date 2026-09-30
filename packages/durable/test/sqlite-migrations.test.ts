@@ -32,15 +32,19 @@ describe("durable SQLite migrations", () => {
 		try {
 			await applySqliteMigrations(database);
 			await applySqliteMigrations(database);
-			expect(database.prepare("SELECT version FROM durable_schema WHERE singleton = 1").get()).toEqual({
-				version: CURRENT_SQLITE_SCHEMA_VERSION,
-			});
-			expect(database.prepare("SELECT next_id, next_seq FROM durable_metadata WHERE singleton = 1").get()).toEqual({
+			expect(await (await database.prepare("SELECT version FROM durable_schema WHERE singleton = 1")).get()).toEqual(
+				{
+					version: CURRENT_SQLITE_SCHEMA_VERSION,
+				},
+			);
+			expect(
+				await (await database.prepare("SELECT next_id, next_seq FROM durable_metadata WHERE singleton = 1")).get(),
+			).toEqual({
 				next_id: "2",
 				next_seq: 1,
 			});
 		} finally {
-			database.close();
+			await database.close();
 		}
 	});
 
@@ -48,10 +52,10 @@ describe("durable SQLite migrations", () => {
 		const path = await databasePath();
 		const database = await openNodeSqliteDatabase(path);
 		await applySqliteMigrations(database);
-		database
-			.prepare("UPDATE durable_schema SET version = ? WHERE singleton = 1")
-			.run(CURRENT_SQLITE_SCHEMA_VERSION + 1);
-		database.close();
+		await (await database.prepare("UPDATE durable_schema SET version = ? WHERE singleton = 1")).run(
+			CURRENT_SQLITE_SCHEMA_VERSION + 1,
+		);
+		await database.close();
 
 		await expect(openNodeSqliteStorage(path)).rejects.toThrow("is newer than supported version");
 	});
@@ -74,23 +78,27 @@ describe("durable SQLite migrations", () => {
 			];
 			await expect(applySqliteMigrations(database, failed)).rejects.toThrow();
 			expect(
-				database
-					.prepare(
+				await (
+					await database.prepare(
 						"SELECT count(*) AS count FROM sqlite_schema WHERE name IN ('durable_schema', 'migration_first', 'migration_second')",
 					)
-					.get(),
+				).get(),
 			).toEqual({ count: 0 });
 
 			await applySqliteMigrations(database, [
 				failed[0],
 				{ version: 2, statements: ["CREATE TABLE migration_second (value TEXT) STRICT"] },
 			]);
-			expect(database.prepare("SELECT version FROM durable_schema WHERE singleton = 1").get()).toEqual({
-				version: 2,
+			expect(await (await database.prepare("SELECT version FROM durable_schema WHERE singleton = 1")).get()).toEqual(
+				{
+					version: 2,
+				},
+			);
+			expect(await (await database.prepare("SELECT value FROM migration_first")).get()).toEqual({
+				value: "retained",
 			});
-			expect(database.prepare("SELECT value FROM migration_first").get()).toEqual({ value: "retained" });
 		} finally {
-			database.close();
+			await database.close();
 		}
 	});
 
@@ -124,13 +132,15 @@ describe("durable SQLite migrations", () => {
 			},
 		];
 		await expect(applySqliteMigrations(database, failedMigrations)).rejects.toThrow();
-		expect(database.prepare("SELECT version FROM durable_schema WHERE singleton = 1").get()).toEqual({
+		expect(await (await database.prepare("SELECT version FROM durable_schema WHERE singleton = 1")).get()).toEqual({
 			version: CURRENT_SQLITE_SCHEMA_VERSION,
 		});
 		expect(
-			database
-				.prepare("SELECT count(*) AS count FROM sqlite_schema WHERE type = 'table' AND name = 'migration_probe'")
-				.get(),
+			await (
+				await database.prepare(
+					"SELECT count(*) AS count FROM sqlite_schema WHERE type = 'table' AND name = 'migration_probe'",
+				)
+			).get(),
 		).toEqual({ count: 0 });
 
 		const successfulMigrations: readonly SqliteMigration[] = [
@@ -138,10 +148,10 @@ describe("durable SQLite migrations", () => {
 			{ version: nextVersion, statements: ["CREATE TABLE migration_probe (value TEXT) STRICT"] },
 		];
 		await applySqliteMigrations(database, successfulMigrations);
-		expect(database.prepare("SELECT version FROM durable_schema WHERE singleton = 1").get()).toEqual({
+		expect(await (await database.prepare("SELECT version FROM durable_schema WHERE singleton = 1")).get()).toEqual({
 			version: nextVersion,
 		});
-		expect(database.prepare("SELECT record, commit_seq FROM entries WHERE id = 2").get()).toEqual({
+		expect(await (await database.prepare("SELECT record, commit_seq FROM entries WHERE id = 2")).get()).toEqual({
 			record: JSON.stringify({
 				id: 2,
 				conversationId: ROOT_CONVERSATION_ID,
@@ -150,10 +160,12 @@ describe("durable SQLite migrations", () => {
 			}),
 			commit_seq: 1,
 		});
-		expect(database.prepare("SELECT next_id, next_seq FROM durable_metadata WHERE singleton = 1").get()).toEqual({
+		expect(
+			await (await database.prepare("SELECT next_id, next_seq FROM durable_metadata WHERE singleton = 1")).get(),
+		).toEqual({
 			next_id: "3",
 			next_seq: 2,
 		});
-		database.close();
+		await database.close();
 	});
 });
