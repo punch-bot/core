@@ -18,18 +18,13 @@ export {
 export { Harness } from "./harness/harness.ts";
 export { InboxDoc, type InboxItem, type InboxState } from "./harness/inbox.ts";
 export { LiveDoc, type LiveState, type ToolSlot } from "./harness/live.ts";
-export {
-	type PostToolsCheckpoint,
-	type PostToolsInput,
-	type PostToolsResult,
-	PostToolsTask,
-} from "./harness/post-tools.ts";
 export { createRegistry } from "./harness/registry.ts";
 export { ToolTask, type ToolTaskCheckpoint, type ToolTaskInput, type ToolTaskResult } from "./harness/tool.ts";
 export type {
 	AnyTask,
 	ContextView,
 	Conversation,
+	ConversationAbortOptions,
 	ConversationCreateOptions,
 	ConversationHandle,
 	ConversationInit,
@@ -46,7 +41,6 @@ export type {
 	HooksOf,
 	InputSubmissionDraft,
 	ModelRef,
-	PostToolsHooks,
 	PromptInput,
 	PromptSection,
 	PromptSectionWrapper,
@@ -114,6 +108,7 @@ export type {
 	EntryRecord,
 	HookRunner,
 	Id,
+	JoinPolicy,
 	JsonObject,
 	LatestConversationSemantics,
 	NextTaskState,
@@ -144,6 +139,7 @@ export type {
 	TaskOptions,
 	TaskOutcome,
 	TaskOutcomeError,
+	TaskOwnership,
 	TaskQuery,
 	TaskRecord,
 	TaskRuntime,

@@ -31,6 +31,7 @@ import { Submissions } from "./submissions.ts";
 import type {
 	ContextView,
 	Conversation,
+	ConversationAbortOptions,
 	ConversationCreateOptions,
 	ConversationHandle,
 	ConversationInit,
@@ -216,9 +217,9 @@ class ConversationImpl<Tool extends ToolRegistration> implements Conversation {
 		);
 	}
 
-	abort(context: Context): Promise<void> {
+	abort(context: Context, options?: ConversationAbortOptions): Promise<void> {
 		this.#host.tasks.resume();
-		return this.#host.tasks.abortConversation(this.id, context);
+		return this.#host.tasks.abortConversation(this.id, options?.background === true, context);
 	}
 
 	waitForIdle(context: Context): Promise<void> {
@@ -311,7 +312,7 @@ class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements 
 	inspect(context: Context): Promise<HarnessInspection> {
 		return this.readOnLine(async () => {
 			const snapshot = this.#registry.snapshot();
-			const { scheduling, tasks } = this.#tasks.inspect(snapshot);
+			const { scheduling, tasks } = await this.#tasks.inspect(snapshot);
 			const scan = (status: "queued" | "placed") =>
 				scanAll((cursor) => this.#storage.scanSubmissions({ status }, SCAN_PAGE_SIZE, cursor, context));
 			const submissions = [...(await scan("queued")), ...(await scan("placed"))].sort((a, b) => a.id - b.id);
@@ -458,7 +459,10 @@ function boundConversation(
 				abort: bound((callContext) => submission.abort(callContext)),
 			};
 		},
-		abort: bound((callContext) => tasks.abortConversation(id, callContext)),
+		abort: async (context, options) => {
+			binding.check();
+			return tasks.abortConversation(id, options?.background === true, bind(context));
+		},
 		waitForIdle: bound((callContext) => tasks.waitForIdle(id, callContext)),
 	};
 }

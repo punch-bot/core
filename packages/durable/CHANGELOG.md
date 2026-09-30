@@ -4,8 +4,9 @@
 
 ### Breaking Changes
 
-- `TaskRuntime` now requires `env`, `hooks`, `getTask()`, `waitForTask()`, `entry()`, and `conversation()`; `ToolExecutionApi` requires `env`, `diagnostic()`, and `conversation()`.
-- `createRegistry()` also pre-registers the built-in `pi.tool` and `pi.post-tools` tasks.
+- `TaskRuntime` now requires `env`, `hooks`, `getTask()`, `waitForTask()`, `outcomes()`, `entry()`, and `conversation()`; `ToolExecutionApi` requires `env`, `diagnostic()`, and `conversation()`.
+- `createRegistry()` also pre-registers the built-in `pi.tool` task.
+- `tx.createTask()` requires `options.ownership`: `{ kind: "conversation" }` or `{ kind: "task", taskId }`. `TaskOptions.after` and `TaskRecord.after` are removed; a task waits on other tasks by committing a `waiting` state. `TaskRecord` gains `owner`, and `TaskState` gains `waiting` and `completing`; the SQLite task schema changed.
 - `ToolResultEntry` now carries `data: { diagnostics }`.
 - `Tx` now requires `placeSubmission()` and `latestHeadMarker()`.
 - Busy submissions no longer reject with `ConversationBusy`: they queue in the conversation's `pi.inbox`, except input with `whenBusy: "reject"`.
@@ -14,24 +15,26 @@
 
 ### Added
 
-- Added the tool chain: generation offers active registered tools through positional system entries, answers calls to tools it did not offer with `tool_unavailable`, and hands the run to parallel or sequential `pi.tool` tasks and a `pi.post-tools` task that applies `addTools` and `terminate` and continues with the next generation.
+- Added the tool chain: generation offers active registered tools through positional system entries, answers calls to tools it did not offer with `tool_unavailable`, and runs parallel or sequential `pi.tool` tasks that it owns and waits for in its `tools` phase, which applies `addTools` and `terminate` and continues with the next generation.
 - Added the `pi.tool` task: argument validation before and after `beforeTool`, durable intent with the replay policy, recovery that reruns only replay-safe tools, bounded `output()` and `details()` progress in `pi.live.tools` slots with adaptive throttling, output and details fallback, `afterTool`, and results with a rendered `<harness>` diagnostics block.
 - Added tool diagnostics: `api.diagnostic()`, `ToolExecutionResult.diagnostics`, and Harness diagnostics for truncation and error results.
-- Added hook dispatch with conversation and owned-subtree scopes: `beforeRequest`, `afterResponse`, and `onYield` continuations on generation, `beforeTool` and `afterTool` on tools, and `afterTools` on post-tools, with `HookApi` memos.
+- Added hook dispatch with conversation and owned-subtree scopes: `beforeRequest`, `afterResponse`, and `onYield` continuations on generation, `afterTools` on generation, `beforeTool` and `afterTool` on tools, with `HookApi` memos.
 - Added `HarnessOptions.env`, `ToolRegistration.executionMode`, and the `toolExecution` configuration with `get/setToolExecution()`.
 - Added `read`, `bash`, `edit`, and `write` tools in `@punch-bot/durable/tools`; they use `api.env`. Bash streams raw output into `api.output()`, reports its spill file as a diagnostic, and throws on a nonzero exit or timeout. Reading images is not supported yet.
 - Added `ToolRegistration.prepareArguments()` to repair malformed arguments before validation; the edit tool uses it for `edits` sent as a JSON string or a single object and for top-level `oldText`/`newText`.
 - Tool output retained by `api.output()` is an exact slice of whole lines, sanitized of control characters.
 - Added the `bench:tool-output` benchmark of tool output rates, retention, backends, replay, and 1 GiB throughput.
-- Added the inbox: busy steer and follow-up inputs and passive writes queue in the `pi.inbox` document (`InboxDoc`) and are placed at post-tools and final boundaries, writes before user items, by the new `steeringMode` and `followUpMode` configuration with `get/set` accessors. Withdrawal removes the item; stale head writes settle `unanswered`; queued items survive a failed run until the next submission.
-- Added `Conversation.reset(handoff)` and the post-tools `handoff` control, which write the headed `pi.reset` entry (`ResetEntry`); a reset queued during a tool round ends the run.
+- Added the inbox: busy steer and follow-up inputs and passive writes queue in the `pi.inbox` document (`InboxDoc`) and are placed at `postTools` and final boundaries, writes before user items, by the new `steeringMode` and `followUpMode` configuration with `get/set` accessors. Withdrawal removes the item; stale head writes settle `unanswered`; queued items survive a failed run until the next submission.
+- Added `Conversation.reset(handoff)` and the `handoff` tool control, which write the headed `pi.reset` entry (`ResetEntry`); a reset queued during a tool round ends the run.
 - `onYield` continuations now apply only when the final boundary places no queued user input and no reset.
 - A generation that faults or is orphaned now converts its committed partial into an aborted assistant entry, which counts in `pi.usage`, instead of discarding it.
 - Added the `pi.usage` ledger (`UsageDoc`) of assistant usage per model and tool usage per tool, `ToolExecutionResult.usage`, and `Harness.usage()` for the Session total.
 - Added the structural `ConversationView` with `Conversation.viewState()` and `Conversation.watch()`.
 - Added the experimental `watchEvents()` agent event adapter with snapshot events, translated message and tool deltas, and overflow to a snapshot.
 - Added `Conversation.abort()`, which withdraws queued inputs, aborts the conversation's ordinary ownership scope, and resolves once it is idle.
-- Abort marks now cascade to work owned by the aborted task, or by a task that failed, faulted, or was orphaned: live foreground tasks below it are aborted and the queued inputs of their conversations withdrawn. Background tasks are boundaries.
+- Abort marks now cascade to work owned by the aborted task, or by a task holding a failed, faulted, or orphaned outcome: live foreground tasks below it are aborted and the queued inputs of their conversations withdrawn. Background tasks are boundaries; finished owners never cascade.
+- Added structured concurrency: tasks own child tasks (`ownership: { kind: "task", taskId }`) and wait for any tasks with a `waiting` state (`on`, `policy: "failFast" | "allSettled"`) and `runtime.outcomes()`. A task that finishes while work it owns is live holds its outcome as `completing` until that work drains; abort handlers run bottom-up, after the aborted task's owned work ended.
+- Added `Conversation.abort(context, { background: true })`, which also aborts background work and waits for it.
 - Conversation and Harness idle waits now include work in owned conversations and stop at background tasks.
 - A tool task whose `execute()` throws, or that is interrupted by a restart without a safe rerun, now ends `failed` (still with its error result entry), which aborts the conversations the call owns.
 - Added `TaskRuntime.conversation()` and `ToolExecutionApi.conversation()`: invocation-bound `ConversationHandle`s for submitting to, aborting, and waiting on existing conversations, such as the ones a task owns.

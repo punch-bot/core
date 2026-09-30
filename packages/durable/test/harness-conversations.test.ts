@@ -297,12 +297,15 @@ describe("Harness root and conversations", () => {
 			phases: { run: async () => {} },
 			abort: async () => {},
 		});
-		const taskId = await conversation.commit((tx) => tx.createTask(task, { n: 1 }), context);
+		const taskId = await conversation.commit(
+			(tx) => tx.createTask(task, { n: 1 }, { ownership: { kind: "conversation" } }),
+			context,
+		);
 		const record = await harness.commit((tx) => tx.task(taskId), context);
 		expect(record?.conversationId).toBe(conversation.id);
-		await expect(harness.commit((tx) => tx.createTask(task, { n: 2 }), context)).rejects.toThrow(
-			"requires options.conversationId",
-		);
+		await expect(
+			harness.commit((tx) => tx.createTask(task, { n: 2 }, { ownership: { kind: "conversation" } }), context),
+		).rejects.toThrow("requires options.conversationId");
 		await harness.close(context);
 	});
 });

@@ -60,7 +60,10 @@ const open = async () =>
 // printed, before its next checkpoint is saved. That is the same situation as
 // a crash between the effect and saving its outcome.
 const firstRun = await open();
-const tickerId = await (await firstRun.root(context)).commit((tx) => tx.createTask(Ticker, { to: 5 }), context);
+const tickerId = await (await firstRun.root(context)).commit(
+	(tx) => tx.createTask(Ticker, { to: 5 }, { ownership: { kind: "conversation" } }),
+	context,
+);
 const tickTwo = new Promise<void>((resolve) => {
 	reachedTick = (n) => {
 		if (n === 2) resolve();

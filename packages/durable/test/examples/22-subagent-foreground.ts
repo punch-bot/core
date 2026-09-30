@@ -33,8 +33,8 @@ const subagent: ToolRegistration = {
 	replay: "safe",
 	execute: async (args, api, callContext) => {
 		const { task } = args as { task: string };
-		// The child is owned by this tool call's task, so aborting the call aborts the child. It starts with the
-		// parent's model and every tool except this one.
+		// The child is owned by this tool call's task, so aborting the call aborts the child, and the call finishes
+		// only once the child's work is done. It starts with the parent's model and every tool except this one.
 		const parent = await api.snapshot(ConversationConfig, api.conversationId, callContext);
 		const child = await api.commit(async (tx) => {
 			// Ownership records the child: a rerun of this call finds it instead of creating another.

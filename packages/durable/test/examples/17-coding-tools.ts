@@ -72,7 +72,7 @@ const root = await harness.root(context, {
 	},
 });
 
-// Each tool call runs as a durable pi.tool task; post-tools continues the run with the next generation.
+// Each tool call runs as a durable pi.tool task owned by the generation, which waits for them and continues the run with the next generation.
 const settled = await (await root.submit({ type: "input", content: "Greet durable instead." }, context)).wait(context);
 console.log("status:", settled.status);
 const transcript = await root.entries({}, 20, undefined, context);

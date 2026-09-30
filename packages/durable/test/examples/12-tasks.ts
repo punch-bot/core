@@ -50,7 +50,12 @@ const registry = createRegistry();
 registry.tasks.add(Payment);
 const harness = await Harness.open(new MemoryStorage(), { models: createModels(), registry }, context);
 const root = await harness.root(context);
-const paymentId = await root.commit((tx) => tx.createTask(Payment, { amount: 5 }), context);
+// Every task names its owner. This one belongs to the conversation; a task can
+// also own child tasks and wait for them (24-child-tasks.ts).
+const paymentId = await root.commit(
+	(tx) => tx.createTask(Payment, { amount: 5 }, { ownership: { kind: "conversation" } }),
+	context,
+);
 // The finished task record is the durable receipt; waitForTask() knows its result type.
 const paid = await harness.waitForTask(paymentId, context);
 console.log("payment outcome:", paid.state.outcome);

@@ -12,9 +12,9 @@ import {
 } from "@punch-bot/ai";
 import {
 	type EntryRecord,
+	GenerationTask,
 	type Harness,
 	LiveDoc,
-	PostToolsTask,
 	type Registration,
 	type TaskId,
 	type ToolRegistration,
@@ -199,13 +199,13 @@ describe("tool recovery", () => {
 		await opened.harness.close(context);
 	});
 
-	it("reruns post-tools interrupted before its commit", async () => {
+	it("reruns the generation tools phase interrupted before its commit", async () => {
 		const path = await sqlitePath();
 		const setup = chatSetup();
 		setup.registry.tools.add(tool("work", async () => ({ content: [] })));
 		const reached = deferred();
 		let observed = 0;
-		setup.registry.hooks.add(PostToolsTask, {
+		setup.registry.hooks.add(GenerationTask, {
 			afterTools: async (_assistant, _results, _api, callContext) => {
 				observed++;
 				if (observed === 1) {

@@ -116,7 +116,6 @@ describe("pi.live deltas", () => {
 		const id = (kind: string) => tasks.items.filter((task) => task.kind === kind).map((task) => task.id);
 		const [firstGeneration, secondGeneration] = id("pi.generation").sort((a, b) => a - b);
 		const [tool] = id("pi.tool");
-		const [postTools] = id("pi.post-tools");
 		const entries = await root.entries({}, 10, undefined, context);
 		const result = entries.items.find((entry) => entry.kind === "pi.tool-result")!.id;
 		expect(commits).toEqual([
@@ -124,9 +123,8 @@ describe("pi.live deltas", () => {
 			[["s", ["run"], { taskId: firstGeneration, inputs: [expect.any(Number)] }]],
 			// request
 			[["s", ["generation"], { attempt: 1 }]],
-			// handover to the tool round
+			// the generation starts its tool round and keeps the run
 			expect.arrayContaining([
-				["s", ["run", "taskId"], postTools],
 				["d", ["generation"]],
 				["s", ["tools"], [{ callId: "c1", name: "noop", taskId: tool, status: "pending" }]],
 			]),
@@ -137,7 +135,7 @@ describe("pi.live deltas", () => {
 				["s", ["tools", 0, "status"], "done"],
 				["s", ["tools", 0, "entry"], result],
 			]),
-			// post-tools hands over to the next generation
+			// the generation's tools phase hands the run to the next generation
 			expect.arrayContaining([
 				["d", ["tools"]],
 				["s", ["run", "taskId"], secondGeneration],
@@ -149,7 +147,7 @@ describe("pi.live deltas", () => {
 				["d", ["generation"]],
 			]),
 		]);
-		expect(commits[2]).toHaveLength(3);
+		expect(commits[2]).toHaveLength(2);
 		expect(commits[4]).toHaveLength(2);
 		expect(commits[5]).toHaveLength(2);
 		await harness.close(context);
@@ -370,7 +368,7 @@ describe("pi.live deltas", () => {
 		await harness.close(context);
 	});
 
-	it("commits the tool-calling answer, its tool tasks, post-tools, and the tool round in one commit", async () => {
+	it("commits the tool-calling answer, its tool tasks, the generation's wait, and the tool round in one commit", async () => {
 		const setup = chatSetup();
 		setup.registry.tools.add({
 			name: "noop",
@@ -398,7 +396,7 @@ describe("pi.live deltas", () => {
 		const kinds = changes.flatMap((change) =>
 			change.type === "entry" ? [change.value.kind] : change.type === "task" ? [change.value.kind] : [],
 		);
-		expect(kinds.sort()).toEqual(["pi.assistant", "pi.generation", "pi.post-tools", "pi.tool", "pi.tool"]);
+		expect(kinds.sort()).toEqual(["pi.assistant", "pi.generation", "pi.tool", "pi.tool"]);
 		await harness.close(context);
 	});
 

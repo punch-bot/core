@@ -97,6 +97,16 @@ export type AnyTask = {
 	};
 };
 
+/** Options of `Conversation.abort()`. */
+export type ConversationAbortOptions = {
+	/**
+	 * Cross background boundaries: mark every live task reached ignoring the background flag when the abort is admitted,
+	 * withdraw the queued inputs of every conversation reached, and wait until those tasks are terminal and the
+	 * conversation is ordinarily idle. Background work created afterwards is neither marked nor awaited.
+	 */
+	readonly background?: boolean;
+};
+
 /** Hook handler map declared by a task definition. */
 export type HooksOf<K> = K extends Task<infer _I, infer _S, infer _R, infer H> ? H : never;
 
@@ -108,7 +118,7 @@ export interface ConversationHandle {
 	readonly id: ConversationId;
 	submit(submission: InputSubmissionDraft, context: Context): Promise<Submission>;
 	/** `Conversation.abort()`: withdraw queued inputs, abort the ordinary ownership scope, and wait until it is idle. */
-	abort(context: Context): Promise<void>;
+	abort(context: Context, options?: ConversationAbortOptions): Promise<void>;
 	/** Resolve when the conversation's ordinary ownership scope has no live non-background task. */
 	waitForIdle(context: Context): Promise<void>;
 }
@@ -372,8 +382,13 @@ export type TaskInspection = {
 		| { readonly kind: "running" }
 		/** The next scheduling pass reserves it; `migrates` when its definition is newer and has `migrate`. */
 		| { readonly kind: "ready"; readonly migrates: boolean }
-		/** Pending until these tasks are terminal. */
+		/**
+		 * Waits for these live tasks: the live part of its `on`, or, when abort-marked, its live ordinary owned work, which
+		 * must end before its abort handler starts.
+		 */
 		| { readonly kind: "waiting"; readonly on: readonly TaskId[] }
+		/** Outcome held until its ordinary owned work drains. */
+		| { readonly kind: "completing" }
 		/** No registered definition can take it; aborting it settles it as `orphaned`. */
 		| {
 				readonly kind: "blocked";
@@ -456,9 +471,9 @@ export interface Conversation {
 	fork(at: EntryId, options: ConversationCreateOptions, context: Context): Promise<Conversation>;
 	/**
 	 * Withdraw queued inputs (queued writes stay), mark every live non-background task of the ordinary ownership scope,
-	 * signal them, and resolve once the scope is idle. Background subtrees survive.
+	 * signal them, and resolve once the scope is idle. Background subtrees survive unless `background` is set.
 	 */
-	abort(context: Context): Promise<void>;
+	abort(context: Context, options?: ConversationAbortOptions): Promise<void>;
 	/**
 	 * Resolve when the ordinary ownership scope has no live non-background task: this conversation and the conversations
 	 * owned, transitively, by its non-background tasks.
@@ -531,6 +546,8 @@ export interface GenerationHooks {
 	afterResponse(message: AssistantMessage, api: HookApi, context: Context): void | Promise<void>;
 	/** A final answer; the first `continue` appends a user message and continues the run. */
 	onYield(answer: AssistantMessage, api: HookApi, context: Context): HookResult<{ readonly continue: UserInput }>;
+	/** After every tool of the round is terminal; `results` are the round's result entries in call order. */
+	afterTools(assistant: EntryId, results: readonly EntryId[], api: HookApi, context: Context): void | Promise<void>;
 }
 
 /** Hooks of the built-in tool task. */
@@ -548,10 +565,4 @@ export interface ToolHooks {
 		api: HookApi,
 		context: Context,
 	): HookResult<ToolExecutionResult>;
-}
-
-/** Hooks of the built-in post-tools task. */
-export interface PostToolsHooks {
-	/** After every tool of the round is terminal; `results` are the round's result entries in call order. */
-	afterTools(assistant: EntryId, results: readonly EntryId[], api: HookApi, context: Context): void | Promise<void>;
 }

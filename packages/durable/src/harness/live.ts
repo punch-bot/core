@@ -11,7 +11,10 @@ import type { ToolDiagnostic } from "./types.ts";
 export type ToolSlot = {
 	callId: string;
 	name: string;
-	/** Absent for a call its request did not offer; generation wrote its result. */
+	/**
+	 * Absent for a call not started yet (sequential round) and for a call its request did not offer, which starts `done`
+	 * with the `entry` generation wrote.
+	 */
 	taskId?: TaskId;
 	status: "pending" | "running" | "done";
 	/** Retained running output and what the bounds dropped. */
@@ -40,7 +43,7 @@ export type LiveState = {
 		/** Provider-side deferred response being polled. */
 		deferred?: { pollAt: number };
 	};
-	/** The current tool round in call order, from the tool-calling answer until post-tools. */
+	/** The current tool round in call order, from the tool-calling answer until the generation's `tools` phase ends it. */
 	tools?: ToolSlot[];
 };
 
@@ -60,7 +63,7 @@ export const LiveDoc = defineDoc<LiveState>({
 });
 
 /** Built-in task kinds that can own `pi.live.run`. */
-const RUN_TASK_KINDS: ReadonlySet<string> = new Set(["pi.generation", "pi.post-tools"]);
+const RUN_TASK_KINDS: ReadonlySet<string> = new Set(["pi.generation"]);
 const TOOL_TASK_KIND = "pi.tool";
 
 /**

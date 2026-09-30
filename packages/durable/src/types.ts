@@ -131,8 +131,11 @@ export type RunningTask<I, S, R> = TaskRecord<I, S, R> & {
 	readonly state: Extract<TaskState<S, R>, { readonly status: "running" }>;
 };
 
-/** Next state a task commits for itself: a replacement checkpoint or its terminal outcome. */
-export type NextTaskState<S, R> = Extract<TaskState<S, R>, { readonly status: "running" | "terminal" }>;
+/**
+ * Next state a task commits for itself: a replacement checkpoint, a wait, or its outcome. A returned `terminal` state is
+ * stored as `completing` while ordinary owned work below the task is live (spec §5.5).
+ */
+export type NextTaskState<S, R> = Extract<TaskState<S, R>, { readonly status: "running" | "waiting" | "terminal" }>;
 
 /**
  * Runs one checkpoint phase. It must commit a changed checkpoint or a terminal outcome through `runtime.commit()`;
@@ -194,6 +197,8 @@ export interface TaskRuntime<I, S, R, H extends object> extends DocumentObserver
 	getTask<T>(id: TaskId<T>, context: Context): Promise<TaskRecord<JsonValue, JsonValue, T> | undefined>;
 	/** Resolve with the task's terminal receipt; rejects when the invocation ends. */
 	waitForTask<T>(id: TaskId<T>, context: Context): Promise<SettledTask<T>>;
+	/** Outcomes of terminal tasks, in order; rejects when one is missing or not terminal. Used after a wait. */
+	outcomes<T>(ids: readonly TaskId<T>[], context: Context): Promise<TaskOutcome<T>[]>;
 	/**
 	 * Invocation-bound handle of an existing conversation, for example one this task owns; `undefined` when absent. Its
 	 * operations and the submissions it returns reject after the invocation ends; admitted work stays durable.
@@ -244,13 +249,22 @@ export interface Task<I, S extends { phase: string }, R, H extends object> {
 	readonly definition: TaskDefinition<I, S, R, H>;
 }
 
+/** Who owns a task: its conversation (a top-level task) or another task of the same conversation (a child task). */
+export type TaskOwnership = { readonly kind: "conversation" } | { readonly kind: "task"; readonly taskId: TaskId };
+
+/** How a waiting task treats the tasks it waits on (spec §5.5). */
+export type JoinPolicy = "failFast" | "allSettled";
+
 /** Creation options for a durable task. */
 export type TaskOptions = {
-	/** Owning conversation; required for Session commits that are not bound to a conversation. */
+	/** Required: a task always names its owner (spec §5.5). */
+	readonly ownership: TaskOwnership;
+	/**
+	 * Default: the owner task's conversation, or the transaction's bound conversation; required for conversation-owned
+	 * tasks created by Session commits that are not bound to a conversation.
+	 */
 	readonly conversationId?: ConversationId;
-	/** Tasks that must be terminal before ordinary execution may begin. */
-	readonly after?: readonly TaskId[];
-	/** Excluded from ordinary idle waits and conversation aborts. */
+	/** Conversation-owned tasks only: excluded from ordinary idle waits, conversation aborts, and cascades. */
 	readonly background?: boolean;
 };
 
@@ -460,7 +474,7 @@ export type TaskOutcome<R> =
 /** Complete durable execution state of a task. */
 export type TaskState<S, R> =
 	| {
-			/** Eligible for scheduling when its dependencies are terminal. */
+			/** Eligible for scheduling. */
 			readonly status: "pending";
 			/** Complete durable state from which execution resumes. */
 			readonly checkpoint: S;
@@ -472,6 +486,20 @@ export type TaskState<S, R> =
 			/** Complete durable state from which execution resumes. */
 			readonly checkpoint: S;
 			readonly outcome?: never;
+	  }
+	| {
+			/** Parked without an invocation until every task in `on` is terminal; then resumes at `checkpoint`. */
+			readonly status: "waiting";
+			readonly checkpoint: S;
+			readonly on: readonly TaskId[];
+			readonly policy: JoinPolicy;
+			readonly outcome?: never;
+	  }
+	| {
+			/** Outcome decided; becomes terminal once no ordinary owned work below is live. Runs no more code. */
+			readonly status: "completing";
+			readonly checkpoint?: never;
+			readonly outcome: TaskOutcome<R>;
 	  }
 	| {
 			/** Permanently settled durable result receipt. */
@@ -490,9 +518,9 @@ type TaskRecordBase<I, R> = {
 	readonly version: number;
 	/** Original task input retained while the task is live or terminal. */
 	readonly input: I;
-	/** Tasks that must be terminal before ordinary execution may begin. */
-	readonly after: readonly TaskId[];
-	/** Whether this task is excluded from ordinary idle waits and conversation aborts. */
+	/** Owning task of a child task; absent for a task its conversation owns. Immutable. */
+	readonly owner?: TaskId;
+	/** Whether this conversation-owned task is excluded from ordinary idle waits, conversation aborts, and cascades. */
 	readonly background: boolean;
 	/** Durable abort mark checked before run-mode progress is committed. */
 	readonly abortRequested: boolean;
@@ -502,12 +530,12 @@ type TaskRecordBase<I, R> = {
 export type TaskRecord<I, S, R> = TaskRecordBase<I, R> &
 	(
 		| {
-				readonly state: Extract<TaskState<S, R>, { readonly status: "pending" | "running" }>;
-				/** Small first-writer-wins values retained while the task is live. */
+				readonly state: Extract<TaskState<S, R>, { readonly status: "pending" | "running" | "waiting" }>;
+				/** Small first-writer-wins values retained while the task can run. */
 				readonly memos?: Readonly<Record<string, JsonValue>>;
 		  }
 		| {
-				readonly state: Extract<TaskState<S, R>, { readonly status: "terminal" }>;
+				readonly state: Extract<TaskState<S, R>, { readonly status: "completing" | "terminal" }>;
 				readonly memos?: never;
 		  }
 	);
@@ -586,7 +614,7 @@ export type EntryQuery = {
 export type TaskQuery = {
 	readonly conversationId?: ConversationId;
 	readonly kind?: string;
-	readonly status?: "pending" | "running" | "terminal";
+	readonly status?: TaskState<JsonValue, JsonValue>["status"];
 	readonly abortRequested?: boolean;
 	readonly background?: boolean;
 };
@@ -741,7 +769,7 @@ export interface Tx {
 	createTask<I, S extends { phase: string }, R, H extends object>(
 		task: Task<I, S, R, H>,
 		input: I,
-		options?: TaskOptions,
+		options: TaskOptions,
 	): Promise<TaskId<R>>;
 	/**
 	 * Settle a queued or placed submission; only a placed input can be answered, and a settled submission stays

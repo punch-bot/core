@@ -162,7 +162,7 @@ describe("inbox", () => {
 		await harness.close(context);
 	});
 
-	it("adds steers to the run at the post-tools boundary and holds follow-ups for the final boundary", async () => {
+	it("adds steers to the run at the postTools boundary and holds follow-ups for the final boundary", async () => {
 		const setup = chatSetup();
 		const gate = deferred();
 		holdTool(setup, gate);
@@ -513,7 +513,7 @@ describe("inbox", () => {
 		await harness.close(context);
 	});
 
-	it("adds every steer to the run at post-tools with steeringMode all", async () => {
+	it("adds every steer to the run at the postTools boundary with steeringMode all", async () => {
 		const setup = chatSetup();
 		const gate = deferred();
 		holdTool(setup, gate);

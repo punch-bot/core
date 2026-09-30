@@ -20,7 +20,6 @@ import {
 	type Harness,
 	LiveDoc,
 	MemoryStorage,
-	PostToolsTask,
 	type Registration,
 	type SubmissionId,
 	type ToolRegistration,
@@ -222,17 +221,18 @@ describe("tool round", () => {
 		const sequential = await trace(chatSetup(), (root) => root.setToolExecution("sequential", context));
 		expect(sequential).toEqual(["start a", "end a", "start b", "end b"]);
 		const perTool = chatSetup();
+		const events: string[] = [];
 		perTool.registry.tools.add(
 			tool(
 				"a",
 				async () => {
 					await new Promise((resolve) => setTimeout(resolve, 20));
+					events.push("a");
 					return { content: [] };
 				},
 				{ executionMode: "sequential" },
 			),
 		);
-		const events: string[] = [];
 		perTool.registry.tools.add(
 			tool("b", async () => {
 				events.push("b");
@@ -242,7 +242,10 @@ describe("tool round", () => {
 		const result = await run(perTool, [calls(["a", {}, "c1"], ["b", {}, "c2"]), DONE]);
 		const tasks = await result.harness.commit((tx) => tx.scanTasks({ conversationId: result.root.id }, 20), context);
 		const tools = tasks.items.filter((task) => task.kind === "pi.tool").sort((a, b) => a.id - b.id);
-		expect(tools[1]!.after).toEqual([tools[0]!.id]);
+		// The generation owns both tools and creates the second only after the first ended.
+		const [generation] = tasks.items.filter((task) => task.kind === "pi.generation");
+		expect(tools.map((task) => task.owner)).toEqual([generation!.id, generation!.id]);
+		expect(events).toEqual(["a", "b"]);
 		await result.harness.close(context);
 	});
 });
@@ -423,7 +426,7 @@ describe("tool results", () => {
 			afterTool: (_call, result) => ({ ...result, details: { replaced: resultText(result as ToolResultMessage) } }),
 		});
 		const observed: unknown[] = [];
-		setup.registry.hooks.add(PostToolsTask, {
+		setup.registry.hooks.add(GenerationTask, {
 			afterTools: (assistant, entries) => void observed.push(assistant, entries),
 		});
 		const { harness, entries } = await run(setup, [calls(["echo", {}, "c1"]), DONE]);
@@ -449,7 +452,11 @@ describe("tool results", () => {
 			abort: async () => {},
 		});
 		const childId = await first.harness.commit(async (tx) => {
-			const taskId = await tx.createTask(owner, {}, { conversationId: first.root.id });
+			const taskId = await tx.createTask(
+				owner,
+				{},
+				{ ownership: { kind: "conversation" }, conversationId: first.root.id },
+			);
 			return (await tx.createConversation({ ownership: { kind: "task", taskId } })).id;
 		}, context);
 		const child = (await first.harness.conversation(childId, context))!;
@@ -651,7 +658,7 @@ describe("tool execution api", () => {
 				);
 				seen.push(entry.byTaskId === api.taskId);
 				seen.push(await api.memo("m", 1, context), await api.memo("m", 2, context));
-				const id = await api.createTask(child, { n: 21 }, {}, context);
+				const id = await api.createTask(child, { n: 21 }, { ownership: { kind: "conversation" } }, context);
 				const done = await api.waitForTask(id, context);
 				seen.push(done.state.outcome);
 				return { content: [] };
@@ -872,7 +879,7 @@ describe("tool progress and lifetime", () => {
 		setup.registry.tools.add(
 			tool("detach", async (_args, api) => {
 				// The child's definition is not registered, so it stays pending.
-				const child = await api.createTask(never, {}, {}, context);
+				const child = await api.createTask(never, {}, { ownership: { kind: "conversation" } }, context);
 				wait = api.waitForTask(child, context);
 				wait.catch(() => {});
 				const watch = await api.watchDoc(LiveDoc, api.conversationId, context);

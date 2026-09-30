@@ -387,7 +387,7 @@ describe("agent events", () => {
 		await harness.close(context);
 	});
 
-	it("ends calls that never run and unfinished tools whose run ended", async () => {
+	it("ends a call that never runs and a tool aborted with its generation", async () => {
 		const setup = chatSetup();
 		setup.registry.tools.add({
 			name: "wait",
@@ -404,7 +404,7 @@ describe("agent events", () => {
 		const { stream, events } = await listen(harness, root);
 		const submission = await root.submit({ type: "input", content: "go" }, context);
 		await waitFor(() => events().some((event) => event.type === "tool_execution_start"));
-		// Aborting post-tools alone ends the run while the tool still runs (spec §12).
+		// Aborting the generation aborts its round: the tool ends with its aborted result first (spec §8.5).
 		await harness.abortTask((await harness.snapshot(LiveDoc, root.id, context))!.run!.taskId, context);
 		await submission.wait(context);
 		await drained();
@@ -427,7 +427,7 @@ describe("agent events", () => {
 		expect(tool.map((event) => [event.type, "toolCallId" in event && event.toolCallId, "entry" in event])).toEqual([
 			["tool_execution_end", "c1", true],
 			["tool_execution_start", "c2", false],
-			["tool_execution_end", "c2", false],
+			["tool_execution_end", "c2", true],
 		]);
 		await stream.stop();
 		await harness.close(context);

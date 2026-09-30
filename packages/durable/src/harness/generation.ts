@@ -11,7 +11,7 @@ import type {
 } from "@punch-bot/ai";
 import { isRetryableAssistantError, retryDelayMs } from "@punch-bot/ai/utils/retry";
 import { getCurrentTools } from "@punch-bot/ai/utils/transcript";
-import { AssistantEntry, SystemEntry, UserEntry } from "../entries.ts";
+import { AssistantEntry, ResetEntry, SystemEntry, UserEntry } from "../entries.ts";
 import { defineTask } from "../tasks.ts";
 import type {
 	ConversationId,
@@ -27,7 +27,6 @@ import { ConversationConfig, DEFAULT_RETRY_POLICY } from "./config.ts";
 import { applyBoundary, prepareBoundary } from "./inbox.ts";
 import { assignJson } from "./json.ts";
 import { endRun, LiveDoc, type LiveState, type ToolSlot } from "./live.ts";
-import { PostToolsTask } from "./post-tools.ts";
 import { desiredTools, planSystemEntries, renderSections, replaySections } from "./prompt.ts";
 import { appendToolResult, harnessError, ToolTask, type ToolTaskResult } from "./tool.ts";
 import type {
@@ -35,6 +34,7 @@ import type {
 	GenerationHooks,
 	ModelRef,
 	PromptInput,
+	ToolControl,
 	ToolExecutionMode,
 	ToolRegistration,
 	UserInput,
@@ -65,6 +65,16 @@ export type GenerationCheckpoint =
 			cutoff: EntryId;
 			handle: DeferredHandle;
 			pollAt: number;
+	  }
+	| {
+			/** Waiting on the round's tool tasks, which the generation owns (spec §8.5). */
+			phase: "tools";
+			/** The tool-calling answer. */
+			assistant: EntryId;
+			/** Tool tasks created so far, in call order; grows by one per started call of a sequential round. */
+			tools: TaskId<ToolTaskResult>[];
+			/** Calls of a sequential round not started yet, in call order. */
+			pending: string[];
 	  };
 
 export type GenerationResult = { entryId: EntryId };
@@ -182,6 +192,25 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 			const message = await runtime.models.fetchDeferred(model, handle, { signal: runtime.signal });
 			await classify(runtime, { attempt, model: ref, toolExecution, cutoff, pollAt }, message, context);
 		},
+		tools: async (task, runtime, context) => {
+			const { assistant, tools, pending } = task.state.checkpoint;
+			const [next, ...rest] = pending;
+			if (next === undefined) return finishToolRound(runtime, assistant, tools, context);
+			// Sequential round: start the next call and wait for it.
+			await runtime.commit(async (tx): Promise<Next> => {
+				const live = await tx.doc(LiveDoc, runtime.conversationId);
+				const taskId = await createToolTask(tx, runtime, assistant, next);
+				const slot = live.tools?.find((slot) => slot.callId === next && slot.taskId === undefined);
+				if (slot !== undefined) slot.taskId = taskId;
+				const checkpoint: GenerationCheckpoint = {
+					phase: "tools",
+					assistant,
+					tools: [...tools, taskId],
+					pending: rest,
+				};
+				return { status: "waiting", checkpoint, on: [taskId], policy: "allSettled" };
+			}, context);
+		},
 	},
 	abort: async (task, runtime, context) => {
 		const checkpoint = task.state.checkpoint;
@@ -196,14 +225,40 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 			}
 		}
 		const conversationId = runtime.conversationId;
+		// Runs after the round's tool tasks are terminal; calls never started get `aborted` results (spec §8.5).
+		const unstarted =
+			checkpoint.phase === "tools"
+				? await readCalls(runtime, checkpoint.assistant, checkpoint.pending, context)
+				: [];
 		await runtime.commit(async (tx) => {
 			const live = await tx.doc(LiveDoc, conversationId);
 			await convertPartial(tx, live, conversationId);
+			for (const call of unstarted) {
+				const result = harnessError("aborted", `Tool ${call.name} was aborted`);
+				await appendToolResult(tx, conversationId, call, result, runtime.now());
+			}
 			endRun(tx, live, runtime.taskId, { status: "unanswered", reason: "aborted" });
 			return { status: "terminal", outcome: { status: "aborted" } };
 		}, context);
 	},
 });
+
+/** The calls `callIds` of the assistant entry, in the given order. */
+async function readCalls(
+	runtime: Runtime,
+	assistant: EntryId,
+	callIds: readonly string[],
+	context: Context,
+): Promise<ToolCall[]> {
+	const message = (await runtime.entry(AssistantEntry, assistant, context))?.model?.[0];
+	const calls = message?.role === "assistant" ? message.content.filter((content) => content.type === "toolCall") : [];
+	return callIds.flatMap((id) => calls.filter((call) => call.id === id).slice(0, 1));
+}
+
+/** A tool task for call `callId`, owned by the generation. */
+function createToolTask(tx: Tx, runtime: Runtime, assistant: EntryId, callId: string): Promise<TaskId<ToolTaskResult>> {
+	return tx.createTask(ToolTask, { assistant, callId }, { ownership: { kind: "task", taskId: runtime.taskId } });
+}
 
 /** Settle the run's inputs `unanswered` with `no_model` and fail. */
 async function failNoModel(runtime: Runtime, ref: ModelRef | undefined, context: Context): Promise<void> {
@@ -361,7 +416,7 @@ async function answer(runtime: Runtime, message: AssistantMessage, context: Cont
 		if (continuation !== undefined && users.length === 0 && !reset) {
 			const user = { role: "user", content: continuation, timestamp: runtime.now() } as const;
 			await tx.appendEntry(UserEntry, conversationId, { model: [user] });
-			handOver(live, runtime.taskId, await tx.createTask(GenerationTask, {}));
+			handOver(live, runtime.taskId, await createGeneration(tx, conversationId));
 			delete live.generation;
 			return result;
 		}
@@ -373,8 +428,8 @@ async function answer(runtime: Runtime, message: AssistantMessage, context: Cont
 
 /**
  * Append the tool-calling answer and start its tool round in one commit (spec §8.3). A call to a tool the request did
- * not offer gets its `tool_unavailable` result here; every other call gets a tool task, chained in call order when the
- * round is sequential. Post-tools waits for all of them and takes over the run.
+ * not offer gets its `tool_unavailable` result here; every other call gets a tool task owned by the generation, only the
+ * first one now when the round is sequential. The generation then waits for them in its `tools` phase, keeping the run.
  */
 async function startToolRound(
 	runtime: Runtime,
@@ -394,6 +449,7 @@ async function startToolRound(
 		const entry = await appendAssistant(tx, conversationId, message);
 		const slots: ToolSlot[] = [];
 		const tools: TaskId<ToolTaskResult>[] = [];
+		const pending: string[] = [];
 		for (const call of calls) {
 			if (!offered.has(call.name)) {
 				const unavailable = harnessError("tool_unavailable", `Tool ${call.name} is not available`);
@@ -401,20 +457,79 @@ async function startToolRound(
 				slots.push({ callId: call.id, name: call.name, status: "done", entry: result.id });
 				continue;
 			}
-			const previous = tools.at(-1);
-			const after = sequential && previous !== undefined ? [previous] : [];
-			const taskId = await tx.createTask(ToolTask, { assistant: entry.id, callId: call.id }, { after });
+			if (sequential && tools.length > 0) {
+				pending.push(call.id);
+				slots.push({ callId: call.id, name: call.name, status: "pending" });
+				continue;
+			}
+			const taskId = await createToolTask(tx, runtime, entry.id, call.id);
 			tools.push(taskId);
 			slots.push({ callId: call.id, name: call.name, taskId, status: "pending" });
 		}
-		handOver(
-			live,
-			runtime.taskId,
-			await tx.createTask(PostToolsTask, { assistant: entry.id, tools }, { after: tools }),
-		);
 		delete live.generation;
 		live.tools = slots;
-		return { status: "terminal", outcome: { status: "completed", result: { entryId: entry.id } } };
+		const checkpoint = { phase: "tools", assistant: entry.id, tools, pending } as const;
+		return { status: "waiting", checkpoint, on: tools, policy: "allSettled" };
+	}, context);
+}
+
+/**
+ * The round's tools are terminal: apply their controls and either end the run at the final boundary (`terminate`,
+ * `handoff`, or a queued reset) or hand it to the next generation at the `postTools` boundary (spec §8.5).
+ */
+async function finishToolRound(
+	runtime: Runtime,
+	assistant: EntryId,
+	tools: readonly TaskId<ToolTaskResult>[],
+	context: Context,
+): Promise<void> {
+	const conversationId = runtime.conversationId;
+	const controls = new Map<TaskId, ToolControl | undefined>();
+	const outcomes = await runtime.outcomes(tools, context);
+	tools.forEach((id, index) => {
+		const outcome = outcomes[index]!;
+		controls.set(id, outcome.status === "completed" ? outcome.result.control : undefined);
+	});
+	const slots = (await runtime.snapshot(LiveDoc, conversationId, context))?.tools ?? [];
+	const results = slots.flatMap((slot) => (slot.entry === undefined ? [] : [slot.entry]));
+	await runtime.hooks.each("afterTools", (hook) => hook(assistant, results, runtime, context));
+	// Every call of the round, including those answered without a task, must ask to terminate.
+	const terminate =
+		slots.length > 0 &&
+		slots.every((slot) => slot.taskId !== undefined && controls.get(slot.taskId)?.terminate === true);
+	const added = [...controls.values()].flatMap((control) => control?.addTools ?? []);
+	// The last handoff in call order wins.
+	const handoff = [...controls.values()].findLast((control) => control?.handoff !== undefined)?.handoff;
+	await runtime.commit(async (tx): Promise<Next> => {
+		const boundary = await prepareBoundary(tx, conversationId);
+		if (added.length > 0) {
+			const config = await tx.doc(ConversationConfig, conversationId);
+			for (const name of added) if (!config.activeTools.includes(name)) config.activeTools.push(name);
+		}
+		const live = await tx.doc(LiveDoc, conversationId);
+		const now = runtime.now();
+		if (terminate || handoff !== undefined) {
+			if (handoff !== undefined) {
+				const message = { role: "user", content: handoff, timestamp: now } as const;
+				const entry = await tx.appendEntry(ResetEntry, conversationId, { head: "self", model: [message] });
+				boundary.head = entry.id;
+			}
+			const { users } = await applyBoundary(tx, boundary, "final", now);
+			endRun(tx, live, runtime.taskId, { status: "done", answer: assistant });
+			if (users.length > 0) await startRun(tx, conversationId, live, users);
+		} else {
+			const { users, reset } = await applyBoundary(tx, boundary, "postTools", now);
+			if (reset) {
+				// The queued reset cut the run's context before an answer.
+				endRun(tx, live, runtime.taskId, { status: "unanswered", reason: "reset" });
+				if (users.length > 0) await startRun(tx, conversationId, live, users);
+			} else {
+				delete live.tools;
+				if (live.run?.taskId === runtime.taskId) live.run.inputs.push(...users);
+				handOver(live, runtime.taskId, await createGeneration(tx, conversationId));
+			}
+		}
+		return { status: "terminal", outcome: { status: "completed", result: { entryId: assistant } } };
 	}, context);
 }
 
@@ -438,7 +553,12 @@ export async function startRun(
 	live: Draft<LiveState>,
 	inputs: SubmissionId[],
 ): Promise<void> {
-	live.run = { taskId: await tx.createTask(GenerationTask, {}, { conversationId }), inputs };
+	live.run = { taskId: await createGeneration(tx, conversationId), inputs };
+}
+
+/** A generation owned by its conversation. */
+function createGeneration(tx: Tx, conversationId: ConversationId): Promise<TaskId<GenerationResult>> {
+	return tx.createTask(GenerationTask, {}, { ownership: { kind: "conversation" }, conversationId });
 }
 
 /** Hand run control from `from` to `to`; the run's inputs move with it. */

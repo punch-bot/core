@@ -18,6 +18,7 @@ import type { InboxItem, InboxState } from "./inbox.ts";
 import type { LiveState, ToolSlot } from "./live.ts";
 import type { Harness, ToolDiagnostic } from "./types.ts";
 import { UsageDoc, type UsageState } from "./usage.ts";
+import { scanAll } from "./util.ts";
 import { type ConversationView, conversationViews } from "./view.ts";
 
 type Block = AssistantMessage["content"][number];
@@ -138,7 +139,11 @@ export async function watchEvents(
 	let snapshot!: SnapshotEvent;
 	await conversationViews(harness).attach(
 		conversationId,
-		(initial, release) => {
+		async (initial, release, storage) => {
+			// Generations whose held outcome already ended their turn, read on the line with the snapshot.
+			const query = { conversationId, kind: "pi.generation", status: "completing" } as const;
+			const completing = await scanAll((cursor) => storage.scanTasks(query, 100, cursor, context));
+			const held = new Set<TaskId>(completing.map((record) => record.id));
 			let current = initial;
 			snapshot = snapshotOf(initial);
 			// Batches are the watch's values; an overflow delivers a snapshot of the newest view instead.
@@ -146,7 +151,7 @@ export async function watchEvents(
 			return {
 				publication: (before, after, ops, publication, commitContext) => {
 					current = after;
-					const events = translate(conversationId, before, after, ops, publication);
+					const events = translate(conversationId, before, after, ops, publication, held);
 					if (events.length > 0) watch.advance(events, [], commitContext);
 				},
 				closeSession: () => watch.closeSession(),
@@ -171,6 +176,14 @@ export async function watchEvents(
 
 type TaskChange = Extract<CommitChange, { type: "task" }>;
 
+/** The tool result for `callId` among `entries`. */
+function resultOf(entries: readonly EntryRecord[], callId: string): EntryRecord | undefined {
+	return entries.find((entry) => {
+		const message = entry.model?.[0];
+		return message?.role === "toolResult" && message.toolCallId === callId;
+	});
+}
+
 /** Every event one publication causes, in the order of spec §9.4. */
 function translate(
 	conversationId: ConversationId,
@@ -178,6 +191,7 @@ function translate(
 	after: ConversationView,
 	viewOps: readonly Op[],
 	publication: CommitPublication,
+	held: Set<TaskId>,
 ): AgentEvent[] {
 	const entries: EntryRecord[] = [];
 	const tasks = new Map<TaskId, TaskChange["value"]>();
@@ -247,7 +261,9 @@ function translate(
 	for (const previous of slotsBefore.values()) {
 		if (previous.status === "done") continue;
 		const slot = slots.find((candidate) => candidate.callId === previous.callId);
-		if (slot === undefined || slot.status === "done") endTool(previous.callId, previous.name, slot?.entry);
+		if (slot?.status === "done") endTool(previous.callId, previous.name, slot.entry);
+		// A slot whose run ended in this commit may have had its result appended with it, as for unstarted calls.
+		else if (slot === undefined) endTool(previous.callId, previous.name, resultOf(entries, previous.callId)?.id);
 	}
 	for (const slot of slots) {
 		if (slot.status === "done" && !slotsBefore.has(slot.callId)) endTool(slot.callId, slot.name, slot.entry);
@@ -271,20 +287,24 @@ function translate(
 	// Ends without a result entry: a faulted or orphaned tool, or one whose run ended.
 	events.push(...toolEnds.filter((end) => end.entry === undefined));
 
-	// Task failures, then turn and run ends.
-	let postToolsCreated = false;
+	// Task failures, then turn and run ends. A generation's turn ends when its outcome is committed: at a `completing`
+	// hold or at terminal, whichever comes first, so a successor created at the hold starts after it.
 	let turnEnded = false;
 	for (const task of tasks.values()) {
-		if (task.kind === "pi.post-tools" && task.state.status === "pending") postToolsCreated = true;
-		if (task.state.status !== "terminal") continue;
-		if (task.kind === "pi.generation" || task.kind === "pi.post-tools") turnEnded = true;
+		const status = task.state.status;
+		if (task.kind === "pi.generation" && status === "completing" && !held.has(task.id)) {
+			held.add(task.id);
+			turnEnded = true;
+		}
+		if (status !== "terminal") continue;
+		if (task.kind === "pi.generation" && !held.delete(task.id)) turnEnded = true;
 		const outcome = task.state.outcome;
 		if (outcome.status === "faulted" || outcome.status === "orphaned") {
 			const message = outcome.status === "faulted" ? outcome.error.message : outcome.reason;
 			events.push({ type: "task_failed", taskId: task.id, kind: task.kind, message });
 		}
 	}
-	if (turnEnded && !postToolsCreated) events.push({ type: "turn_end" });
+	if (turnEnded) events.push({ type: "turn_end" });
 	const run = now.live.run;
 	const runBefore = was.live.run;
 	const runChanged = run?.inputs[0] !== runBefore?.inputs[0];

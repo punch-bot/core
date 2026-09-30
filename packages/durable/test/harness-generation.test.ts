@@ -501,7 +501,7 @@ describe("generation", () => {
 			const taskId = await tx.createTask(
 				{ definition: { ...GenerationTask.definition, version: 2 } },
 				{},
-				{ conversationId: root.id },
+				{ ownership: { kind: "conversation" }, conversationId: root.id },
 			);
 			(await tx.doc(LiveDoc, root.id)).run = { taskId, inputs: [submission.id] };
 			return { taskId, submissionId: submission.id };

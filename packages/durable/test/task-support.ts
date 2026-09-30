@@ -34,9 +34,9 @@ export function aborted(signal: AbortSignal): Promise<never> {
 }
 
 /** Flush macrotask turns until `check` holds. */
-export async function eventually(check: () => boolean): Promise<void> {
+export async function eventually(check: () => boolean | Promise<boolean>): Promise<void> {
 	for (let attempt = 0; attempt < 200; attempt++) {
-		if (check()) return;
+		if (await check()) return;
 		await flush();
 	}
 	throw new Error("Condition was not reached");

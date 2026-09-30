@@ -4,7 +4,6 @@ import {
 	createRegistry,
 	defineTask,
 	GenerationTask,
-	PostToolsTask,
 	type ToolRegistration,
 	ToolTask,
 } from "@punch-bot/durable";
@@ -209,7 +208,7 @@ describe("registry", () => {
 		const worker = task("worker");
 		registry.tasks.add(worker);
 		expect(() => registry.tasks.add(task("worker"))).toThrow("Task worker is already registered");
-		expect(registry.tasks.list()).toEqual([GenerationTask, ToolTask, PostToolsTask, worker]);
+		expect(registry.tasks.list()).toEqual([GenerationTask, ToolTask, worker]);
 
 		const first = { beforeRun: () => {} };
 		const second = { beforeRun: () => {} };
@@ -231,7 +230,7 @@ describe("registry", () => {
 
 	it("starts with undisposable, non-overridable built-in tasks", () => {
 		const registry = createRegistry();
-		expect(registry.tasks.list()).toEqual([GenerationTask, ToolTask, PostToolsTask]);
+		expect(registry.tasks.list()).toEqual([GenerationTask, ToolTask]);
 		expect(registry.snapshot().task("pi.generation")).toBe(GenerationTask);
 		expect(() => registry.tasks.add({ definition: { ...GenerationTask.definition } })).toThrow(
 			"Task pi.generation is already registered",
