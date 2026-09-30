@@ -1,5 +1,5 @@
 // Persistent background subagents. One `subagent` tool lets the main agent start named subagents, message them
-// (steer or follow up), wait for them, stop them mid-answer, and list them. Subagents keep working while the main agent
+// (steer or follow up), stop them mid-answer, and list them. Subagents keep working while the main agent
 // answers the user, and each answer is delivered back to the main agent as a new message once it arrives. Everything
 // survives a restart: the example closes the Harness while a subagent works and reopens it.
 // Uses OpenAI when OPENAI_API_KEY is set, and a scripted faux model otherwise.
@@ -39,8 +39,8 @@ const context = BACKGROUND_CONTEXT;
 // next to a transcript, changed in commits like entries.
 type Subagent = {
 	conversationId: ConversationId;
-	/** The last answer reported to the main agent, so a reporter does not report it again. */
-	delivered?: EntryId;
+	/** Answers already reported to the main agent: several messages can end in one answer, reported once. */
+	reported: EntryId[];
 };
 const Subagents = defineDoc<{ agents: Record<string, Subagent>; reporters: Record<string, TaskId> }>({
 	kind: "app.subagents",
@@ -98,15 +98,15 @@ const Reporter = defineTask<ReporterInput, ReporterState, null>({
 				// Always an answered input here; the check tells TypeScript.
 				if (settled.type !== "input") return next();
 				const agent = (await tx.doc(Subagents, runtime.conversationId)).agents[name]!;
-				// Several steers can end in one answer, and `wait` may have handed it over already.
-				if (agent.delivered === settled.answer) return next();
-				agent.delivered = settled.answer;
+				if (agent.reported.includes(settled.answer)) return next();
+				agent.reported.push(settled.answer);
 				const answer = (await tx.entry(AssistantEntry, settled.answer))?.model?.[0] as AssistantMessage;
 				return next(`[subagent ${name} answered, no reply needed] ${textOf(answer)}`);
 			}, taskContext);
 		},
 		// Post the report as a follow-up input: it starts a turn when the main agent is idle, or waits for its current
-		// answer. If the user presses Esc while it waits in the main agent's queue, it is dropped with the other input.
+		// answer. If the user presses Esc while it waits in the main agent's queue, it is dropped with the other input; a
+		// report that arrives after Esc starts a new turn.
 		report: async (reporter, runtime, taskContext) => {
 			const report = reporter.state.checkpoint.report;
 			if (report !== undefined) {
@@ -132,23 +132,17 @@ const subagentTool: ToolRegistration = {
 	name: "subagent",
 	description:
 		"Manage persistent subagents that work in the background. Actions: spawn (name, message), send (name, message; " +
-		"followUp: true queues it after the current answer instead of steering), wait (name: returns its answer), " +
-		"stop (name: aborts its current work), status (name, or all subagents without one). Answers are also reported " +
-		"back to you when they arrive.",
+		"followUp: true queues it after the current answer instead of steering), stop (name: aborts its current work), " +
+		"status (name, or all subagents without one). Answers are reported back to you when they arrive.",
 	parameters: Type.Object({
-		action: Type.Union([
-			Type.Literal("spawn"),
-			Type.Literal("send"),
-			Type.Literal("wait"),
-			Type.Literal("stop"),
-			Type.Literal("status"),
-		]),
+		action: Type.Union([Type.Literal("spawn"), Type.Literal("send"), Type.Literal("stop"), Type.Literal("status")]),
 		name: Type.Optional(Type.String()),
 		message: Type.Optional(Type.String()),
 		followUp: Type.Optional(Type.Boolean()),
 	}),
-	// A tool call that was running during a crash reruns; every action below is safe to repeat.
-	replay: "safe",
+	// A call interrupted by a crash is not rerun: repeating `stop` could stop newer work. The model sees that the call
+	// was interrupted and can check with `status`.
+	replay: "unsafe",
 	execute: async (args, api, callContext) => {
 		const { action, name, message, followUp } = args as {
 			action: string;
@@ -170,7 +164,7 @@ const subagentTool: ToolRegistration = {
 			const names = name === undefined ? Object.keys(registry.agents) : [name];
 			const lines: string[] = [];
 			for (const each of names) {
-				const found = registry.agents[each];
+				const found = Object.hasOwn(registry.agents, each) ? registry.agents[each] : undefined;
 				if (found === undefined) continue;
 				// A conversation is busy while it has a run: from an input until its final answer.
 				const busy = (await api.snapshot(LiveDoc, found.conversationId, callContext))?.run !== undefined;
@@ -179,7 +173,7 @@ const subagentTool: ToolRegistration = {
 			return reply(lines.length === 0 ? "No subagents." : lines.join("\n"));
 		}
 		if (name === undefined) return reply(`${action} needs a name.`);
-		const agent = registry.agents[name];
+		const agent = Object.hasOwn(registry.agents, name) ? registry.agents[name] : undefined;
 		if (action !== "spawn" && agent === undefined) return reply(`No subagent named ${name}.`);
 
 		if (action === "stop") {
@@ -187,41 +181,23 @@ const subagentTool: ToolRegistration = {
 			await (await api.conversation(agent!.conversationId, callContext))!.abort(callContext);
 			return reply(`Stopped ${name}.`, agent!.conversationId);
 		}
-		if (action === "wait") {
-			await (await api.conversation(agent!.conversationId, callContext))!.waitForIdle(callContext);
-			const text = await api.commit(async (tx) => {
-				// The newest finished answer; an answer that was stopped midway does not count.
-				const entries = await tx.scanEntries({ conversationId: agent!.conversationId }, 50);
-				const latest = entries.items.find(
-					(entry) => (entry.model?.[0] as AssistantMessage | undefined)?.stopReason === "stop",
-				);
-				if (latest === undefined) return `${name} has no finished answer yet.`;
-				// Recorded as delivered, so a reporter still waiting for it does not report it again.
-				(await tx.doc(Subagents, api.conversationId)).agents[name]!.delivered = latest.id;
-				return textOf(latest.model![0] as AssistantMessage);
-			}, callContext);
-			return reply(text, agent!.conversationId);
-		}
 		if (message === undefined) return reply(`${action} needs a message.`);
 
-		// spawn and send: one commit starts a reporter for the message. A rerun of this call finds its reporter.
+		// spawn and send: one commit starts a reporter for the message.
 		const parentConfig = await api.snapshot(ConversationConfig, api.conversationId, callContext);
 		const result = await api.commit(async (tx) => {
 			const state = await tx.doc(Subagents, api.conversationId);
 			// Both tasks belong to the main conversation and are background: its Esc and idle waits skip them.
 			const background = { ownership: { kind: "conversation" }, background: true } as const;
-			if (Object.hasOwn(state.reporters, api.taskId))
-				return action === "send" ? `Sent to ${name}.` : `Started ${name}.`;
-			const existing = state.agents[name];
 			if (action === "spawn") {
-				if (existing !== undefined) return `${name} already exists; use send.`;
+				if (Object.hasOwn(state.agents, name)) return `${name} already exists; use send.`;
 				const anchor = await tx.createTask(Anchor, null, background);
 				const child = await tx.createConversation({ ownership: { kind: "task", taskId: anchor } });
 				// The subagent uses the main agent's model and every tool but this one.
 				const config = await tx.doc(ConversationConfig, child.id);
 				if (parentConfig?.model !== undefined) config.model = { ...parentConfig.model };
 				config.activeTools = config.activeTools.filter((tool) => tool !== "subagent");
-				state.agents[name] = { conversationId: child.id };
+				state.agents[name] = { conversationId: child.id, reported: [] };
 			}
 			const conversationId = state.agents[name]!.conversationId;
 			const input = { name, conversationId, message, followUp: action === "send" && followUp === true };
@@ -350,6 +326,11 @@ const settle = async (): Promise<void> => {
 	// Event callbacks run after their commit; let the last ones print. A slow machine may need longer.
 	await new Promise((resolve) => setTimeout(resolve, 50));
 };
+/** Poll `check` for up to 10 seconds. */
+const until = async (check: () => Promise<boolean>): Promise<void> => {
+	for (let tries = 0; tries < 1000 && !(await check()); tries++)
+		await new Promise((resolve) => setTimeout(resolve, 10));
+};
 const working = async (name: string): Promise<boolean> => {
 	const agent = (await harness.snapshot(Subagents, root.id, context))?.agents[name];
 	return agent !== undefined && (await harness.snapshot(LiveDoc, agent.conversationId, context))?.run !== undefined;
@@ -361,7 +342,7 @@ await settle();
 
 // A long request, stopped while the subagent is still answering.
 await say("Ask reader to summarize every chapter.");
-while (!(await working("reader"))) await new Promise((resolve) => setTimeout(resolve, 10));
+await until(() => working("reader"));
 await say("Stop reader.");
 await settle();
 
@@ -373,9 +354,7 @@ const reporters = async () =>
 	Object.keys((await harness.snapshot(Subagents, root.id, context))?.reporters ?? {}).length;
 const before = await reporters();
 await root.submit({ type: "input", content: "Ask reader for the whale's name." }, context);
-while ((await reporters()) === before || !(await working("reader"))) {
-	await new Promise((resolve) => setTimeout(resolve, 10));
-}
+await until(async () => (await reporters()) > before);
 await harness.close(context);
 console.log(dim("\n  (process restarts)"));
 ({ harness, root } = await open());
