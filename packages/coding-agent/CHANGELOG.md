@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added a `description` field for MCP servers (`pi mcp add --description`), shown next to the server in the `codemode` and `tool_search` descriptions, and a `describeNamespace(name)` codemode helper that returns a namespace's instructions and tool names.
+
+### Changed
+
+- MCP servers with the default `codemode` exposure no longer list their tools in the `codemode` description; scripts find them with `searchTools()`. `codemode-deferred` is now an alias for `codemode`. Use `direct` exposure for tools the model should see without searching ([#10212](https://github.com/earendil-works/pi/issues/10212)).
+- The `codemode` description no longer includes tool counts or MCP server instructions, so it no longer changes when a server's tool list changes. Scripts read server instructions with `describeNamespace()` ([#10212](https://github.com/earendil-works/pi/issues/10212)).
+
 ### Fixed
 
 - Fixed new sessions intermittently ignoring the saved default model, or warning that no models are available, when it belongs to an extension-registered native provider with a stored credential ([#9962](https://github.com/earendil-works/pi/issues/9962)).
