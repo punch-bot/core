@@ -1,7 +1,7 @@
 import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { OAuthIssuerMismatchError } from "@earendil-works/pi-mcp/oauth";
+import { OAuthIssuerMismatchError } from "@punch-bot/mcp/oauth";
 import { afterEach, describe, expect, it } from "vitest";
 import { InMemoryAuthStorageBackend } from "../src/core/auth-storage.ts";
 import {
