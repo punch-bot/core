@@ -3,7 +3,6 @@ import type { AssistantMessage, Message, ModelThinkingLevel, SimpleStreamOptions
 import { calculateContextTokens, estimateMessageTokens } from "@punch-bot/ai/utils/estimate";
 import { isRetryableAssistantError, retryDelayMs } from "@punch-bot/ai/utils/retry";
 import { CompactionEntry } from "../entries.ts";
-import type { Transaction } from "../session/transaction.ts";
 import { defineTask } from "../tasks.ts";
 import type {
 	ConversationId,
@@ -15,7 +14,6 @@ import type {
 	TaskRuntime,
 	Tx,
 } from "../types.ts";
-import { ConversationConfig, DEFAULT_COMPACTION_POLICY, DEFAULT_RETRY_POLICY } from "./config.ts";
 import { orderToolResults } from "./context.ts";
 import { addCompactionStatus, compactionStatus, LiveDoc, type LiveState, removeCompactionStatus } from "./live.ts";
 import { admitSubmission } from "./submissions.ts";
@@ -108,13 +106,12 @@ export const CompactionTask = defineTask<CompactionInput, CompactionCheckpoint, 
 	phases: {
 		select: async (task, runtime, context) => {
 			const { conversationId } = runtime;
-			const config =
-				(await runtime.snapshot(ConversationConfig, conversationId, context)) ??
-				ConversationConfig.definition.initial();
-			const ref = config.model;
+			const agent = await runtime.agent(context);
+			const settings = runtime.settings;
+			const ref = agent.model;
 			const model = ref === undefined ? undefined : runtime.models.getModel(ref.provider, ref.modelId);
 			if (ref === undefined || model === undefined) return failNoModel(runtime, ref, context);
-			const policy = config.compaction ?? DEFAULT_COMPACTION_POLICY;
+			const policy = settings.compaction;
 			const view = await runtime.context(conversationId, context);
 			const cut = selectCut(view, policy.keepRecentTokens);
 			if (cut === undefined) return complete(runtime, context);
@@ -136,8 +133,8 @@ export const CompactionTask = defineTask<CompactionInput, CompactionCheckpoint, 
 			const request: SummaryRequest = {
 				attempt: 1,
 				model: ref,
-				thinkingLevel: config.thinkingLevel,
-				streamOptions: config.streamOptions ?? {},
+				thinkingLevel: agent.thinkingLevel,
+				streamOptions: settings.stream,
 				maxTokens: Math.min(
 					Math.floor(0.8 * policy.reserveTokens),
 					model.maxTokens > 0 ? model.maxTokens : Number.POSITIVE_INFINITY,
@@ -176,9 +173,7 @@ export const CompactionTask = defineTask<CompactionInput, CompactionCheckpoint, 
 			// An abort mark or close: the abort invocation or the reopened task handles the committed state.
 			runtime.signal.throwIfAborted();
 			const summary = summaryText(message);
-			const policy =
-				(await runtime.snapshot(ConversationConfig, runtime.conversationId, context))?.retry ??
-				DEFAULT_RETRY_POLICY;
+			const policy = runtime.settings.retry;
 			const retry =
 				message.stopReason === "error" &&
 				isRetryableAssistantError(message) &&
@@ -426,12 +421,12 @@ async function placeSummary(
 	const result: CompactionResult =
 		current.owner === undefined
 			? {
-					// The scheduler commits runtime changes through a Session transaction, which admission needs.
 					submissionId: await admitSubmission(
-						tx as Transaction,
+						tx,
 						runtime.conversationId,
 						{ type: "write", requestId: `compaction:${runtime.taskId}`, entry },
 						runtime.now(),
+						runtime.settings,
 					),
 				}
 			: { entryId: (await tx.appendEntry(runtime.conversationId, entry)).id };

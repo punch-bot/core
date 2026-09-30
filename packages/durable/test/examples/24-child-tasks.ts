@@ -6,7 +6,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
 import { createModels } from "@punch-bot/ai/models";
-import { type Conversation, createRegistry, defineTask, Harness, type TaskId } from "../../src/index.ts";
+import {
+	type Conversation,
+	createRegistry,
+	defineExtension,
+	defineTask,
+	Harness,
+	type TaskId,
+} from "../../src/index.ts";
 import { openNodeSqliteStorage } from "../../src/storage/sqlite/node.ts";
 
 const context = BACKGROUND_CONTEXT;
@@ -83,8 +90,7 @@ const Checkout = defineTask<{ cards: string[] }, CheckoutState, string>({
 });
 
 const registry = createRegistry();
-registry.tasks.add(Payment);
-registry.tasks.add(Checkout);
+registry.install(defineExtension({ name: "checkout", tasks: [Payment, Checkout] }));
 const directory = await mkdtemp(join(tmpdir(), "pi-durable-example-"));
 const databasePath = join(directory, "session.sqlite");
 const open = async () =>

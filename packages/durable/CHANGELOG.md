@@ -5,6 +5,21 @@
 ### Breaking Changes
 
 - The portable SQLite facade in `@punch-bot/durable/storage/sqlite` is asynchronous: `SqliteDatabase` extends the new `SqliteExecutor` (`exec`, `run`, `get`, `all` by SQL text), `prepare` and `SqliteStatement` are removed, `transaction` takes an async callback that receives a transaction handle, and `close()` returns a promise. Custom adapters must be rewritten ([#10232](https://github.com/earendil-works/pi/pull/10232) by [@christianklotz](https://github.com/christianklotz)).
+- The registry holds named extensions: `registry.install(extension)` and `uninstall()` replace `tools`, `hooks`, `tasks`, `systemPrompt`, `conversations`, `batch()`, wrappers by key, and hook scopes. Build extensions with `defineExtension()`, `defineTool()`, `section()`, `hook()`, `wrapTool()`, and `wrapSection()`.
+- The per-conversation `pi.conversation.config` document and the `Conversation` getters and setters are replaced by the rewindable `pi.agent` document (model, thinking level, extension and tool selection, `instructions`, `cwd`), `Conversation.agent()`, `Conversation.configure()`, `configure(tx, id, change)`, and the `agent` option of `root()`, `createConversation()`, and `fork()`. A task-owned conversation starts as a copy of its owner's conversation's agent.
+- Stream options, retry and compaction policies, tool execution mode, and queue modes are Harness-wide `HarnessOptions.settings`, read at every use.
+- `HarnessOptions.env` is a function that builds the environment per use from the conversation's ID and `cwd`. `TaskRuntime` gains `agent()`, `settings`, and `env()`; `ToolExecutionApi` gains `registry` and `agent()`, and `env` is built per call.
+- `ToolRegistration<TParameters, TDetails>` types `execute()` arguments from `parameters`, and `ToolExecutionApi` and `ToolExecutionResult` type details. `prepareArguments` takes `unknown` and returns the parameters' type.
+- The event snapshot's `config` and the `config_changed` event are replaced by `agent` and `agent_changed`.
+- `HarnessInspection.registry` is removed.
+- `FileSystem` requires `id`: equal ids see the same files at the same paths. `edit` and `write` serialize changes to one file by `id` and canonical path instead of by environment object; `NodeExecutionEnv` uses `"node:local"`.
+
+### Added
+
+- `CodingTools` extension in `@punch-bot/durable/tools` with `read`, `write`, `edit`, and `bash`.
+- `AgentDoc`, `configure()`, `DEFAULT_RETRY_POLICY`, and `DEFAULT_COMPACTION_POLICY` exports.
+- `HarnessOptions.conversationCreated(tx, conversation)` runs in every commit that creates or forks a conversation, after the built-in documents, so applications can create their own documents in every conversation.
+- `Tx.submissionByRequest()` and `Tx.createSubmission()`; the latter writes a raw submission record without admission rules.
 
 ## [0.99.2] - 2026-09-30
 

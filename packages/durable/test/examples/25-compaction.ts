@@ -43,11 +43,16 @@ faux.setResponses(Array.from({ length: 100 }, () => respond));
 const models = createModels();
 models.setProvider(faux.provider);
 
-const harness = await Harness.open(new MemoryStorage(), { models, registry: createRegistry() }, context);
-const root = await harness.root(context);
-await root.setModel({ provider: "faux", modelId: "tiny" }, context);
 // Generation blocks to compact above 3000 - 1000 = 2000 tokens and starts a background compaction above 2000 - 800.
-await root.setCompaction({ enabled: true, reserveTokens: 1000, keepRecentTokens: 400, backgroundTokens: 800 }, context);
+// Settings are read at every use, so the getter makes `backgroundTokens` live.
+let backgroundTokens = 800;
+const settings = {
+	get compaction() {
+		return { reserveTokens: 1000, keepRecentTokens: 400, backgroundTokens };
+	},
+};
+const harness = await Harness.open(new MemoryStorage(), { models, registry: createRegistry(), settings }, context);
+const root = await harness.root(context, { agent: { model: { provider: "faux", modelId: "tiny" } } });
 
 async function ask(question: string): Promise<void> {
 	const submission = await root.submit({ type: "input", content: question }, context);
@@ -89,7 +94,7 @@ await show(root, "after compact()");
 
 // 3. The provider rejects a request as too long: generation compacts and retries it once. Background compaction is
 // turned off so the summary below is the overflow one.
-await root.setCompaction({ enabled: true, reserveTokens: 1000, keepRecentTokens: 400, backgroundTokens: 0 }, context);
+backgroundTokens = 0;
 await ask("What should we pack?");
 overflowOnce = true;
 await ask("Summarize the plan for my partner");

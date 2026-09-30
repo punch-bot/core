@@ -10,12 +10,18 @@ export {
 } from "./entries.ts";
 export { ConversationBusy, ReadAfterWrite, StorageRejected } from "./errors.ts";
 export {
+	AgentDoc,
+	configure,
+	DEFAULT_COMPACTION_POLICY,
+	DEFAULT_RETRY_POLICY,
+} from "./harness/agent.ts";
+export {
 	type CompactionCheckpoint,
 	type CompactionInput,
 	CompactionTask,
 	type SummaryRequest,
 } from "./harness/compaction.ts";
-export { ConversationConfig, type ConversationConfigState } from "./harness/config.ts";
+export { defineExtension, defineTool, hook, section, wrapSection, wrapTool } from "./harness/define.ts";
 export {
 	type AgentEvent,
 	type AgentEventStream,
@@ -35,6 +41,9 @@ export { type CompactionStatus, LiveDoc, type LiveState, type ToolSlot } from ".
 export { createRegistry } from "./harness/registry.ts";
 export { ToolTask, type ToolTaskCheckpoint, type ToolTaskInput, type ToolTaskResult } from "./harness/tool.ts";
 export type {
+	Agent,
+	AgentChange,
+	AgentState,
 	AnyTask,
 	CompactionHooks,
 	CompactionPolicy,
@@ -47,27 +56,26 @@ export type {
 	ConversationHandle,
 	ConversationInit,
 	ConversationRetryPolicy,
-	ConversationSetup,
 	ConversationStreamOptions,
+	EnvTarget,
+	Extension,
 	GenerationHooks,
 	HarnessInspection,
 	HarnessOptions,
+	HarnessSettings,
 	HookApi,
 	HookRegistration,
 	HookResult,
-	HookScope,
 	HooksOf,
 	InputSubmissionDraft,
 	ModelRef,
 	PromptInput,
 	PromptSection,
-	PromptSectionWrapper,
 	QueueMode,
-	Registration,
 	Registry,
-	RegistryFailure,
 	RegistryReader,
 	RegistrySnapshot,
+	Settings,
 	SettledSubmissionRecord,
 	SettledTask,
 	Submission,
@@ -80,8 +88,8 @@ export type {
 	ToolExecutionResult,
 	ToolHooks,
 	ToolRegistration,
-	ToolWrapper,
 	UserInput,
+	Wrap,
 } from "./harness/types.ts";
 export { UsageDoc, type UsageState } from "./harness/usage.ts";
 export type { ConversationView } from "./harness/view.ts";

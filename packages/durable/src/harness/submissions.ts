@@ -2,7 +2,6 @@ import { type Context, copyJson, type JsonRepresentation } from "@punch-bot/chor
 import { UserEntry } from "../entries.ts";
 import { ConversationBusy } from "../errors.ts";
 import type { SessionImpl } from "../session/session.ts";
-import type { Transaction } from "../session/transaction.ts";
 import type {
 	CommitPublication,
 	ConversationId,
@@ -10,9 +9,10 @@ import type {
 	Storage,
 	SubmissionId,
 	SubmissionRecord,
+	Tx,
 } from "../types.ts";
 import { startRun } from "./generation.ts";
-import { applyBoundary, InboxDoc, isStale, prepareBoundary, removeInboxItem } from "./inbox.ts";
+import { applyBoundary, InboxDoc, isStale, prepareBoundary, type QueueModes, removeInboxItem } from "./inbox.ts";
 import { LiveDoc } from "./live.ts";
 import type { SettledSubmissionRecord, Submission, SubmissionDraft, UserInput } from "./types.ts";
 import { closedError, Waiters } from "./util.ts";
@@ -24,15 +24,24 @@ export class Submissions {
 	readonly #session: SessionImpl;
 	readonly #storage: Storage;
 	readonly #now: () => number;
+	/** Read at each admission, on the Session line. */
+	readonly #queueModes: () => QueueModes;
 	/** Enable task scheduling; submitting or waiting asks for progress. */
 	readonly #resume: () => void;
 	readonly #waiters = new Waiters<SubmissionId, SettledSubmissionRecord>();
 	#closed = false;
 
-	constructor(session: SessionImpl, storage: Storage, now: () => number, resume: () => void) {
+	constructor(
+		session: SessionImpl,
+		storage: Storage,
+		now: () => number,
+		queueModes: () => QueueModes,
+		resume: () => void,
+	) {
 		this.#session = session;
 		this.#storage = storage;
 		this.#now = now;
+		this.#queueModes = queueModes;
 		this.#resume = resume;
 		session.subscribeCommits((publication) => this.#observe(publication));
 		session.subscribeClose(() => {
@@ -45,7 +54,7 @@ export class Submissions {
 	async submit(conversationId: ConversationId, draft: SubmissionDraft, context: Context): Promise<Submission> {
 		this.#resume();
 		const id = await this.#session.commitWith(
-			(tx) => admitSubmission(tx, conversationId, draft, this.#now()),
+			(tx) => admitSubmission(tx, conversationId, draft, this.#now(), this.#queueModes()),
 			context,
 		);
 		return new SubmissionHandle(id, this);
@@ -137,10 +146,11 @@ function isSettled(record: SubmissionRecord): record is SettledSubmissionRecord 
  * its entry and settles `done`, or `stale` when its head reaches before the active range.
  */
 export async function admitSubmission(
-	tx: Transaction,
+	tx: Tx,
 	conversationId: ConversationId,
 	draft: SubmissionDraft,
 	now: number,
+	queueModes: QueueModes,
 ): Promise<SubmissionId> {
 	if (draft.requestId !== undefined) {
 		const existing = await tx.submissionByRequest(conversationId, draft.requestId);
@@ -156,7 +166,7 @@ export async function admitSubmission(
 	if (busy && draft.type === "input" && draft.whenBusy === "reject") throw new ConversationBusy(conversationId);
 	const requestId = draft.requestId === undefined ? {} : { requestId: draft.requestId };
 	// A boundary reads the table, so it is prepared before the first table write; a busy one needs none.
-	const boundary = busy ? undefined : await prepareBoundary(tx, conversationId);
+	const boundary = busy ? undefined : await prepareBoundary(tx, conversationId, queueModes);
 	if (boundary === undefined || boundary.inbox.items.length > 0) {
 		const { id } = await tx.createSubmission({
 			conversationId,

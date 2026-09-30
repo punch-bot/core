@@ -13,6 +13,7 @@ import { isContextOverflow } from "@punch-bot/ai/utils/overflow";
 import { isRetryableAssistantError, retryDelayMs } from "@punch-bot/ai/utils/retry";
 import { getCurrentTools } from "@punch-bot/ai/utils/transcript";
 import { AssistantEntry, ResetEntry, SystemEntry, UserEntry } from "../entries.ts";
+import type { ExecutionEnv } from "../env/index.ts";
 import { defineTask } from "../tasks.ts";
 import type {
 	ConversationId,
@@ -24,12 +25,12 @@ import type {
 	Tx,
 	TypedEntry,
 } from "../types.ts";
+import { addTools } from "./agent.ts";
 import { createCompaction, estimateContext, selectCut } from "./compaction.ts";
-import { ConversationConfig, DEFAULT_COMPACTION_POLICY, DEFAULT_RETRY_POLICY } from "./config.ts";
 import { applyBoundary, prepareBoundary } from "./inbox.ts";
 import { assignJson } from "./json.ts";
 import { endRun, LiveDoc, type LiveState, type ToolSlot } from "./live.ts";
-import { desiredTools, planSystemEntries, renderSections, replaySections } from "./prompt.ts";
+import { planSystemEntries, renderSections, replaySections } from "./prompt.ts";
 import { appendToolResult, harnessError, ToolTask, type ToolTaskResult } from "./tool.ts";
 import type {
 	CompactionPolicy,
@@ -40,8 +41,6 @@ import type {
 	ModelRef,
 	PromptInput,
 	ToolControl,
-	ToolExecutionMode,
-	ToolRegistration,
 	UserInput,
 } from "./types.ts";
 import { recordUsage } from "./usage.ts";
@@ -63,9 +62,8 @@ export type GenerationCheckpoint =
 			compacted?: TaskId<CompactionResult>;
 			model: ModelRef;
 			thinkingLevel: ModelThinkingLevel;
-			/** Configured request options when preparation committed; a resend after recovery uses them unchanged. */
+			/** The settings' request options when preparation committed; a resend after recovery uses them unchanged. */
 			streamOptions: ConversationStreamOptions;
-			toolExecution: ToolExecutionMode;
 			/** Newest entry included in the request. */
 			cutoff: EntryId;
 	  }
@@ -75,7 +73,6 @@ export type GenerationCheckpoint =
 			attempt: number;
 			compacted?: TaskId<CompactionResult>;
 			model: ModelRef;
-			toolExecution: ToolExecutionMode;
 			cutoff: EntryId;
 			handle: DeferredHandle;
 			pollAt: number;
@@ -101,7 +98,6 @@ type Request = {
 	readonly attempt: number;
 	readonly compacted: TaskId<CompactionResult> | undefined;
 	readonly model: ModelRef;
-	readonly toolExecution: ToolExecutionMode;
 	readonly cutoff: EntryId;
 	/** Committed model context through `cutoff`, when the phase already derived it. */
 	readonly messages?: readonly Message[];
@@ -123,16 +119,14 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 	phases: {
 		/**
 		 * Render the system prompt and tool loadout and append the positional `pi.system` entries they need, then move to
-		 * `request`. The configuration read here is fixed for this request. Only the Harness writes to a busy
+		 * `request`. The agent and settings resolved here are fixed for this request. Only the Harness writes to a busy
 		 * conversation, so the transcript read here is still the tail at the commit.
 		 */
 		prepare: async (task, runtime, context) => {
-			const { conversationId, registry } = runtime;
-			for (const failure of registry.failures()) runtime.report(failure.error);
-			const config =
-				(await runtime.snapshot(ConversationConfig, conversationId, context)) ??
-				ConversationConfig.definition.initial();
-			const { model, thinkingLevel, streamOptions } = config;
+			const { conversationId } = runtime;
+			const agent = await runtime.agent(context);
+			const settings = runtime.settings;
+			const { model, thinkingLevel } = agent;
 			const resolved = model === undefined ? undefined : runtime.models.getModel(model.provider, model.modelId);
 			if (model === undefined || resolved === undefined) return failNoModel(runtime, model, context);
 			const { attempt, compacted, overflow } = task.state.checkpoint;
@@ -144,26 +138,20 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 			}
 			const view = await runtime.context(conversationId, context);
 			const shown = replaySections(view.messages);
-			const tools = desiredTools(config.activeTools, (name) => registry.tool(name));
-			const input: PromptInput<ToolRegistration> = {
-				conversationId,
-				tools,
-				shown: Object.fromEntries(shown),
-				model,
-				thinkingLevel,
-				read: runtime,
-			};
 			const report = (error: unknown) => runtime.report(error);
-			const desired = await renderSections(registry.sections(), input, shown, report, context);
-			const entries = planSystemEntries(view, desired, tools, runtime.now());
+			let env: ExecutionEnv | undefined;
+			try {
+				env = await runtime.env(context);
+			} catch (error) {
+				if (context.abortSignal?.aborted) throw error;
+				report(error);
+			}
+			const input: PromptInput = { conversationId, agent, env, shown: Object.fromEntries(shown), read: runtime };
+			const desired = await renderSections(agent.sections, input, shown, report, context);
+			const entries = planSystemEntries(view, desired, agent.tools, runtime.now());
 			const threshold =
 				compacted === undefined
-					? thresholdCompaction(
-							view,
-							entries,
-							resolved.contextWindow,
-							config.compaction ?? DEFAULT_COMPACTION_POLICY,
-						)
+					? thresholdCompaction(view, entries, resolved.contextWindow, settings.compaction)
 					: undefined;
 			if (threshold === "blocking") {
 				// Compact first and prepare again; the transcript is unchanged until the compaction appends.
@@ -187,23 +175,14 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 					...(compacted === undefined ? {} : { compacted }),
 					model,
 					thinkingLevel,
-					streamOptions: streamOptions ?? {},
-					toolExecution: config.toolExecution ?? "parallel",
+					streamOptions: settings.stream,
 					cutoff,
 				};
 				return { status: "running", checkpoint: { phase: "request", ...request } };
 			}, context);
 		},
 		request: async (task, runtime, context) => {
-			const {
-				attempt,
-				compacted,
-				model: ref,
-				thinkingLevel,
-				streamOptions,
-				toolExecution,
-				cutoff,
-			} = task.state.checkpoint;
+			const { attempt, compacted, model: ref, thinkingLevel, streamOptions, cutoff } = task.state.checkpoint;
 			const conversationId = runtime.conversationId;
 			await runtime.commit(async (tx) => {
 				const live = await tx.doc(LiveDoc, conversationId);
@@ -225,7 +204,7 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 				...(thinkingLevel === "off" ? {} : { reasoning: thinkingLevel }),
 			};
 			const message = await streamResponse(runtime, model, messages, options, attempt, context);
-			const request = { attempt, compacted, model: ref, toolExecution, cutoff, messages: view.messages };
+			const request = { attempt, compacted, model: ref, cutoff, messages: view.messages };
 			await classify(runtime, request, message, context);
 		},
 		retry: async (task, runtime, context) => {
@@ -242,12 +221,12 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 			}, context);
 		},
 		poll: async (task, runtime, context) => {
-			const { attempt, compacted, model: ref, toolExecution, cutoff, handle, pollAt } = task.state.checkpoint;
+			const { attempt, compacted, model: ref, cutoff, handle, pollAt } = task.state.checkpoint;
 			const model = runtime.models.getModel(ref.provider, ref.modelId);
 			if (model === undefined) return failNoModel(runtime, ref, context);
 			await runtime.sleep(pollAt, context);
 			const message = await runtime.models.fetchDeferred(model, handle, { signal: runtime.signal });
-			const request = { attempt, compacted, model: ref, toolExecution, cutoff, pollAt };
+			const request = { attempt, compacted, model: ref, cutoff, pollAt };
 			await classify(runtime, request, message, context);
 		},
 		tools: async (task, runtime, context) => {
@@ -443,7 +422,7 @@ async function classify(
 	// An abort mark or close: the abort invocation or the reopened run handles the committed state.
 	runtime.signal.throwIfAborted();
 	const conversationId = runtime.conversationId;
-	const { attempt, compacted, model: ref, toolExecution, cutoff } = request;
+	const { attempt, compacted, model: ref, cutoff } = request;
 	if (message.stopReason === "deferred" && message.deferred !== undefined) {
 		const handle = message.deferred;
 		const pollAt = Math.max(
@@ -457,7 +436,6 @@ async function classify(
 				attempt,
 				...(compacted === undefined ? {} : { compacted }),
 				model: ref,
-				toolExecution,
 				cutoff,
 				handle,
 				pollAt,
@@ -475,10 +453,10 @@ async function classify(
 		return answer(runtime, message, context);
 	}
 	// The retry and compaction policies govern the next attempt, so they are read now rather than pinned at preparation.
-	const config = await runtime.snapshot(ConversationConfig, conversationId, context);
+	const settings = runtime.settings;
 	const overflow = message.stopReason === "error" && isContextOverflow(message);
-	if (overflow && compacted === undefined && (config?.compaction ?? DEFAULT_COMPACTION_POLICY).enabled) {
-		const policy = config?.compaction ?? DEFAULT_COMPACTION_POLICY;
+	if (overflow && compacted === undefined && settings.compaction.enabled) {
+		const policy = settings.compaction;
 		const view = await runtime.context(conversationId, context, cutoff);
 		if (selectCut(view, policy.keepRecentTokens) !== undefined) {
 			const text = message.errorMessage ?? "Context overflow";
@@ -493,7 +471,7 @@ async function classify(
 			return;
 		}
 	}
-	const policy = config?.retry ?? DEFAULT_RETRY_POLICY;
+	const policy = settings.retry;
 	// An overflow is never retried: only a compaction can make the next request fit.
 	const retry =
 		message.stopReason === "error" &&
@@ -537,7 +515,8 @@ async function answer(runtime: Runtime, message: AssistantMessage, context: Cont
 	});
 	const conversationId = runtime.conversationId;
 	await runtime.commit(async (tx): Promise<Next> => {
-		const boundary = await prepareBoundary(tx, conversationId);
+		// Queue modes are read on the Session line, when the boundary is decided.
+		const boundary = await prepareBoundary(tx, conversationId, runtime.settings);
 		const live = await tx.doc(LiveDoc, conversationId);
 		const entry = await appendAssistant(tx, conversationId, message);
 		const result: Next = { status: "terminal", outcome: { status: "completed", result: { entryId: entry.id } } };
@@ -570,9 +549,14 @@ async function startToolRound(
 	const conversationId = runtime.conversationId;
 	const messages = request.messages ?? (await runtime.context(conversationId, context, request.cutoff)).messages;
 	const offered = new Set(getCurrentTools(messages).map((tool) => tool.name));
+	// Read as the round starts; a tool is resolved as its tool task resolves it.
+	const tools = (await runtime.agent(context)).tools;
 	const sequential =
-		request.toolExecution === "sequential" ||
-		calls.some((call) => offered.has(call.name) && runtime.registry.tool(call.name)?.executionMode === "sequential");
+		runtime.settings.toolExecution === "sequential" ||
+		calls.some(
+			(call) =>
+				offered.has(call.name) && tools.find((tool) => tool.name === call.name)?.executionMode === "sequential",
+		);
 	await runtime.commit(async (tx): Promise<Next> => {
 		const live = await tx.doc(LiveDoc, conversationId);
 		const entry = await appendAssistant(tx, conversationId, message);
@@ -630,11 +614,8 @@ async function finishToolRound(
 	// The last handoff in call order wins.
 	const handoff = [...controls.values()].findLast((control) => control?.handoff !== undefined)?.handoff;
 	await runtime.commit(async (tx): Promise<Next> => {
-		const boundary = await prepareBoundary(tx, conversationId);
-		if (added.length > 0) {
-			const config = await tx.doc(ConversationConfig, conversationId);
-			for (const name of added) if (!config.activeTools.includes(name)) config.activeTools.push(name);
-		}
+		const boundary = await prepareBoundary(tx, conversationId, runtime.settings);
+		if (added.length > 0) await addTools(tx, conversationId, added);
 		const live = await tx.doc(LiveDoc, conversationId);
 		const now = runtime.now();
 		if (terminate || handoff !== undefined) {
