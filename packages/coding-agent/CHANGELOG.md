@@ -5,6 +5,7 @@
 ### Added
 
 - Added a `description` field for MCP servers (`pi mcp add --description`), shown next to the server in the `codemode` and `tool_search` descriptions, and a `describeNamespace(name)` codemode helper that returns a namespace's instructions and tool names.
+- Added an `oauth.clientName` setting for MCP servers (`pi mcp add --oauth-client-name`) to change the client name sent during OAuth client registration, for servers such as Figma that only accept known clients ([#10226](https://github.com/earendil-works/pi/issues/10226)).
 
 ### Changed
 
