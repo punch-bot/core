@@ -1,6 +1,6 @@
 {
 	"name": "@punch-bot/server",
-	"version": "0.99.1",
+	"version": "0.99.2",
 	"description": "experimental server package for pi",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -47,9 +47,9 @@
 		"node": ">=22.19.0"
 	},
 	"dependencies": {
-		"@punch-bot/chord": "^0.99.1",
-		"@punch-bot/agent": "^0.99.1",
-		"@punch-bot/protocol": "^0.99.1"
+		"@punch-bot/chord": "^0.99.2",
+		"@punch-bot/agent": "^0.99.2",
+		"@punch-bot/protocol": "^0.99.2"
 	},
 	"devDependencies": {
 		"shx": "0.4.0",
