@@ -16,7 +16,6 @@ const packages = [
 	{ directory: "packages/agent", name: "@punch-bot/agent" },
 	{ directory: "packages/protocol", name: "@punch-bot/protocol" },
 	{ directory: "packages/client", name: "@punch-bot/client" },
-	{ directory: "packages/session-backends/sqlite-node", name: "@punch-bot/sqlite-node" },
 	{ directory: "packages/server", name: "@punch-bot/server" },
 	{ directory: "packages/a2a", name: "@punch-bot/a2a" },
 	{ directory: "packages/coding-agent", name: "@punch-bot/cli" },
