@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Changed OAuth browser pages to use the color Pi logo.
+
 ## [0.99.2] - 2026-09-30
 
 ### Added
