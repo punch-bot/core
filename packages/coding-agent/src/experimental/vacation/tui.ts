@@ -1,4 +1,4 @@
-import type { AssistantMessage, ToolResultMessage, Usage, UserMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage, ToolResultMessage, Usage, UserMessage } from "@punch-bot/ai";
 import type {
 	ConversationId,
 	EntryRecord,
@@ -7,7 +7,7 @@ import type {
 	TaskGraph,
 	TaskGraphNode,
 	UsageState,
-} from "@earendil-works/pi-durable";
+} from "@punch-bot/durable";
 import {
 	Box,
 	type Component,
@@ -29,7 +29,7 @@ import {
 	TruncatedText,
 	TuiAltScreen,
 	VStack,
-} from "@earendil-works/pi-tui";
+} from "@punch-bot/tui";
 import { getAgentDir } from "../../config.ts";
 import { KeybindingsManager } from "../../core/keybindings.ts";
 import type { SettingsManager } from "../../core/settings-manager.ts";
@@ -42,8 +42,8 @@ import { keyText } from "../../modes/interactive/components/keybinding-hints.ts"
 import { type StatusIndicator, WorkingStatusIndicator } from "../../modes/interactive/components/status-indicator.ts";
 import { ToolExecutionComponent, type ToolRenderers } from "../../modes/interactive/components/tool-execution.ts";
 import { UserMessageComponent } from "../../modes/interactive/components/user-message.ts";
-import { getEditorTheme, getMarkdownTheme, initTheme, theme } from "../../modes/interactive/theme/theme.ts";
-import { InteractiveThemeController } from "../../modes/interactive/theme/theme-controller.ts";
+import { getEditorTheme, getMarkdownTheme, initTheme, theme } from "../../core/theme/theme.ts";
+import { InteractiveThemeController } from "../../core/theme/theme-controller.ts";
 import { agentOf, type DurableController, type DurableView, type DurableViewSource } from "./runtime.ts";
 
 const SELECT_THEME: SelectListTheme = {

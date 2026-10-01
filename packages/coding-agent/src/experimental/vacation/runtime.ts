@@ -1,6 +1,6 @@
-import type { AttachedReplicatedState } from "@earendil-works/chord";
-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import { clampThinkingLevel, getSupportedThinkingLevels, type ModelThinkingLevel } from "@earendil-works/pi-ai";
+import type { AttachedReplicatedState } from "@punch-bot/chord";
+import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
+import { clampThinkingLevel, getSupportedThinkingLevels, type ModelThinkingLevel } from "@punch-bot/ai";
 import {
 	type AgentState,
 	type Conversation,
@@ -13,8 +13,8 @@ import {
 	ROOT_CONVERSATION_ID,
 	type Submission,
 	type TaskGraph,
-} from "@earendil-works/pi-durable";
-import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
+} from "@punch-bot/durable";
+import { openNodeSqliteStorage } from "@punch-bot/durable/storage/sqlite/node";
 import { ModelRuntime } from "../../core/model-runtime.ts";
 import { SettingsManager } from "../../core/settings-manager.ts";
 import {

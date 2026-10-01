@@ -1,5 +1,5 @@
 import { setTimeout as sleep } from "node:timers/promises";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "@punch-bot/ai";
 import {
 	AssistantEntry,
 	type ConversationId,
@@ -8,7 +8,7 @@ import {
 	defineTask,
 	defineTool,
 	section,
-} from "@earendil-works/pi-durable";
+} from "@punch-bot/durable";
 
 // ─── search: slow, fake, and safe to rerun ──────────────────────────────────
 

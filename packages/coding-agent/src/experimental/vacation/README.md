@@ -1,6 +1,6 @@
 # vacation
 
-A durable vacation planning agent with a TUI, built on `@earendil-works/pi-durable`. It is a copy of the durable coding
+A durable vacation planning agent with a TUI, built on `@punch-bot/durable`. It is a copy of the durable coding
 agent in [`../durable`](../durable) with the coding tools and pi's coding prompt replaced by a vacation planner. It only
 looks like a coding agent because it reuses pi's interactive TUI components.
 
