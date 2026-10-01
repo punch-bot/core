@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added a copy code login method to Anthropic OAuth. Login asks for browser login (default) or copy code login, which shows the authorization code on Anthropic's page for pasting into pi and works when the browser runs on another machine ([#10194](https://github.com/earendil-works/pi/pull/10194) by [@lucasmeijer](https://github.com/lucasmeijer)).
+
 ### Changed
 
 - Changed OAuth browser pages to use the color Pi logo.
