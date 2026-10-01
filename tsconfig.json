@@ -25,7 +25,11 @@
 			"@punch-bot/ai/dist/*": ["./packages/ai/src/*"],
 			"@punch-bot/durable": ["./packages/durable/src/index.ts"],
 			"@punch-bot/durable/testing": ["./packages/durable/src/testing/index.ts"],
-			"@punch-bot/durable/*": ["./packages/durable/src/*"],
+			"@punch-bot/durable/*": [
+				"./packages/durable/src/*.ts",
+				"./packages/durable/src/*/index.ts",
+				"./packages/durable/src/*"
+			],
 			"@punch-bot/agent": ["./packages/agent/src/index.ts"],
 			"@punch-bot/agent/harness/session/testing": [
 				"./packages/agent/src/harness/session/testing/index.ts"
