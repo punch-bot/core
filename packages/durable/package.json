@@ -1,6 +1,6 @@
 {
 	"name": "@punch-bot/durable",
-	"version": "0.99.2",
+	"version": "1.0.0",
 	"description": "Durable conversation, task, and document runtime for Pi",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -100,8 +100,8 @@
 		"node": ">=22.19.0"
 	},
 	"dependencies": {
-		"@punch-bot/chord": "^0.99.2",
-		"@punch-bot/ai": "^0.99.2",
+		"@punch-bot/chord": "^1.0.0",
+		"@punch-bot/ai": "^1.0.0",
 		"diff": "8.0.4",
 		"typebox": "1.3.27"
 	},
