@@ -10,6 +10,10 @@
 
 - Changed OAuth browser pages to use the color Pi logo.
 
+### Fixed
+
+- Fixed OpenAI Responses requests failing with `Expected an ID that begins with 'ctc'` when replaying grammar tool calls, such as `codemode`, from another provider or a gateway like Radius.
+
 ## [0.99.2] - 2026-09-30
 
 ### Added
