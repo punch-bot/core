@@ -9,6 +9,7 @@ import {
 	type ServiceCall,
 	type ServiceProviderUpdate,
 } from "@punch-bot/chord";
+import { BACKGROUND_CONTEXT, TODO_CONTEXT, withAbortSignal } from "@punch-bot/chord/context";
 import {
 	type CancelEnvelope,
 	type ClientHello,
@@ -37,7 +38,7 @@ import {
 import { INTERNAL_SERVER_ERROR_MESSAGE, ServerError, WrongServerError } from "./errors.ts";
 import type { ServerListener } from "./listener.ts";
 import { SessionRouter } from "./session-router.ts";
-import type { ServerHost, ServerOptions } from "./types.ts";
+import type { ServerHost, ServerOptions, SessionMetadata } from "./types.ts";
 
 const DEFAULT_HANDSHAKE_TIMEOUT_MS = 5_000;
 const MAX_UINT32 = 0xffff_ffff;

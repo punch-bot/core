@@ -48,7 +48,6 @@
 	},
 	"dependencies": {
 		"@punch-bot/chord": "^0.99.2",
-		"@punch-bot/agent": "^0.99.2",
 		"@punch-bot/protocol": "^0.99.2"
 	},
 	"devDependencies": {

@@ -1,15 +1,9 @@
-import type { LaneTranscriptSnapshot, LaneWatchEvent } from "@punch-bot/agent";
 import { defineService, type ReplicatedState } from "@punch-bot/chord";
+import type { ConversationView } from "@punch-bot/durable";
 
-export interface TranscriptState {
-	snapshot: LaneTranscriptSnapshot | null;
-	/** The source event is retained for presentation side effects; hydration does not replay it. */
-	event: LaneWatchEvent | null;
-}
-
-/** Coherent main-lane state replicated through Chord's operation stream. */
+/** The root conversation's durable view: active entries and its live, inbox, agent, and usage documents. */
 export interface Transcript {
-	readonly state: ReplicatedState<TranscriptState>;
+	readonly state: ReplicatedState<ConversationView>;
 }
 
 export const Transcript = defineService<Transcript>("pi.transcript");

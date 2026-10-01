@@ -6,11 +6,7 @@
 		"moduleResolution": "NodeNext",
 		"types": ["node", "vitest"],
 		"paths": {
-			"@punch-bot/agent": ["../agent/src/index.ts"],
-			"@punch-bot/ai": ["../ai/src/index.ts"],
-			"@punch-bot/ai/*": ["../ai/src/*.ts", "../ai/src/providers/*.ts"],
-			"@punch-bot/protocol": ["../protocol/src/index.ts"],
-			"@punch-bot/telemetry": ["../telemetry/src/index.ts"]
+			"@punch-bot/protocol": ["../protocol/src/index.ts"]
 		}
 	},
 	"include": ["src/**/*.ts", "test/**/*.ts"]

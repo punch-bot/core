@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- `SessionMetadata` is now exported by `@punch-bot/server` and requires only `id`; the package no longer depends on `@punch-bot/agent`. The testing `TestServerHost` keeps an in-memory session map instead of a `MemorySessionRepo`, and `TestHarness` exposes `metadata` instead of `session`.
+
 ## [0.99.2] - 2026-09-30
 
 ## [0.99.1] - 2026-09-29
