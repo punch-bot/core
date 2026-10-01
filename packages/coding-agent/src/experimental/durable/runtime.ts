@@ -374,6 +374,8 @@ export async function openDurable(options: OpenDurableOptions = {}): Promise<Ope
 			notice("warning", `Saved model is unavailable: ${saved.provider}/${saved.modelId}`);
 		}
 		if (initial?.fallbackMessage !== undefined) notice("info", initial.fallbackMessage);
+		// The task panel starts open; /tasks hides it.
+		await controller.toggleTasks();
 		// Recovered work from an interrupted turn continues now.
 		harness.resume();
 

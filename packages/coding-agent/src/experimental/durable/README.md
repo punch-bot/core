@@ -27,7 +27,7 @@ credentials are shared.
   view to any conversation, also while the subagent works, and the editor then talks to it: steer it while busy, or
   keep chatting after the call returned. Esc aborts the shown conversation; aborting the main turn aborts its
   subagents.
-- **Task graph:** `/tasks` toggles a live panel of `Harness.taskGraph()`: every live task, what it waits on, and the
+- **Task graph:** a live panel of `Harness.taskGraph()`, shown by default and toggled with `/tasks`: every live task, what it waits on, and the
   conversations it owns.
 
 ## Commands
@@ -40,7 +40,7 @@ credentials are shared.
 - `/compact [instructions]`: summarize older context; reports "Nothing to compact" when the context fits in
   `compaction.keepRecentTokens`
 - `/agents`: switch conversations
-- `/tasks`: toggle the task panel
+- `/tasks`: hide or show the task panel
 - tools expand key (Ctrl+O): expand tool output and compaction summaries
 - clear key (Ctrl+C) or Ctrl+D: exit at once, unlike pi's clear-first Ctrl+C; work in flight resumes with
   `--continue`
