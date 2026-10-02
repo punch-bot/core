@@ -55,10 +55,33 @@ export { type OtherType } from "export-inline-type-only";
 });
 
 test("accepts declared package imports and rejects undeclared ones", async (t) => {
-	const result = await check(t, { imports: { "#driver": "./src/driver.ts" } }, 'import "#driver"; import "#missing";');
+	const result = await check(t, { imports: { "#driver": "./src/driver.ts" } }, 'import "#driver"; import "#missing";', {
+		"packages/example/src/driver.ts": "export {};",
+	});
 	assert.equal(result.status, 1);
 	assert.doesNotMatch(result.stderr, /#driver is not declared/);
 	assert.match(result.stderr, /#missing is not declared/);
+});
+
+test("checks external dependencies behind conditional package imports", async (t) => {
+	const result = await check(t, {
+		imports: { "#driver": { types: "type-only", node: "declared/subpath", default: "undeclared/subpath" } },
+		dependencies: { declared: "1.0.0" },
+	}, 'import "#driver";');
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /undeclared\/subpath is not declared/);
+	assert.doesNotMatch(result.stderr, /type-only is not declared/);
+});
+
+test("rejects package imports pointing outside src or to a missing file", async (t) => {
+	const result = await check(t, {
+		imports: { "#outside": "./runtime.mjs", "#missing": "./src/missing.mjs" },
+	}, 'import "#outside"; import "#missing";', {
+		"packages/example/runtime.mjs": "export {};",
+	});
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /package import target \.\/runtime\.mjs must name an existing file inside src/);
+	assert.match(result.stderr, /package import target \.\/src\/missing\.mjs must name an existing file inside src/);
 });
 
 test("rejects dev-only dependencies, side-effect imports, mixed exports, and literal runtime loads", async (t) => {

@@ -58,6 +58,7 @@ function setup(store = new TodoStore(":memory:")) {
 	const tools: ToolDefinition[] = [];
 	const setWidget = vi.fn();
 	let sessionId = "session-one";
+	let sessionFile: string | undefined = "session.jsonl";
 	const api = {
 		on(event: string, handler: unknown) {
 			handlers.set(event, handler);
@@ -73,7 +74,7 @@ function setup(store = new TodoStore(":memory:")) {
 		hasUI: true,
 		cwd: process.cwd(),
 		ui: { setWidget },
-		sessionManager: { getSessionId: () => sessionId },
+		sessionManager: { getSessionId: () => sessionId, getSessionFile: () => sessionFile },
 	} as unknown as ExtensionContext;
 
 	return {
@@ -82,6 +83,9 @@ function setup(store = new TodoStore(":memory:")) {
 		store,
 		setSessionId(id: string) {
 			sessionId = id;
+		},
+		setSessionFile(file: string | undefined) {
+			sessionFile = file;
 		},
 		setWidget,
 		tools,
@@ -314,6 +318,18 @@ describe("TodoStore", () => {
 		expect(reopened.load("thread-two").todos[0]?.id).toBe(1);
 	});
 
+	it("isolates the same custom session ID in different working directories", () => {
+		const store = new TodoStore(join(dir, "todos.sqlite"));
+		stores.push(store);
+		const firstCwd = join(dir, "first");
+		const secondCwd = join(dir, "second");
+		store.apply("work", { action: "add", text: "first project" }, firstCwd);
+		store.apply("work", { action: "add", text: "second project" }, secondCwd);
+		store.delete("work", firstCwd);
+		expect(store.load("work", firstCwd)).toEqual(emptyState());
+		expect(store.load("work", secondCwd).todos[0]?.text).toBe("second project");
+	});
+
 	it("shares committed actions across independent connections", () => {
 		const path = join(dir, "todos.sqlite");
 		const first = new TodoStore(path);
@@ -419,6 +435,35 @@ describe("TodoStore", () => {
 		expect(store.load("second-session").todos[0]?.text).toBe("old task");
 	});
 
+	it("does not consume a skipped legacy import when deleting a populated session", () => {
+		const legacy = join(dir, "todos.json");
+		writeFileSync(
+			legacy,
+			JSON.stringify({ todos: [{ id: 1, text: "old task", done: false, createdAt: 1 }], nextId: 2, log: [] }),
+		);
+		const store = new TodoStore(join(dir, "todos.sqlite"));
+		stores.push(store);
+		store.apply("first-session", { action: "add", text: "new task" });
+		store.migrateLegacy("first-session", legacy);
+		store.delete("first-session");
+		store.migrateLegacy("second-session", legacy);
+		expect(store.load("second-session").todos[0]?.text).toBe("old task");
+	});
+
+	it("does not consume a legacy file that appears after a session was deleted", () => {
+		const legacy = join(dir, "todos.json");
+		const store = new TodoStore(join(dir, "todos.sqlite"));
+		stores.push(store);
+		store.migrateLegacy("first-session", legacy);
+		store.delete("first-session");
+		writeFileSync(
+			legacy,
+			JSON.stringify({ todos: [{ id: 1, text: "later", done: false, createdAt: 1 }], nextId: 2, log: [] }),
+		);
+		store.migrateLegacy("second-session", legacy);
+		expect(store.load("second-session").todos[0]?.text).toBe("later");
+	});
+
 	it("keeps a migration consumed when its database and JSON file move together", () => {
 		const original = join(dir, "original");
 		const moved = join(dir, "moved");
@@ -447,6 +492,8 @@ describe("todo API", () => {
 			stores.push(store);
 			store.apply("first", { action: "add", text: "first task" });
 			store.apply("second", { action: "add", text: "second task" });
+			const otherCwd = join(tmpdir(), "other-project");
+			store.apply("first", { action: "add", text: "other project" }, otherCwd);
 			const server = createServer((req, res) => {
 				void handlePunchRequest(req, res, store);
 			});
@@ -468,6 +515,16 @@ describe("todo API", () => {
 				expect((await fetch(`${base}/todos/first`, { method: "DELETE", headers })).status).toBe(200);
 				expect(store.load("first")).toEqual(emptyState());
 				expect(store.load("second").todos[0]?.text).toBe("second task");
+				const scopedUrl = `${base}/todos/first?cwd=${encodeURIComponent(otherCwd)}`;
+				const scoped = await fetch(scopedUrl, { headers });
+				expect(((await scoped.json()) as TodoState).todos[0]?.text).toBe("other project");
+				expect((await fetch(scopedUrl, { method: "DELETE", headers })).status).toBe(200);
+				expect(store.load("first", otherCwd)).toEqual(emptyState());
+				expect((await fetch(`${base}/todos/first?cwd=relative`, { headers })).status).toBe(400);
+				for (const invalidId of ["%2F", "%20", "%00", "%ZZ"]) {
+					expect((await fetch(`${base}/todos/${invalidId}`, { headers })).status).toBe(400);
+					expect((await fetch(`${base}/todos/${invalidId}`, { method: "DELETE", headers })).status).toBe(400);
+				}
 			} finally {
 				await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
 			}
@@ -524,11 +581,27 @@ describe("installTodos", () => {
 			const { sessionStartHandler, ctx, store } = setup(new TodoStore(":memory:"));
 			Object.assign(ctx, { cwd });
 			sessionStartHandler?.({ type: "session_start", reason: "startup" }, ctx);
-			expect(store.load("session-one").todos[0]?.text).toBe("project task");
+			expect(store.load("session-one", cwd).todos[0]?.text).toBe("project task");
 		} finally {
 			if (previousDataDir === undefined) delete process.env.PI_DATA_DIR;
 			else process.env.PI_DATA_DIR = previousDataDir;
 		}
+	});
+
+	it("leaves legacy tasks for a persistent session after an ephemeral session", () => {
+		const legacy = join(dir, "todos.json");
+		writeFileSync(
+			legacy,
+			JSON.stringify({ todos: [{ id: 1, text: "old task", done: false, createdAt: 1 }], nextId: 2, log: [] }),
+		);
+		const { sessionStartHandler, ctx, store, setSessionFile, setSessionId } = setup(new TodoStore(":memory:"));
+		setSessionFile(undefined);
+		sessionStartHandler?.({ type: "session_start", reason: "startup" }, ctx);
+		expect(store.load("session-one")).toEqual(emptyState());
+		setSessionId("persistent-session");
+		setSessionFile("session.jsonl");
+		sessionStartHandler?.({ type: "session_start", reason: "startup" }, ctx);
+		expect(store.load("persistent-session").todos[0]?.text).toBe("old task");
 	});
 
 	it("registers a todo tool with guidelines", () => {

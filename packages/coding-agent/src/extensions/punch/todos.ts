@@ -193,7 +193,7 @@ export function applyTodoAction(state: TodoState, action: TodoAction): TodoActio
 export function installTodos(pi: ExtensionAPI, store: TodoStore): void {
 	const syncWidget = (ctx: ExtensionContext): void => {
 		if (!ctx.hasUI) return;
-		const state = store.load(ctx.sessionManager.getSessionId());
+		const state = store.load(ctx.sessionManager.getSessionId(), ctx.cwd);
 		if (state.todos.length === 0) {
 			ctx.ui.setWidget("punch-todos", undefined);
 			return;
@@ -206,16 +206,20 @@ export function installTodos(pi: ExtensionAPI, store: TodoStore): void {
 	};
 
 	pi.on("session_start", (_event, ctx) => {
-		try {
-			store.migrateLegacy(ctx.sessionManager.getSessionId(), todosFile(ctx.cwd));
-		} catch (error) {
-			console.warn(`Could not import legacy Punch todos: ${error instanceof Error ? error.message : String(error)}`);
+		if (ctx.sessionManager.getSessionFile()) {
+			try {
+				store.migrateLegacy(ctx.sessionManager.getSessionId(), todosFile(ctx.cwd), ctx.cwd);
+			} catch (error) {
+				console.warn(
+					`Could not import legacy Punch todos: ${error instanceof Error ? error.message : String(error)}`,
+				);
+			}
 		}
 		syncWidget(ctx);
 	});
 
 	pi.on("context", (event, ctx) => {
-		const state = store.load(ctx.sessionManager.getSessionId());
+		const state = store.load(ctx.sessionManager.getSessionId(), ctx.cwd);
 		if (state.todos.length === 0) return;
 		const message: AgentMessage = {
 			role: "custom",
@@ -270,7 +274,7 @@ export function installTodos(pi: ExtensionAPI, store: TodoStore): void {
 					action = { action: "clear" };
 					break;
 			}
-			const result = store.apply(ctx.sessionManager.getSessionId(), action);
+			const result = store.apply(ctx.sessionManager.getSessionId(), action, ctx.cwd);
 			if (result.changed) {
 				syncWidget(ctx);
 			}
