@@ -75,7 +75,11 @@ function setup(store = new TodoStore(":memory:")) {
 		hasUI: true,
 		cwd: process.cwd(),
 		ui: { setWidget },
-		sessionManager: { getSessionId: () => sessionId, getSessionFile: () => sessionFile, getHeader: () => null },
+		sessionManager: {
+			getSessionId: () => sessionId,
+			getSessionFile: () => sessionFile,
+			getHeader: () => ({ cwd: ctx.cwd }),
+		},
 	} as unknown as ExtensionContext;
 
 	return {
@@ -660,6 +664,28 @@ describe("installTodos", () => {
 		store.delete("work", originalCwd);
 		await expect(
 			todoTool?.execute?.("call-3", { action: "add", text: "late write" }, undefined, undefined, ctx),
+		).rejects.toThrow("Session tasks were deleted");
+	});
+
+	it("keeps legacy session tasks and reset protection without a header cwd", async () => {
+		const sessionFile = join(dir, "legacy.jsonl");
+		writeFileSync(
+			sessionFile,
+			`${JSON.stringify({ type: "session", version: 1, id: "legacy", timestamp: new Date().toISOString() })}\n`,
+		);
+		const manager = SessionManager.open(sessionFile, undefined, join(dir, "first-project"));
+		const { todoTool, ctx, store, contextHandler, sessionStartHandler } = setup();
+		Object.assign(ctx, { cwd: manager.getCwd(), sessionManager: manager });
+		await todoTool?.execute?.("call-1", { action: "add", text: "legacy task" }, undefined, undefined, ctx);
+		const resumed = SessionManager.open(sessionFile, undefined, join(dir, "second-project"));
+		Object.assign(ctx, { cwd: resumed.getCwd(), sessionManager: resumed });
+		sessionStartHandler?.({ type: "session_start", reason: "startup" }, ctx);
+		const context = await contextHandler?.({ type: "context", messages: [] }, ctx);
+		expect((context?.messages?.[0] as { content?: string }).content).toContain("[ ] #1 legacy task");
+		expect(store.load("legacy", dirname(sessionFile)).todos[0]?.text).toBe("legacy task");
+		store.delete("legacy", dirname(sessionFile));
+		await expect(
+			todoTool?.execute?.("call-2", { action: "add", text: "late write" }, undefined, undefined, ctx),
 		).rejects.toThrow("Session tasks were deleted");
 	});
 
