@@ -506,6 +506,7 @@ describe("AgentSession actionable boundaries", () => {
 	it("does not compact from usage belonging to a boundary-omitted assistant", async () => {
 		let handled = false;
 		const harness = await createHarness({
+			systemPrompt: "You are a coding assistant.",
 			models: [{ id: "faux-1", contextWindow: 10_000, maxTokens: 100 }],
 			settings: { compaction: { enabled: true, keepRecentTokens: 1, reserveTokens: 300 } },
 			extensionFactories: [
@@ -541,6 +542,7 @@ describe("AgentSession actionable boundaries", () => {
 	it("does not trigger successful-response overflow from usage captured before a boundary edit", async () => {
 		let handled = false;
 		const harness = await createHarness({
+			systemPrompt: "You are a coding assistant.",
 			models: [{ id: "faux-1", contextWindow: 5_000, maxTokens: 100 }],
 			settings: { compaction: { enabled: true, keepRecentTokens: 1, reserveTokens: 0 } },
 			extensionFactories: [

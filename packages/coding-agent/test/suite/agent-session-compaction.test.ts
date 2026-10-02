@@ -489,6 +489,7 @@ describe("AgentSession compaction characterization", () => {
 			const order: string[] = [];
 			const observedSettings: unknown[] = [];
 			const harness = await createHarness({
+				systemPrompt: "You are a coding assistant.",
 				models: [{ id: "faux-1", contextWindow: 2600, maxTokens: 100 }],
 				settings: {
 					compaction: modelOverride

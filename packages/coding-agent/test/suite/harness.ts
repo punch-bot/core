@@ -103,6 +103,8 @@ export function createTestUiContext(overrides: Partial<ExtensionUIContext> = {})
 
 export interface HarnessOptions {
 	models?: FauxModelDefinition[];
+	/** Override the production prompt for tests with deliberately small context windows. */
+	systemPrompt?: string;
 	settings?: Partial<Settings>;
 	tools?: AgentTool[];
 	initialActiveToolNames?: string[];
@@ -220,7 +222,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 		? await createTestExtensionsResult(options.extensionFactories, tempDir)
 		: undefined;
 	const resourceLoader =
-		options.resourceLoader ?? createTestResourceLoader(extensionsResult ? { extensionsResult } : undefined);
+		options.resourceLoader ?? createTestResourceLoader({ extensionsResult, systemPrompt: options.systemPrompt });
 
 	const session = new AgentSession({
 		agent,

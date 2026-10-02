@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -14,12 +14,25 @@ afterEach(() => {
 	for (const directory of tempDirs.splice(0)) rmSync(directory, { recursive: true, force: true });
 });
 
-function runEntry(entry: string, experimental: boolean) {
+function runEntry(entry: string, experimental: boolean, delayStdout = false) {
 	const directory = mkdtempSync(join(tmpdir(), "pi-cli-boundary-"));
 	tempDirs.push(directory);
+	const preloadPath = join(directory, "delayed-stdout.mjs");
+	if (delayStdout) {
+		writeFileSync(
+			preloadPath,
+			`const write = process.stdout.write.bind(process.stdout);
+process.stdout.write = (...args) => {
+  setTimeout(() => write(...args), 25);
+  return true;
+};
+`,
+		);
+	}
 	return spawnSync(
 		process.execPath,
 		[
+			...(delayStdout ? ["--import", pathToFileURL(preloadPath).href] : []),
 			"--import",
 			sourceResolverUrl,
 			resolve(__dirname, "../src", entry),
@@ -48,6 +61,12 @@ describe("stable and development CLI entrypoints", () => {
 	// #9132: enabling experiments must not pull remote-server dependencies into the published CLI.
 	it("does not dispatch experimental commands from the stable entrypoint", () => {
 		const result = runEntry("cli.ts", true);
+		expect(result.status, result.stderr).toBe(0);
+		expect(result.stdout.trim()).toBe(VERSION);
+	});
+
+	it("flushes version output before exiting when stdout writes are asynchronous", () => {
+		const result = runEntry("cli.ts", true, true);
 		expect(result.status, result.stderr).toBe(0);
 		expect(result.stdout.trim()).toBe(VERSION);
 	});

@@ -227,6 +227,7 @@ describe("AgentSession virtual models", () => {
 
 	it("compacts before a request routed to a model with a smaller window", async () => {
 		const { harness, dispatched } = await createRoutedHarness(defaultRoute, {
+			systemPrompt: "You are a coding assistant.",
 			settings: { compaction: { keepRecentTokens: 1, reserveTokens: 0 } },
 			extensionFactories: [
 				(pi) => {
@@ -262,6 +263,7 @@ describe("AgentSession virtual models", () => {
 				? { model: ctx.modelRegistry.find("faux", "small")!, thinkingLevel: "off" }
 				: defaultRoute(request, ctx);
 		const { harness, dispatched } = await createRoutedHarness(route, {
+			systemPrompt: "You are a coding assistant.",
 			settings: { compaction: { keepRecentTokens: 1, reserveTokens: 0 } },
 			extensionFactories: [
 				(pi) => {

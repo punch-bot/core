@@ -112,6 +112,8 @@
             {
               "title": "Route with Virtual Models",
               "path": "virtual-models.md"
+            },
+            {
               "title": "Integrate with the CLI",
               "path": "cli-integration.md"
             },

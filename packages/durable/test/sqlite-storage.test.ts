@@ -114,19 +114,24 @@ registerStorageConformance({ describe, expect, it }, "SqliteStorage", async (use
 	use((await createSqliteStorage()).storage),
 );
 
-registerStorageConformance({ describe, expect, it }, "SqliteStorage across reopen", async (use) => {
-	const directory = await mkdtemp(join(tmpdir(), "pi-durable-sqlite-conformance-"));
-	const path = join(directory, "storage.sqlite");
-	const created = await openNodeSqliteStorage(path);
-	await created.close(context);
-	const storage = new ReopeningStorage(await openNodeSqliteStorage(path), path);
-	try {
-		await use(storage);
-	} finally {
-		await storage.close(context);
-		await rm(directory, { recursive: true, force: true });
-	}
-});
+// Reopening after every commit includes filesystem syncs for each write.
+registerStorageConformance(
+	{ describe, expect, it: (name, test) => it(name, test, 30_000) },
+	"SqliteStorage across reopen",
+	async (use) => {
+		const directory = await mkdtemp(join(tmpdir(), "pi-durable-sqlite-conformance-"));
+		const path = join(directory, "storage.sqlite");
+		const created = await openNodeSqliteStorage(path);
+		await created.close(context);
+		const storage = new ReopeningStorage(await openNodeSqliteStorage(path), path);
+		try {
+			await use(storage);
+		} finally {
+			await storage.close(context);
+			await rm(directory, { recursive: true, force: true });
+		}
+	},
+);
 
 function entry(id: EntryId, conversationId: ConversationId, data?: JsonValue): EntryRecord {
 	return { id, conversationId, kind: "message", ...(data === undefined ? {} : { data }) };

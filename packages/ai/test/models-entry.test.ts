@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 const packageRoot = fileURLToPath(new URL("..", import.meta.url));
 const sourceEntry = new URL("../src/models.ts", import.meta.url).href;
+const sourceResolverUrl = new URL("../../coding-agent/src/experimental/source-resolver.ts", import.meta.url).href;
 
 // Install before linking the static imports, so unused barrel re-exports are checked too.
 const preload = `data:text/javascript,${encodeURIComponent(`
@@ -46,11 +47,15 @@ describe("lightweight models entry", () => {
 				assert.equal(response.stopReason, "stop");
 				assert.deepEqual(response.content, [{ type: "text", text: "OK" }]);
 			`;
-			const result = spawnSync(process.execPath, ["--import", preload, "--input-type=module", "--eval", script], {
-				cwd: packageRoot,
-				encoding: "utf8",
-				timeout: 10_000,
-			});
+			const result = spawnSync(
+				process.execPath,
+				["--import", sourceResolverUrl, "--import", preload, "--input-type=module", "--eval", script],
+				{
+					cwd: packageRoot,
+					encoding: "utf8",
+					timeout: 10_000,
+				},
+			);
 			expect(result.error).toBeUndefined();
 			expect(result.status, result.stderr).toBe(0);
 		},
