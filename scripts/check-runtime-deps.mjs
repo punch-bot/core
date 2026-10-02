@@ -8,8 +8,10 @@ import { getPublicWorkspacePackages } from "./release-packages.mjs";
 
 const failures = [];
 
-function checkSource(source, manifest, directory) {
-	const file = source.fileName;
+function checkSource(source, manifest, directory, checkedSources) {
+	const file = resolve(source.fileName);
+	if (checkedSources.has(file)) return;
+	checkedSources.add(file);
 	const declared = new Set([
 		manifest.name,
 		...Object.keys(manifest.dependencies ?? {}),
@@ -24,6 +26,13 @@ function checkSource(source, manifest, directory) {
 				const path = relative(resolve(directory, "src"), targetPath);
 				if (path.startsWith("..") || isAbsolute(path) || !existsSync(targetPath)) {
 					failures.push(`${file}: package import target ${target} must name an existing file inside src`);
+				} else {
+					checkSource(
+						ts.createSourceFile(targetPath, readFileSync(targetPath, "utf8"), ts.ScriptTarget.Latest, true),
+						manifest,
+						directory,
+						checkedSources,
+					);
 				}
 			} else {
 				checkRuntimeSpecifier(target, node, seen);
@@ -38,7 +47,7 @@ function checkSource(source, manifest, directory) {
 	}
 
 	function checkRuntimeSpecifier(specifier, node, seen = new Set()) {
-		if (specifier.startsWith(".") || specifier.startsWith("/") || isBuiltin(specifier)) return;
+		if (specifier.startsWith(".") || specifier.startsWith("/") || isBuiltin(specifier) || specifier === "bun:sqlite") return;
 		if (specifier.startsWith("#") && Object.hasOwn(manifest.imports ?? {}, specifier)) {
 			if (seen.has(specifier)) {
 				failures.push(`${file}: package import ${specifier} has a cyclic target`);
@@ -101,6 +110,7 @@ for (const { directory } of getPublicWorkspacePackages()) {
 		throw new Error(parsed.errors.map((error) => ts.flattenDiagnosticMessageText(error.messageText, "\n")).join("\n"));
 	}
 	const roots = new Set(parsed.fileNames.map((file) => resolve(file)));
+	const checkedSources = new Set();
 	const program = ts.createProgram(parsed.fileNames, parsed.options);
 	for (const source of program.getSourceFiles()) {
 		if (source.isDeclarationFile || source.fileName.endsWith(".json")) continue;
@@ -111,7 +121,7 @@ for (const { directory } of getPublicWorkspacePackages()) {
 		if (!roots.has(resolve(source.fileName))) {
 			failures.push(`${source.fileName} is excluded from ${manifest.name}'s build but imported by it`);
 		}
-		checkSource(source, manifest, directory);
+		checkSource(source, manifest, directory, checkedSources);
 	}
 }
 

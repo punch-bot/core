@@ -84,6 +84,21 @@ test("rejects package imports pointing outside src or to a missing file", async 
 	assert.match(result.stderr, /package import target \.\/src\/missing\.mjs must name an existing file inside src/);
 });
 
+test("inspects local package import wrappers excluded from TypeScript roots", async (t) => {
+	const result = await check(t, {
+		imports: { "#driver": { bun: "./src/bun-driver.mjs", default: "./src/node-driver.mjs" } },
+		dependencies: { declared: "1.0.0" },
+	}, 'import "#driver";', {
+		"packages/example/tsconfig.build.json": JSON.stringify({ include: ["src/**/*.ts"] }),
+		"packages/example/src/bun-driver.mjs": 'export { Database } from "bun:sqlite"; import "undeclared";',
+		"packages/example/src/node-driver.mjs": 'export { DatabaseSync } from "node:sqlite"; import "declared";',
+	});
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /src[\\/]bun-driver\.mjs:1: undeclared is not declared/);
+	assert.doesNotMatch(result.stderr, /bun:sqlite is not declared/);
+	assert.doesNotMatch(result.stderr, /: declared is not declared/);
+});
+
 test("rejects dev-only dependencies, side-effect imports, mixed exports, and literal runtime loads", async (t) => {
 	const result = await check(t, { devDependencies: { dev: "1.0.0" } }, `
 import "dev";

@@ -191,9 +191,22 @@ export function applyTodoAction(state: TodoState, action: TodoAction): TodoActio
 }
 
 export function installTodos(pi: ExtensionAPI, store: TodoStore): void {
+	let transientSessionId: string | undefined;
+	let transientState = emptyState();
+	const storageCwd = (ctx: ExtensionContext): string => ctx.sessionManager.getHeader()?.cwd || ctx.cwd;
+	const loadState = (ctx: ExtensionContext): TodoState => {
+		const sessionId = ctx.sessionManager.getSessionId();
+		if (ctx.sessionManager.getSessionFile()) return store.load(sessionId, storageCwd(ctx));
+		if (transientSessionId !== sessionId) {
+			transientSessionId = sessionId;
+			transientState = emptyState();
+		}
+		return transientState;
+	};
+
 	const syncWidget = (ctx: ExtensionContext): void => {
 		if (!ctx.hasUI) return;
-		const state = store.load(ctx.sessionManager.getSessionId(), ctx.cwd);
+		const state = loadState(ctx);
 		if (state.todos.length === 0) {
 			ctx.ui.setWidget("punch-todos", undefined);
 			return;
@@ -208,7 +221,7 @@ export function installTodos(pi: ExtensionAPI, store: TodoStore): void {
 	pi.on("session_start", (_event, ctx) => {
 		if (ctx.sessionManager.getSessionFile()) {
 			try {
-				store.migrateLegacy(ctx.sessionManager.getSessionId(), todosFile(ctx.cwd), ctx.cwd);
+				store.migrateLegacy(ctx.sessionManager.getSessionId(), todosFile(ctx.cwd), storageCwd(ctx));
 			} catch (error) {
 				console.warn(
 					`Could not import legacy Punch todos: ${error instanceof Error ? error.message : String(error)}`,
@@ -219,7 +232,7 @@ export function installTodos(pi: ExtensionAPI, store: TodoStore): void {
 	});
 
 	pi.on("context", (event, ctx) => {
-		const state = store.load(ctx.sessionManager.getSessionId(), ctx.cwd);
+		const state = loadState(ctx);
 		if (state.todos.length === 0) return;
 		const message: AgentMessage = {
 			role: "custom",
@@ -274,7 +287,10 @@ export function installTodos(pi: ExtensionAPI, store: TodoStore): void {
 					action = { action: "clear" };
 					break;
 			}
-			const result = store.apply(ctx.sessionManager.getSessionId(), action, ctx.cwd);
+			const result = ctx.sessionManager.getSessionFile()
+				? store.apply(ctx.sessionManager.getSessionId(), action, storageCwd(ctx))
+				: applyTodoAction(loadState(ctx), action);
+			if (!ctx.sessionManager.getSessionFile()) transientState = result.state;
 			if (result.changed) {
 				syncWidget(ctx);
 			}
