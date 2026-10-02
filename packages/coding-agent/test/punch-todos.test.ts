@@ -13,6 +13,7 @@ import type {
 	ExtensionHandler,
 	SessionStartEvent,
 } from "../src/core/extensions/index.ts";
+import { SessionManager } from "../src/core/session-manager.ts";
 import { issueToken } from "../src/extensions/punch/auth.ts";
 import { handlePunchRequest } from "../src/extensions/punch/server.ts";
 import { TodoStore } from "../src/extensions/punch/todo-store.ts";
@@ -74,7 +75,7 @@ function setup(store = new TodoStore(":memory:")) {
 		hasUI: true,
 		cwd: process.cwd(),
 		ui: { setWidget },
-		sessionManager: { getSessionId: () => sessionId, getSessionFile: () => sessionFile },
+		sessionManager: { getSessionId: () => sessionId, getSessionFile: () => sessionFile, getHeader: () => null },
 	} as unknown as ExtensionContext;
 
 	return {
@@ -636,6 +637,48 @@ describe("installTodos", () => {
 		await todoTool?.execute?.("call-1", { action: "add", text: "step one" }, undefined, undefined, ctx);
 		await todoTool?.execute?.("call-2", { action: "add", text: "step two" }, undefined, undefined, ctx);
 		expect(store.load("session-one").todos.map((todo) => todo.text)).toEqual(["step one", "step two"]);
+	});
+
+	it("keeps tasks and reset protection when resuming with a cwd override", async () => {
+		const originalCwd = join(dir, "original");
+		const movedCwd = join(dir, "moved");
+		const manager = SessionManager.create(originalCwd, join(dir, "sessions"), { id: "work" });
+		const { todoTool, ctx, store, contextHandler, sessionStartHandler, setWidget } = setup();
+		Object.assign(ctx, { cwd: originalCwd, sessionManager: manager });
+		await todoTool?.execute?.("call-1", { action: "add", text: "first task" }, undefined, undefined, ctx);
+		const sessionFile = manager.getSessionFile()!;
+		writeFileSync(sessionFile, `${JSON.stringify(manager.getHeader())}\n`);
+		const resumed = SessionManager.open(sessionFile, undefined, movedCwd);
+		Object.assign(ctx, { cwd: resumed.getCwd(), sessionManager: resumed });
+		sessionStartHandler?.({ type: "session_start", reason: "startup" }, ctx);
+		expect(setWidget).toHaveBeenLastCalledWith("punch-todos", ["[ ] #1 first task", "last: Added #1: first task"]);
+		const context = await contextHandler?.({ type: "context", messages: [] }, ctx);
+		expect((context?.messages?.[0] as { content?: string }).content).toContain("[ ] #1 first task");
+		await todoTool?.execute?.("call-2", { action: "add", text: "second task" }, undefined, undefined, ctx);
+		expect(store.load("work", originalCwd).todos.map((todo) => todo.text)).toEqual(["first task", "second task"]);
+		expect(store.load("work", movedCwd)).toEqual(emptyState());
+		store.delete("work", originalCwd);
+		await expect(
+			todoTool?.execute?.("call-3", { action: "add", text: "late write" }, undefined, undefined, ctx),
+		).rejects.toThrow("Session tasks were deleted");
+	});
+
+	it("keeps ephemeral tasks in memory and clears them for the next session", async () => {
+		const manager = SessionManager.inMemory(process.cwd(), { id: "ephemeral-one" });
+		const { todoTool, ctx, store, contextHandler, setWidget } = setup(new TodoStore(join(dir, "todos.sqlite")));
+		Object.assign(ctx, { sessionManager: manager });
+		await todoTool?.execute?.("call-1", { action: "add", text: "temporary task" }, undefined, undefined, ctx);
+		expect(store.load("ephemeral-one")).toEqual(emptyState());
+		expect(setWidget).toHaveBeenLastCalledWith("punch-todos", [
+			"[ ] #1 temporary task",
+			"last: Added #1: temporary task",
+		]);
+		const context = await contextHandler?.({ type: "context", messages: [] }, ctx);
+		expect((context?.messages?.[0] as { content?: string }).content).toContain("[ ] #1 temporary task");
+		manager.newSession({ id: "ephemeral-two" });
+		const result = await todoTool?.execute?.("call-2", { action: "list" }, undefined, undefined, ctx);
+		expect(result?.content[0]).toEqual({ type: "text", text: "Plan is empty." });
+		expect(await contextHandler?.({ type: "context", messages: [] }, ctx)).toBeUndefined();
 	});
 
 	it("updates the widget only when the plan changes", async () => {
