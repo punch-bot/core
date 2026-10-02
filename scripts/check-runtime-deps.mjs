@@ -8,8 +8,10 @@ import { getPublicWorkspacePackages } from "./release-packages.mjs";
 
 const failures = [];
 
-function checkSource(source, manifest) {
-	const file = source.fileName;
+function checkSource(source, manifest, directory, checkedSources) {
+	const file = resolve(source.fileName);
+	if (checkedSources.has(file)) return;
+	checkedSources.add(file);
 	const declared = new Set([
 		manifest.name,
 		...Object.keys(manifest.dependencies ?? {}),
@@ -17,14 +19,51 @@ function checkSource(source, manifest) {
 		...Object.keys(manifest.peerDependencies ?? {}),
 	]);
 
-	function checkSpecifier(node) {
-		if (!node || !ts.isStringLiteralLike(node)) return;
-		const specifier = node.text;
-		if (specifier.startsWith(".") || specifier.startsWith("/") || isBuiltin(specifier)) return;
+	function checkImportTarget(target, node, seen) {
+		if (typeof target === "string") {
+			if (target.startsWith("./")) {
+				const targetPath = resolve(directory, target);
+				const path = relative(resolve(directory, "src"), targetPath);
+				if (path.startsWith("..") || isAbsolute(path) || !existsSync(targetPath)) {
+					failures.push(`${file}: package import target ${target} must name an existing file inside src`);
+				} else {
+					checkSource(
+						ts.createSourceFile(targetPath, readFileSync(targetPath, "utf8"), ts.ScriptTarget.Latest, true),
+						manifest,
+						directory,
+						checkedSources,
+					);
+				}
+			} else {
+				checkRuntimeSpecifier(target, node, seen);
+			}
+		} else if (Array.isArray(target)) {
+			for (const entry of target) checkImportTarget(entry, node, seen);
+		} else if (target && typeof target === "object") {
+			for (const [condition, entry] of Object.entries(target)) {
+				if (condition !== "types") checkImportTarget(entry, node, seen);
+			}
+		}
+	}
+
+	function checkRuntimeSpecifier(specifier, node, seen = new Set()) {
+		if (specifier.startsWith(".") || specifier.startsWith("/") || isBuiltin(specifier) || specifier === "bun:sqlite") return;
+		if (specifier.startsWith("#") && Object.hasOwn(manifest.imports ?? {}, specifier)) {
+			if (seen.has(specifier)) {
+				failures.push(`${file}: package import ${specifier} has a cyclic target`);
+				return;
+			}
+			checkImportTarget(manifest.imports[specifier], node, new Set([...seen, specifier]));
+			return;
+		}
 		const name = specifier.split("/").slice(0, specifier.startsWith("@") ? 2 : 1).join("/");
 		if (declared.has(name)) return;
 		const { line } = source.getLineAndCharacterOfPosition(node.getStart(source));
 		failures.push(`${file}:${line + 1}: ${specifier} is not declared in ${manifest.name}'s runtime dependencies`);
+	}
+
+	function checkSpecifier(node) {
+		if (node && ts.isStringLiteralLike(node)) checkRuntimeSpecifier(node.text, node);
 	}
 
 	function visit(node) {
@@ -71,6 +110,7 @@ for (const { directory } of getPublicWorkspacePackages()) {
 		throw new Error(parsed.errors.map((error) => ts.flattenDiagnosticMessageText(error.messageText, "\n")).join("\n"));
 	}
 	const roots = new Set(parsed.fileNames.map((file) => resolve(file)));
+	const checkedSources = new Set();
 	const program = ts.createProgram(parsed.fileNames, parsed.options);
 	for (const source of program.getSourceFiles()) {
 		if (source.isDeclarationFile || source.fileName.endsWith(".json")) continue;
@@ -81,7 +121,7 @@ for (const { directory } of getPublicWorkspacePackages()) {
 		if (!roots.has(resolve(source.fileName))) {
 			failures.push(`${source.fileName} is excluded from ${manifest.name}'s build but imported by it`);
 		}
-		checkSource(source, manifest);
+		checkSource(source, manifest, directory, checkedSources);
 	}
 }
 

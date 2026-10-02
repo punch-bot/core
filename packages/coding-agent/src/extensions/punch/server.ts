@@ -1,8 +1,11 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { isAbsolute } from "node:path";
 
-import { authenticate, authenticateBasic, isAuthConfigured, issueToken } from "./auth.ts";
+import { assertValidSessionId } from "../../core/session-manager.ts";
+import { authenticate, authenticateBasic, isAuthConfigured, isSandboxOwner, issueToken } from "./auth.ts";
 import { create as createCollab, getFor, listFor, propose, review } from "./collabs.ts";
 import { addRoutine, listRoutines, parseRecurrence, pauseRoutine, removeRoutine, resumeRoutine } from "./routines.ts";
+import { getTodoStore, type TodoStore } from "./todo-store.ts";
 
 const PORT = Number(process.env.PI_BOT_PORT) || 4098;
 const HOST = process.env.PI_SERVER_HOST || "127.0.0.1";
@@ -31,7 +34,11 @@ function sendJson(res: ServerResponse, status: number, data: unknown): void {
 	res.end(JSON.stringify(data));
 }
 
-async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
+export async function handlePunchRequest(
+	req: IncomingMessage,
+	res: ServerResponse,
+	todoStore?: TodoStore,
+): Promise<void> {
 	const url = new URL(req.url ?? "/", "http://localhost");
 	const path = url.pathname;
 	const method = req.method ?? "GET";
@@ -60,6 +67,41 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 		} catch (err) {
 			sendJson(res, 401, { error: (err as Error).message });
 			return;
+		}
+
+		if (path.startsWith("/todos/")) {
+			if (!isSandboxOwner(actor)) {
+				sendJson(res, 403, { error: "Forbidden" });
+				return;
+			}
+			const encodedId = path.slice("/todos/".length);
+			if (!encodedId || encodedId.includes("/")) {
+				sendJson(res, 400, { error: "Invalid session ID" });
+				return;
+			}
+			let sessionId: string;
+			try {
+				sessionId = decodeURIComponent(encodedId);
+				assertValidSessionId(sessionId);
+			} catch {
+				sendJson(res, 400, { error: "Invalid session ID" });
+				return;
+			}
+			const requestedCwd = url.searchParams.get("cwd");
+			if (requestedCwd !== null && !isAbsolute(requestedCwd)) {
+				sendJson(res, 400, { error: "cwd must be an absolute path" });
+				return;
+			}
+			const cwd = requestedCwd ?? process.cwd();
+			if (method === "GET") {
+				sendJson(res, 200, { sessionId, ...(todoStore ?? getTodoStore()).load(sessionId, cwd) });
+				return;
+			}
+			if (method === "DELETE") {
+				(todoStore ?? getTodoStore()).delete(sessionId, cwd);
+				sendJson(res, 200, { ok: true });
+				return;
+			}
 		}
 
 		if (method === "GET" && path === "/collabs") {
@@ -151,7 +193,7 @@ export function startPunchServer(): void {
 	if (!isAuthConfigured()) return;
 	started = true;
 	const server = createServer((req, res) => {
-		void handle(req, res);
+		void handlePunchRequest(req, res);
 	});
 	server.on("error", (err) => {
 		console.error(`punch server on port ${PORT} failed: ${(err as Error).message}`);

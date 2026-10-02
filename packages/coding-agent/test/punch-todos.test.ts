@@ -1,6 +1,7 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -12,7 +13,11 @@ import type {
 	ExtensionHandler,
 	SessionStartEvent,
 } from "../src/core/extensions/index.ts";
-import { applyTodoAction, installTodos, loadTodos, saveTodos, type TodoState } from "../src/extensions/punch/todos.ts";
+import { SessionManager } from "../src/core/session-manager.ts";
+import { issueToken } from "../src/extensions/punch/auth.ts";
+import { handlePunchRequest } from "../src/extensions/punch/server.ts";
+import { TodoStore } from "../src/extensions/punch/todo-store.ts";
+import { applyTodoAction, installTodos, loadTodos, type TodoState } from "../src/extensions/punch/todos.ts";
 
 type ContextHandler = ExtensionHandler<ContextEvent, ContextEventResult>;
 type SessionStartHandler = ExtensionHandler<SessionStartEvent>;
@@ -40,10 +45,21 @@ function stateWith(items: Array<{ id: number; text: string; done?: boolean }>): 
 	return { todos, nextId: todos.length + 1, log: [] };
 }
 
-function setup() {
+const stores: TodoStore[] = [];
+
+function closeStores(): void {
+	for (const store of stores.splice(0)) store.close();
+}
+
+afterEach(closeStores);
+
+function setup(store = new TodoStore(":memory:")) {
+	stores.push(store);
 	const handlers = new Map<string, unknown>();
 	const tools: ToolDefinition[] = [];
 	const setWidget = vi.fn();
+	let sessionId = "session-one";
+	let sessionFile: string | undefined = "session.jsonl";
 	const api = {
 		on(event: string, handler: unknown) {
 			handlers.set(event, handler);
@@ -53,13 +69,29 @@ function setup() {
 		},
 	} as unknown as ExtensionAPI;
 
-	installTodos(api);
+	installTodos(api, store);
 
-	const ctx = { hasUI: true, ui: { setWidget } } as unknown as ExtensionContext;
+	const ctx = {
+		hasUI: true,
+		cwd: process.cwd(),
+		ui: { setWidget },
+		sessionManager: {
+			getSessionId: () => sessionId,
+			getSessionFile: () => sessionFile,
+			getHeader: () => ({ cwd: ctx.cwd }),
+		},
+	} as unknown as ExtensionContext;
 
 	return {
 		api,
 		ctx,
+		store,
+		setSessionId(id: string) {
+			sessionId = id;
+		},
+		setSessionFile(file: string | undefined) {
+			sessionFile = file;
+		},
 		setWidget,
 		tools,
 		contextHandler: handlers.get("context") as ContextHandler,
@@ -172,7 +204,7 @@ describe("applyTodoAction", () => {
 	});
 });
 
-describe("persistence", () => {
+describe("legacy JSON parsing", () => {
 	let dir: string;
 
 	beforeEach(() => {
@@ -181,13 +213,6 @@ describe("persistence", () => {
 
 	afterEach(() => {
 		rmSync(dir, { recursive: true, force: true });
-	});
-
-	it("round-trips state through a file", () => {
-		const file = join(dir, "todos.json");
-		const state = applyTodoAction(emptyState(), { action: "add", text: "persisted" }).state;
-		saveTodos(state, file);
-		expect(loadTodos(file)).toEqual(state);
 	});
 
 	it("returns an empty state for a missing file", () => {
@@ -272,6 +297,249 @@ describe("persistence", () => {
 	});
 });
 
+describe("TodoStore", () => {
+	let dir: string;
+
+	beforeEach(() => {
+		dir = mkdtempSync(join(tmpdir(), "punch-todo-store-"));
+	});
+
+	afterEach(() => {
+		closeStores();
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	it("persists ordered tasks across connections and isolates sessions", () => {
+		const path = join(dir, "todos.sqlite");
+		const first = new TodoStore(path);
+		stores.push(first);
+		first.apply("thread-one", { action: "add", text: "first" });
+		first.apply("thread-one", { action: "add", text: "second" });
+		first.apply("thread-two", { action: "add", text: "other" });
+		const reopened = new TodoStore(path);
+		stores.push(reopened);
+		expect(reopened.load("thread-one").todos.map((item) => item.text)).toEqual(["first", "second"]);
+		expect(reopened.load("thread-two").todos.map((item) => item.text)).toEqual(["other"]);
+		expect(reopened.load("thread-two").todos[0]?.id).toBe(1);
+	});
+
+	it("isolates the same custom session ID in different working directories", () => {
+		const store = new TodoStore(join(dir, "todos.sqlite"));
+		stores.push(store);
+		const firstCwd = join(dir, "first");
+		const secondCwd = join(dir, "second");
+		store.apply("work", { action: "add", text: "first project" }, firstCwd);
+		store.apply("work", { action: "add", text: "second project" }, secondCwd);
+		store.delete("work", firstCwd);
+		expect(store.load("work", firstCwd)).toEqual(emptyState());
+		expect(store.load("work", secondCwd).todos[0]?.text).toBe("second project");
+	});
+
+	it("shares committed actions across independent connections", () => {
+		const path = join(dir, "todos.sqlite");
+		const first = new TodoStore(path);
+		const second = new TodoStore(path);
+		stores.push(first, second);
+		first.apply("thread", { action: "add", text: "first" });
+		second.apply("thread", { action: "add", text: "second" });
+		first.apply("thread", { action: "split", id: 1, parts: ["a", "b"] });
+		expect(second.load("thread").todos.map((item) => [item.id, item.text])).toEqual([
+			[3, "a"],
+			[4, "b"],
+			[2, "second"],
+		]);
+	});
+
+	it("deletes only the selected session and does not reimport its old tasks", () => {
+		const path = join(dir, "todos.sqlite");
+		const legacy = join(dir, "todos.json");
+		writeFileSync(
+			legacy,
+			JSON.stringify({ todos: [{ id: 7, text: "old", done: false, createdAt: 1 }], nextId: 8, log: [] }),
+		);
+		const store = new TodoStore(path);
+		stores.push(store);
+		store.migrateLegacy("thread-one", legacy);
+		store.apply("thread-two", { action: "add", text: "other" });
+		expect(store.load("thread-one").todos[0]?.text).toBe("old");
+		store.delete("thread-one");
+		store.migrateLegacy("thread-one", legacy);
+		expect(store.load("thread-one")).toEqual(emptyState());
+		expect(() => store.apply("thread-one", { action: "add", text: "late write" })).toThrow(
+			"Session tasks were deleted",
+		);
+		expect(store.load("thread-two").todos[0]?.text).toBe("other");
+	});
+
+	it("reset prevents an unmigrated legacy list from appearing in the next session", () => {
+		const legacy = join(dir, "todos.json");
+		writeFileSync(legacy, "{broken");
+		const store = new TodoStore(join(dir, "todos.sqlite"));
+		stores.push(store);
+		expect(() => store.migrateLegacy("old-session", legacy)).toThrow();
+		store.delete("old-session");
+		writeFileSync(
+			legacy,
+			JSON.stringify({ todos: [{ id: 1, text: "old", done: false, createdAt: 1 }], nextId: 2, log: [] }),
+		);
+		store.migrateLegacy("new-session", legacy);
+		expect(store.load("new-session")).toEqual(emptyState());
+	});
+
+	it("migrates legacy lists from different working directories independently", () => {
+		const path = join(dir, "todos.sqlite");
+		const firstLegacy = join(dir, "first", "todos.json");
+		const secondLegacy = join(dir, "second", "todos.json");
+		mkdirSync(dirname(firstLegacy), { recursive: true });
+		mkdirSync(dirname(secondLegacy), { recursive: true });
+		writeFileSync(
+			firstLegacy,
+			JSON.stringify({ todos: [{ id: 1, text: "first", done: false, createdAt: 1 }], nextId: 2, log: [] }),
+		);
+		writeFileSync(
+			secondLegacy,
+			JSON.stringify({ todos: [{ id: 1, text: "second", done: false, createdAt: 1 }], nextId: 2, log: [] }),
+		);
+		const first = new TodoStore(path);
+		const second = new TodoStore(path);
+		stores.push(first, second);
+		first.migrateLegacy("first-session", firstLegacy);
+		second.migrateLegacy("second-session", secondLegacy);
+		expect(first.load("first-session").todos[0]?.text).toBe("first");
+		expect(second.load("second-session").todos[0]?.text).toBe("second");
+	});
+
+	it("keeps a malformed legacy file available for a later migration attempt", () => {
+		const legacy = join(dir, "todos.json");
+		writeFileSync(legacy, "{broken");
+		const store = new TodoStore(join(dir, "todos.sqlite"));
+		stores.push(store);
+		expect(() => store.migrateLegacy("session", legacy)).toThrow();
+		writeFileSync(
+			legacy,
+			JSON.stringify({ todos: [{ id: 1, text: "recovered", done: false, createdAt: 1 }], nextId: 2, log: [] }),
+		);
+		store.migrateLegacy("session", legacy);
+		expect(store.load("session").todos[0]?.text).toBe("recovered");
+	});
+
+	it("preserves an unmigrated file when the first session already has tasks", () => {
+		const legacy = join(dir, "todos.json");
+		writeFileSync(legacy, "{broken");
+		const store = new TodoStore(join(dir, "todos.sqlite"));
+		stores.push(store);
+		expect(() => store.migrateLegacy("first-session", legacy)).toThrow();
+		store.apply("first-session", { action: "add", text: "new task" });
+		writeFileSync(
+			legacy,
+			JSON.stringify({ todos: [{ id: 1, text: "old task", done: false, createdAt: 1 }], nextId: 2, log: [] }),
+		);
+		store.migrateLegacy("first-session", legacy);
+		store.migrateLegacy("second-session", legacy);
+		expect(store.load("first-session").todos[0]?.text).toBe("new task");
+		expect(store.load("second-session").todos[0]?.text).toBe("old task");
+	});
+
+	it("does not consume a skipped legacy import when deleting a populated session", () => {
+		const legacy = join(dir, "todos.json");
+		writeFileSync(
+			legacy,
+			JSON.stringify({ todos: [{ id: 1, text: "old task", done: false, createdAt: 1 }], nextId: 2, log: [] }),
+		);
+		const store = new TodoStore(join(dir, "todos.sqlite"));
+		stores.push(store);
+		store.apply("first-session", { action: "add", text: "new task" });
+		store.migrateLegacy("first-session", legacy);
+		store.delete("first-session");
+		store.migrateLegacy("second-session", legacy);
+		expect(store.load("second-session").todos[0]?.text).toBe("old task");
+	});
+
+	it("does not consume a legacy file that appears after a session was deleted", () => {
+		const legacy = join(dir, "todos.json");
+		const store = new TodoStore(join(dir, "todos.sqlite"));
+		stores.push(store);
+		store.migrateLegacy("first-session", legacy);
+		store.delete("first-session");
+		writeFileSync(
+			legacy,
+			JSON.stringify({ todos: [{ id: 1, text: "later", done: false, createdAt: 1 }], nextId: 2, log: [] }),
+		);
+		store.migrateLegacy("second-session", legacy);
+		expect(store.load("second-session").todos[0]?.text).toBe("later");
+	});
+
+	it("keeps a migration consumed when its database and JSON file move together", () => {
+		const original = join(dir, "original");
+		const moved = join(dir, "moved");
+		mkdirSync(original);
+		writeFileSync(
+			join(original, "todos.json"),
+			JSON.stringify({ todos: [{ id: 1, text: "old", done: false, createdAt: 1 }], nextId: 2, log: [] }),
+		);
+		const first = new TodoStore(join(original, "todos.sqlite"));
+		first.migrateLegacy("first-session", join(original, "todos.json"));
+		first.close();
+		renameSync(original, moved);
+		const reopened = new TodoStore(join(moved, "todos.sqlite"));
+		stores.push(reopened);
+		reopened.migrateLegacy("second-session", join(moved, "todos.json"));
+		expect(reopened.load("second-session")).toEqual(emptyState());
+	});
+});
+
+describe("todo API", () => {
+	it("requires authentication and deletes only the requested session", async () => {
+		const previousPassword = process.env.PI_SERVER_PASSWORD;
+		try {
+			process.env.PI_SERVER_PASSWORD = "test-password";
+			const store = new TodoStore(":memory:");
+			stores.push(store);
+			store.apply("first", { action: "add", text: "first task" });
+			store.apply("second", { action: "add", text: "second task" });
+			const otherCwd = join(tmpdir(), "other-project");
+			store.apply("first", { action: "add", text: "other project" }, otherCwd);
+			const server = createServer((req, res) => {
+				void handlePunchRequest(req, res, store);
+			});
+			try {
+				await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+				const address = server.address();
+				if (!address || typeof address === "string") throw new Error("Expected TCP address");
+				const base = `http://127.0.0.1:${address.port}`;
+				expect((await fetch(`${base}/todos/first`)).status).toBe(401);
+				const headers = { authorization: `Basic ${Buffer.from("opencode:test-password").toString("base64")}` };
+				const before = await fetch(`${base}/todos/first`, { headers });
+				expect(before.status).toBe(200);
+				const body = (await before.json()) as { todos: Array<{ text: string }> };
+				expect(body.todos[0]?.text).toBe("first task");
+				const otherHeaders = { authorization: `Bearer ${issueToken("other-user").token}` };
+				expect((await fetch(`${base}/todos/first`, { headers: otherHeaders })).status).toBe(403);
+				expect((await fetch(`${base}/todos/first`, { method: "DELETE", headers: otherHeaders })).status).toBe(403);
+				expect(store.load("first").todos[0]?.text).toBe("first task");
+				expect((await fetch(`${base}/todos/first`, { method: "DELETE", headers })).status).toBe(200);
+				expect(store.load("first")).toEqual(emptyState());
+				expect(store.load("second").todos[0]?.text).toBe("second task");
+				const scopedUrl = `${base}/todos/first?cwd=${encodeURIComponent(otherCwd)}`;
+				const scoped = await fetch(scopedUrl, { headers });
+				expect(((await scoped.json()) as TodoState).todos[0]?.text).toBe("other project");
+				expect((await fetch(scopedUrl, { method: "DELETE", headers })).status).toBe(200);
+				expect(store.load("first", otherCwd)).toEqual(emptyState());
+				expect((await fetch(`${base}/todos/first?cwd=relative`, { headers })).status).toBe(400);
+				for (const invalidId of ["%2F", "%20", "%00", "%ZZ"]) {
+					expect((await fetch(`${base}/todos/${invalidId}`, { headers })).status).toBe(400);
+					expect((await fetch(`${base}/todos/${invalidId}`, { method: "DELETE", headers })).status).toBe(400);
+				}
+			} finally {
+				await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+			}
+		} finally {
+			if (previousPassword === undefined) delete process.env.PI_SERVER_PASSWORD;
+			else process.env.PI_SERVER_PASSWORD = previousPassword;
+		}
+	});
+});
+
 describe("installTodos", () => {
 	let dir: string;
 
@@ -281,8 +549,64 @@ describe("installTodos", () => {
 	});
 
 	afterEach(() => {
+		closeStores();
 		delete process.env.PI_DATA_DIR;
 		rmSync(dir, { recursive: true, force: true });
+	});
+
+	it("keeps session startup usable when a legacy file is malformed", () => {
+		const legacy = join(dir, "todos.json");
+		writeFileSync(legacy, "{broken");
+		const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+		try {
+			const { sessionStartHandler, ctx, store } = setup(new TodoStore(":memory:"));
+			expect(() => sessionStartHandler?.({ type: "session_start", reason: "startup" }, ctx)).not.toThrow();
+			expect(warning).toHaveBeenCalledWith(expect.stringContaining("Could not import legacy Punch todos"));
+			writeFileSync(
+				legacy,
+				JSON.stringify({ todos: [{ id: 1, text: "repaired", done: false, createdAt: 1 }], nextId: 2, log: [] }),
+			);
+			sessionStartHandler?.({ type: "session_start", reason: "startup" }, ctx);
+			expect(store.load("session-one").todos[0]?.text).toBe("repaired");
+		} finally {
+			warning.mockRestore();
+		}
+	});
+
+	it("imports the legacy file from the active working directory", () => {
+		const previousDataDir = process.env.PI_DATA_DIR;
+		try {
+			delete process.env.PI_DATA_DIR;
+			const cwd = join(dir, "project");
+			mkdirSync(join(cwd, ".pi"), { recursive: true });
+			writeFileSync(
+				join(cwd, ".pi", "todos.json"),
+				JSON.stringify({ todos: [{ id: 1, text: "project task", done: false, createdAt: 1 }], nextId: 2, log: [] }),
+			);
+			const { sessionStartHandler, ctx, store } = setup(new TodoStore(":memory:"));
+			Object.assign(ctx, { cwd });
+			sessionStartHandler?.({ type: "session_start", reason: "startup" }, ctx);
+			expect(store.load("session-one", cwd).todos[0]?.text).toBe("project task");
+		} finally {
+			if (previousDataDir === undefined) delete process.env.PI_DATA_DIR;
+			else process.env.PI_DATA_DIR = previousDataDir;
+		}
+	});
+
+	it("leaves legacy tasks for a persistent session after an ephemeral session", () => {
+		const legacy = join(dir, "todos.json");
+		writeFileSync(
+			legacy,
+			JSON.stringify({ todos: [{ id: 1, text: "old task", done: false, createdAt: 1 }], nextId: 2, log: [] }),
+		);
+		const { sessionStartHandler, ctx, store, setSessionFile, setSessionId } = setup(new TodoStore(":memory:"));
+		setSessionFile(undefined);
+		sessionStartHandler?.({ type: "session_start", reason: "startup" }, ctx);
+		expect(store.load("session-one")).toEqual(emptyState());
+		setSessionId("persistent-session");
+		setSessionFile("session.jsonl");
+		sessionStartHandler?.({ type: "session_start", reason: "startup" }, ctx);
+		expect(store.load("persistent-session").todos[0]?.text).toBe("old task");
 	});
 
 	it("registers a todo tool with guidelines", () => {
@@ -313,10 +637,74 @@ describe("installTodos", () => {
 	});
 
 	it("persists mutations through the tool", async () => {
-		const { todoTool, ctx } = setup();
+		const { todoTool, ctx, store } = setup(new TodoStore(join(dir, "todos.sqlite")));
 		await todoTool?.execute?.("call-1", { action: "add", text: "step one" }, undefined, undefined, ctx);
 		await todoTool?.execute?.("call-2", { action: "add", text: "step two" }, undefined, undefined, ctx);
-		expect(loadTodos(join(dir, "todos.json")).todos.map((todo) => todo.text)).toEqual(["step one", "step two"]);
+		expect(store.load("session-one").todos.map((todo) => todo.text)).toEqual(["step one", "step two"]);
+	});
+
+	it("keeps tasks and reset protection when resuming with a cwd override", async () => {
+		const originalCwd = join(dir, "original");
+		const movedCwd = join(dir, "moved");
+		const manager = SessionManager.create(originalCwd, join(dir, "sessions"), { id: "work" });
+		const { todoTool, ctx, store, contextHandler, sessionStartHandler, setWidget } = setup();
+		Object.assign(ctx, { cwd: originalCwd, sessionManager: manager });
+		await todoTool?.execute?.("call-1", { action: "add", text: "first task" }, undefined, undefined, ctx);
+		const sessionFile = manager.getSessionFile()!;
+		writeFileSync(sessionFile, `${JSON.stringify(manager.getHeader())}\n`);
+		const resumed = SessionManager.open(sessionFile, undefined, movedCwd);
+		Object.assign(ctx, { cwd: resumed.getCwd(), sessionManager: resumed });
+		sessionStartHandler?.({ type: "session_start", reason: "startup" }, ctx);
+		expect(setWidget).toHaveBeenLastCalledWith("punch-todos", ["[ ] #1 first task", "last: Added #1: first task"]);
+		const context = await contextHandler?.({ type: "context", messages: [] }, ctx);
+		expect((context?.messages?.[0] as { content?: string }).content).toContain("[ ] #1 first task");
+		await todoTool?.execute?.("call-2", { action: "add", text: "second task" }, undefined, undefined, ctx);
+		expect(store.load("work", originalCwd).todos.map((todo) => todo.text)).toEqual(["first task", "second task"]);
+		expect(store.load("work", movedCwd)).toEqual(emptyState());
+		store.delete("work", originalCwd);
+		await expect(
+			todoTool?.execute?.("call-3", { action: "add", text: "late write" }, undefined, undefined, ctx),
+		).rejects.toThrow("Session tasks were deleted");
+	});
+
+	it("keeps legacy session tasks and reset protection without a header cwd", async () => {
+		const sessionFile = join(dir, "legacy.jsonl");
+		writeFileSync(
+			sessionFile,
+			`${JSON.stringify({ type: "session", version: 1, id: "legacy", timestamp: new Date().toISOString() })}\n`,
+		);
+		const manager = SessionManager.open(sessionFile, undefined, join(dir, "first-project"));
+		const { todoTool, ctx, store, contextHandler, sessionStartHandler } = setup();
+		Object.assign(ctx, { cwd: manager.getCwd(), sessionManager: manager });
+		await todoTool?.execute?.("call-1", { action: "add", text: "legacy task" }, undefined, undefined, ctx);
+		const resumed = SessionManager.open(sessionFile, undefined, join(dir, "second-project"));
+		Object.assign(ctx, { cwd: resumed.getCwd(), sessionManager: resumed });
+		sessionStartHandler?.({ type: "session_start", reason: "startup" }, ctx);
+		const context = await contextHandler?.({ type: "context", messages: [] }, ctx);
+		expect((context?.messages?.[0] as { content?: string }).content).toContain("[ ] #1 legacy task");
+		expect(store.load("legacy", dirname(sessionFile)).todos[0]?.text).toBe("legacy task");
+		store.delete("legacy", dirname(sessionFile));
+		await expect(
+			todoTool?.execute?.("call-2", { action: "add", text: "late write" }, undefined, undefined, ctx),
+		).rejects.toThrow("Session tasks were deleted");
+	});
+
+	it("keeps ephemeral tasks in memory and clears them for the next session", async () => {
+		const manager = SessionManager.inMemory(process.cwd(), { id: "ephemeral-one" });
+		const { todoTool, ctx, store, contextHandler, setWidget } = setup(new TodoStore(join(dir, "todos.sqlite")));
+		Object.assign(ctx, { sessionManager: manager });
+		await todoTool?.execute?.("call-1", { action: "add", text: "temporary task" }, undefined, undefined, ctx);
+		expect(store.load("ephemeral-one")).toEqual(emptyState());
+		expect(setWidget).toHaveBeenLastCalledWith("punch-todos", [
+			"[ ] #1 temporary task",
+			"last: Added #1: temporary task",
+		]);
+		const context = await contextHandler?.({ type: "context", messages: [] }, ctx);
+		expect((context?.messages?.[0] as { content?: string }).content).toContain("[ ] #1 temporary task");
+		manager.newSession({ id: "ephemeral-two" });
+		const result = await todoTool?.execute?.("call-2", { action: "list" }, undefined, undefined, ctx);
+		expect(result?.content[0]).toEqual({ type: "text", text: "Plan is empty." });
+		expect(await contextHandler?.({ type: "context", messages: [] }, ctx)).toBeUndefined();
 	});
 
 	it("updates the widget only when the plan changes", async () => {
@@ -329,16 +717,13 @@ describe("installTodos", () => {
 		expect(setWidget.mock.calls.length).toBe(callCount);
 	});
 
-	it("reloads state on session start", async () => {
-		const { sessionStartHandler, todoTool, ctx, setWidget } = setup();
+	it("loads the active session on session start", async () => {
+		const { sessionStartHandler, todoTool, ctx, setWidget, setSessionId, store } = setup();
 		await todoTool?.execute?.("call-1", { action: "add", text: "step one" }, undefined, undefined, ctx);
-		const file = join(dir, "todos.json");
-		saveTodos(applyTodoAction(loadTodos(file), { action: "add", text: "step two" }).state, file);
+		store.apply("session-two", { action: "add", text: "step two" });
+		setSessionId("session-two");
 		setWidget.mockClear();
 		sessionStartHandler?.({ type: "session_start", reason: "startup" }, ctx);
-		expect(setWidget).toHaveBeenCalledWith(
-			"punch-todos",
-			expect.arrayContaining(["[ ] #1 step one", "[ ] #2 step two"]),
-		);
+		expect(setWidget).toHaveBeenCalledWith("punch-todos", ["[ ] #1 step two", "last: Added #1: step two"]);
 	});
 });

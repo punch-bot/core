@@ -89,6 +89,11 @@ function getAuthHeader(): string | null {
 	return `Basic ${Buffer.from(`${user.name}:${user.password}`).toString("base64")}`;
 }
 
+function isSandboxOwner(actor: string): boolean {
+	const owner = loadUsers()[0];
+	return owner !== undefined && owner.name.toLowerCase() === actor.toLowerCase();
+}
+
 function verifyBasic(header: string | undefined): string | null {
 	const match = /^Basic\s+(.+)$/i.exec(header ?? "");
 	if (!match) return null;
@@ -149,4 +154,4 @@ function authenticate(req: IncomingMessage): string {
 	return userId;
 }
 
-export { authenticate, authenticateBasic, getAuthHeader, isAuthConfigured, issueToken, verifyToken };
+export { authenticate, authenticateBasic, getAuthHeader, isAuthConfigured, isSandboxOwner, issueToken, verifyToken };

@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import type { AgentMessage } from "@punch-bot/agent";
@@ -6,6 +6,7 @@ import { StringEnum } from "@punch-bot/ai";
 import { Type } from "typebox";
 
 import type { ExtensionAPI, ExtensionContext } from "../../core/extensions/types.ts";
+import type { TodoStore } from "./todo-store.ts";
 
 const MAX_LOG = 10;
 
@@ -45,8 +46,8 @@ function emptyState(): TodoState {
 	return { todos: [], nextId: 1, log: [] };
 }
 
-export function todosFile(): string {
-	return join(process.env.PI_DATA_DIR || join(process.cwd(), ".pi"), "todos.json");
+export function todosFile(cwd = process.cwd()): string {
+	return join(process.env.PI_DATA_DIR || join(cwd, ".pi"), "todos.json");
 }
 
 export function loadTodos(file = todosFile()): TodoState {
@@ -96,13 +97,6 @@ export function loadTodos(file = todosFile()): TodoState {
 	} catch {
 		return emptyState();
 	}
-}
-
-export function saveTodos(state: TodoState, file = todosFile()): void {
-	mkdirSync(dirname(file), { recursive: true });
-	const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
-	writeFileSync(tmp, JSON.stringify(state, null, 2), { mode: 0o600 });
-	renameSync(tmp, file);
 }
 
 function appendLog(state: TodoState, summary: string): TodoState {
@@ -196,11 +190,26 @@ export function applyTodoAction(state: TodoState, action: TodoAction): TodoActio
 	}
 }
 
-export function installTodos(pi: ExtensionAPI): void {
-	let state = loadTodos();
+export function installTodos(pi: ExtensionAPI, store: TodoStore): void {
+	let transientSessionId: string | undefined;
+	let transientState = emptyState();
+	const storageCwd = (ctx: ExtensionContext): string => {
+		const sessionFile = ctx.sessionManager.getSessionFile();
+		return ctx.sessionManager.getHeader()?.cwd || (sessionFile ? dirname(sessionFile) : ctx.cwd);
+	};
+	const loadState = (ctx: ExtensionContext): TodoState => {
+		const sessionId = ctx.sessionManager.getSessionId();
+		if (ctx.sessionManager.getSessionFile()) return store.load(sessionId, storageCwd(ctx));
+		if (transientSessionId !== sessionId) {
+			transientSessionId = sessionId;
+			transientState = emptyState();
+		}
+		return transientState;
+	};
 
 	const syncWidget = (ctx: ExtensionContext): void => {
 		if (!ctx.hasUI) return;
+		const state = loadState(ctx);
 		if (state.todos.length === 0) {
 			ctx.ui.setWidget("punch-todos", undefined);
 			return;
@@ -213,11 +222,20 @@ export function installTodos(pi: ExtensionAPI): void {
 	};
 
 	pi.on("session_start", (_event, ctx) => {
-		state = loadTodos();
+		if (ctx.sessionManager.getSessionFile()) {
+			try {
+				store.migrateLegacy(ctx.sessionManager.getSessionId(), todosFile(ctx.cwd), storageCwd(ctx));
+			} catch (error) {
+				console.warn(
+					`Could not import legacy Punch todos: ${error instanceof Error ? error.message : String(error)}`,
+				);
+			}
+		}
 		syncWidget(ctx);
 	});
 
-	pi.on("context", (event) => {
+	pi.on("context", (event, ctx) => {
+		const state = loadState(ctx);
 		if (state.todos.length === 0) return;
 		const message: AgentMessage = {
 			role: "custom",
@@ -272,10 +290,11 @@ export function installTodos(pi: ExtensionAPI): void {
 					action = { action: "clear" };
 					break;
 			}
-			const result = applyTodoAction(state, action);
-			state = result.state;
+			const result = ctx.sessionManager.getSessionFile()
+				? store.apply(ctx.sessionManager.getSessionId(), action, storageCwd(ctx))
+				: applyTodoAction(loadState(ctx), action);
+			if (!ctx.sessionManager.getSessionFile()) transientState = result.state;
 			if (result.changed) {
-				saveTodos(state);
 				syncWidget(ctx);
 			}
 			const changes = formatRecentChanges(result.state);
