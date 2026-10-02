@@ -10,6 +10,11 @@ export function todoDatabasePath(): string {
 	return join(process.env.PI_DATA_DIR || getAgentDir(), "todos.sqlite");
 }
 
+function sessionKey(sessionId: string, cwd: string): string {
+	if (!sessionId) throw new Error("Session ID is required");
+	return JSON.stringify([resolve(cwd), sessionId]);
+}
+
 /** One database per PI_DATA_DIR or user agent directory. Mutations use SQLite write transactions. */
 export class TodoStore {
 	readonly #db: DatabaseSync;
@@ -55,10 +60,10 @@ export class TodoStore {
 		`);
 	}
 
-	load(sessionId: string): TodoState {
+	load(sessionId: string, cwd = process.cwd()): TodoState {
 		this.#db.exec("BEGIN");
 		try {
-			const state = this.#read(sessionId);
+			const state = this.#read(sessionKey(sessionId, cwd));
 			this.#db.exec("COMMIT");
 			return state;
 		} catch (error) {
@@ -94,15 +99,16 @@ export class TodoStore {
 		};
 	}
 
-	apply(sessionId: string, action: TodoAction): TodoActionResult {
-		if (action.action === "list") return applyTodoAction(this.load(sessionId), action);
+	apply(sessionId: string, action: TodoAction, cwd = process.cwd()): TodoActionResult {
+		if (action.action === "list") return applyTodoAction(this.load(sessionId, cwd), action);
+		const key = sessionKey(sessionId, cwd);
 		this.#db.exec("BEGIN IMMEDIATE");
 		try {
-			if (this.#db.prepare("SELECT 1 FROM todo_deleted WHERE session_id = ?").get(sessionId)) {
+			if (this.#db.prepare("SELECT 1 FROM todo_deleted WHERE session_id = ?").get(key)) {
 				throw new Error("Session tasks were deleted");
 			}
-			const result = applyTodoAction(this.#read(sessionId), action);
-			if (result.changed) this.#write(sessionId, result.state);
+			const result = applyTodoAction(this.#read(key), action);
+			if (result.changed) this.#write(key, result.state);
 			this.#db.exec("COMMIT");
 			return result;
 		} catch (error) {
@@ -112,22 +118,22 @@ export class TodoStore {
 	}
 
 	/** Import each former working-directory list once, into the first empty session that opens it. */
-	migrateLegacy(sessionId: string, legacyFile: string): void {
+	migrateLegacy(sessionId: string, legacyFile: string, cwd = process.cwd()): void {
 		if (!sessionId) throw new Error("Session ID is required");
+		const key = sessionKey(sessionId, cwd);
 		const marker = `legacy_migrated:${relative(this.#databaseDir, resolve(legacyFile))}`;
-		this.#db
-			.prepare("INSERT OR IGNORE INTO todo_session_sources (session_id, marker) VALUES (?, ?)")
-			.run(sessionId, marker);
 		if (!existsSync(legacyFile)) return;
+		let attempted = false;
 		this.#db.exec("BEGIN IMMEDIATE");
 		try {
 			const migrated = this.#db.prepare("SELECT value FROM todo_meta WHERE key = ?").get(marker);
 			if (!migrated) {
-				if (this.#db.prepare("SELECT 1 FROM todo_states WHERE session_id = ?").get(sessionId)) {
+				if (this.#db.prepare("SELECT 1 FROM todo_states WHERE session_id = ?").get(key)) {
 					this.#db.exec("COMMIT");
 					return;
 				}
-				if (!this.#db.prepare("SELECT 1 FROM todo_deleted WHERE session_id = ?").get(sessionId)) {
+				if (!this.#db.prepare("SELECT 1 FROM todo_deleted WHERE session_id = ?").get(key)) {
+					attempted = true;
 					const parsed = JSON.parse(readFileSync(legacyFile, "utf8")) as unknown;
 					if (
 						typeof parsed !== "object" ||
@@ -138,31 +144,37 @@ export class TodoStore {
 						throw new Error("Invalid legacy todo file");
 					}
 					const state = loadTodos(legacyFile);
-					if (state.todos.length > 0 || state.log.length > 0) this.#write(sessionId, state);
+					if (state.todos.length > 0 || state.log.length > 0) this.#write(key, state);
 				}
-				this.#db.prepare("INSERT INTO todo_meta (key, value) VALUES (?, ?)").run(marker, sessionId);
+				this.#db.prepare("INSERT INTO todo_meta (key, value) VALUES (?, ?)").run(marker, key);
 			}
+			this.#db.prepare("DELETE FROM todo_session_sources WHERE marker = ?").run(marker);
 			this.#db.exec("COMMIT");
 		} catch (error) {
 			this.#db.exec("ROLLBACK");
+			if (attempted) {
+				this.#db
+					.prepare("INSERT OR IGNORE INTO todo_session_sources (session_id, marker) VALUES (?, ?)")
+					.run(key, marker);
+			}
 			throw error;
 		}
 	}
 
-	delete(sessionId: string): void {
+	delete(sessionId: string, cwd = process.cwd()): void {
 		if (!sessionId) throw new Error("Session ID is required");
+		const key = sessionKey(sessionId, cwd);
 		this.#db.exec("BEGIN IMMEDIATE");
 		try {
-			this.#db.prepare("INSERT OR IGNORE INTO todo_deleted (session_id) VALUES (?)").run(sessionId);
-			this.#db.prepare("DELETE FROM todo_states WHERE session_id = ?").run(sessionId);
+			this.#db.prepare("INSERT OR IGNORE INTO todo_deleted (session_id) VALUES (?)").run(key);
+			this.#db.prepare("DELETE FROM todo_states WHERE session_id = ?").run(key);
 			const sources = this.#db
 				.prepare("SELECT marker FROM todo_session_sources WHERE session_id = ?")
-				.all(sessionId) as Array<{ marker: string }>;
+				.all(key) as Array<{ marker: string }>;
 			for (const source of sources) {
-				this.#db
-					.prepare("INSERT OR IGNORE INTO todo_meta (key, value) VALUES (?, ?)")
-					.run(source.marker, sessionId);
+				this.#db.prepare("INSERT OR IGNORE INTO todo_meta (key, value) VALUES (?, ?)").run(source.marker, key);
 			}
+			this.#db.prepare("DELETE FROM todo_session_sources WHERE session_id = ?").run(key);
 			this.#db.exec("COMMIT");
 		} catch (error) {
 			this.#db.exec("ROLLBACK");

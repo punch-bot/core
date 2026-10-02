@@ -1,5 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { isAbsolute } from "node:path";
 
+import { assertValidSessionId } from "../../core/session-manager.ts";
 import { authenticate, authenticateBasic, isAuthConfigured, isSandboxOwner, issueToken } from "./auth.ts";
 import { create as createCollab, getFor, listFor, propose, review } from "./collabs.ts";
 import { addRoutine, listRoutines, parseRecurrence, pauseRoutine, removeRoutine, resumeRoutine } from "./routines.ts";
@@ -80,16 +82,23 @@ export async function handlePunchRequest(
 			let sessionId: string;
 			try {
 				sessionId = decodeURIComponent(encodedId);
+				assertValidSessionId(sessionId);
 			} catch {
 				sendJson(res, 400, { error: "Invalid session ID" });
 				return;
 			}
+			const requestedCwd = url.searchParams.get("cwd");
+			if (requestedCwd !== null && !isAbsolute(requestedCwd)) {
+				sendJson(res, 400, { error: "cwd must be an absolute path" });
+				return;
+			}
+			const cwd = requestedCwd ?? process.cwd();
 			if (method === "GET") {
-				sendJson(res, 200, { sessionId, ...(todoStore ?? getTodoStore()).load(sessionId) });
+				sendJson(res, 200, { sessionId, ...(todoStore ?? getTodoStore()).load(sessionId, cwd) });
 				return;
 			}
 			if (method === "DELETE") {
-				(todoStore ?? getTodoStore()).delete(sessionId);
+				(todoStore ?? getTodoStore()).delete(sessionId, cwd);
 				sendJson(res, 200, { ok: true });
 				return;
 			}
