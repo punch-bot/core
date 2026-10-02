@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import type { AgentMessage } from "@punch-bot/agent";
 import { StringEnum } from "@punch-bot/ai";
@@ -193,7 +193,10 @@ export function applyTodoAction(state: TodoState, action: TodoAction): TodoActio
 export function installTodos(pi: ExtensionAPI, store: TodoStore): void {
 	let transientSessionId: string | undefined;
 	let transientState = emptyState();
-	const storageCwd = (ctx: ExtensionContext): string => ctx.sessionManager.getHeader()?.cwd || ctx.cwd;
+	const storageCwd = (ctx: ExtensionContext): string => {
+		const sessionFile = ctx.sessionManager.getSessionFile();
+		return ctx.sessionManager.getHeader()?.cwd || (sessionFile ? dirname(sessionFile) : ctx.cwd);
+	};
 	const loadState = (ctx: ExtensionContext): TodoState => {
 		const sessionId = ctx.sessionManager.getSessionId();
 		if (ctx.sessionManager.getSessionFile()) return store.load(sessionId, storageCwd(ctx));
