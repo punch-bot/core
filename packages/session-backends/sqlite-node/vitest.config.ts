@@ -27,10 +27,11 @@ export default defineConfig({
 		conditions: ["source"],
 		alias: [
 			{ find: /^@punch-bot\/telemetry$/, replacement: telemetryIndex },
-			{ find: /^@punch-bot\/agent\/session\/testing$/, replacement: agentSessionTesting },
+			{ find: /^@punch-bot\/agent\/harness\/session\/testing$/, replacement: agentSessionTesting },
 			{ find: /^@punch-bot\/agent\/node$/, replacement: agentNode },
 			{ find: /^@punch-bot\/agent$/, replacement: agentIndex },
 			{ find: /^@punch-bot\/ai$/, replacement: aiIndex },
+			{ find: /^@punch-bot\/ai\/(.+)$/, replacement: `${fileURLToPath(new URL("../../ai/src/", import.meta.url))}$1.ts` },
 			{ find: /^@earendil-works\/pi-telemetry$/, replacement: telemetryIndex },
 			{ find: /^@earendil-works\/pi-agent-core\/node$/, replacement: agentNode },
 			{ find: /^@earendil-works\/pi-agent-core\/harness\/session\/testing$/, replacement: agentSessionTesting },

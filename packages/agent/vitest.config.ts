@@ -21,6 +21,7 @@ export default defineConfig({
 			{ find: /^@punch-bot\/agent$/, replacement: agentSrcIndex },
 			{ find: /^@punch-bot\/ai$/, replacement: aiSrcIndex },
 			{ find: /^@punch-bot\/ai\/compat$/, replacement: aiSrcCompat },
+			{ find: /^@punch-bot\/ai\/(.+)$/, replacement: `${fileURLToPath(new URL("../ai/src/", import.meta.url))}$1.ts` },
 			{ find: /^@earendil-works\/pi-telemetry$/, replacement: telemetrySrcIndex },
 			{ find: /^@earendil-works\/pi-agent-core$/, replacement: agentSrcIndex },
 			{ find: /^@earendil-works\/pi-ai$/, replacement: aiSrcIndex },
