@@ -40,6 +40,10 @@
           "path": "sessions.md"
         },
         {
+          "title": "Punch todos",
+          "path": "punch-todos.md"
+        },
+        {
           "title": "Compaction",
           "path": "compaction.md"
         }
