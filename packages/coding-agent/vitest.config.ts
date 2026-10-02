@@ -11,6 +11,7 @@ export default mergeConfig(
 			// Tests run offline by default; opt in with allowNetwork() from test/test-network-env.ts.
 			env: { PI_OFFLINE: "1" },
 			unstubEnvs: true,
+			setupFiles: ["./src/experimental/source-resolver.ts"],
 			reporters: process.env.GITHUB_ACTIONS ? ["dot", "github-actions"] : ["dot"],
 			silent: "passed-only",
 			server: {
