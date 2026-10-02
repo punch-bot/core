@@ -23,8 +23,8 @@ import { convertToLlm } from "../../src/core/messages.ts";
 import { SessionManager } from "../../src/core/session-manager.ts";
 import type { Settings } from "../../src/core/settings-manager.ts";
 import { SettingsManager } from "../../src/core/settings-manager.ts";
-import type { InlineExtension, ResourceLoader } from "../../src/index.ts";
 import { theme } from "../../src/core/theme/theme.ts";
+import type { InlineExtension, ResourceLoader } from "../../src/index.ts";
 import {
 	type CreateTestExtensionsResultInput,
 	createTestExtensionsResult,
@@ -78,24 +78,17 @@ export function createTestUiContext(overrides: Partial<ExtensionUIContext> = {})
 		confirm: async () => false,
 		input: async () => undefined,
 		notify: () => {},
-		onTerminalInput: () => () => {},
 		setStatus: () => {},
 		setWorkingMessage: () => {},
 		setWorkingVisible: () => {},
 		setWorkingIndicator: () => {},
 		setHiddenThinkingLabel: () => {},
 		setWidget: () => {},
-		setFooter: () => {},
-		setHeader: () => {},
 		setTitle: () => {},
-		custom: async <T>() => undefined as T,
 		pasteToEditor: () => {},
 		setEditorText: () => {},
 		getEditorText: () => "",
 		editor: async () => undefined,
-		addAutocompleteProvider: () => {},
-		setEditorComponent: () => {},
-		getEditorComponent: () => undefined,
 		get theme() {
 			return theme;
 		},

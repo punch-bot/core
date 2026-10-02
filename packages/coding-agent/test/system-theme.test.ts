@@ -1,10 +1,6 @@
-import { colorToOklch, colorToRgb, parseColor, type RgbColor, rgbColor } from "@punch-bot/tui";
 import { afterEach, describe, expect, it } from "vitest";
-import {
-	generateSystemThemeColors,
-	type SystemThemeInput,
-	wcagContrast,
-} from "../src/core/theme/system-theme.ts";
+import { generateSystemThemeColors, type SystemThemeInput, wcagContrast } from "../src/core/theme/system-theme.ts";
+import type { RgbColor } from "../src/core/theme/theme.ts";
 import {
 	getAvailableThemes,
 	getThemeByName,
@@ -12,6 +8,7 @@ import {
 	setTerminalColors,
 	type ThemeToken,
 } from "../src/core/theme/theme.ts";
+import { colorToOklch, colorToRgb, parseColor, rgbColor } from "../src/utils/colors.ts";
 
 const rgb = (hex: string): RgbColor => colorToRgb(parseColor(hex));
 const lightness = ({ r, g, b }: RgbColor) => colorToOklch(rgbColor(r, g, b)).l;

@@ -1,18 +1,18 @@
 {
 	"name": "@punch-bot/cli",
-	"version": "0.85.1",
+	"version": "1.0.0",
 	"lockfileVersion": 3,
 	"requires": true,
 	"packages": {
 		"": {
 			"name": "@punch-bot/cli",
-			"version": "0.85.1",
+			"version": "1.0.0",
 			"license": "MIT",
 			"dependencies": {
-				"@punch-bot/a2a": "^0.85.1",
-				"@punch-bot/chord": "^0.85.1",
-				"@punch-bot/agent": "^0.85.1",
-				"@punch-bot/ai": "^0.85.1",
+				"@punch-bot/a2a": "^1.0.0",
+				"@punch-bot/chord": "^1.0.0",
+				"@punch-bot/agent": "^1.0.0",
+				"@punch-bot/ai": "^1.0.0",
 				"@silvia-odwyer/photon-node": "0.3.4",
 				"chalk": "6.0.0",
 				"chrono-node": "2.10.1",
@@ -30,7 +30,10 @@
 				"semver": "7.8.5",
 				"typebox": "1.3.27",
 				"undici": "8.10.2",
-				"yaml": "2.9.0"
+				"yaml": "2.9.0",
+				"@punch-bot/codemode": "^1.0.0",
+				"@punch-bot/mcp": "^1.0.0",
+				"quickjs-wasi": "3.6.2"
 			},
 			"bin": {
 				"pi": "dist/bundle/cli.js"
@@ -551,8 +554,8 @@
 			"license": "BSD-3-Clause"
 		},
 		"node_modules/@punch-bot/a2a": {
-			"version": "0.85.1",
-			"resolved": "https://registry.npmjs.org/@punch-bot/a2a/-/a2a-0.85.1.tgz",
+			"version": "1.0.0",
+			"resolved": "https://registry.npmjs.org/@punch-bot/a2a/-/a2a-1.0.0.tgz",
 			"license": "MIT",
 			"dependencies": {
 				"@a2a-js/sdk": "1.0.1",
@@ -563,50 +566,30 @@
 			}
 		},
 		"node_modules/@punch-bot/agent": {
-			"version": "0.85.1",
-			"resolved": "https://registry.npmjs.org/@punch-bot/agent/-/agent-0.85.1.tgz",
+			"version": "1.0.0",
+			"resolved": "https://registry.npmjs.org/@punch-bot/agent/-/agent-1.0.0.tgz",
 			"license": "MIT",
 			"dependencies": {
-				"@punch-bot/chord": "^0.85.1",
-				"@punch-bot/ai": "^0.85.1",
-				"@punch-bot/telemetry": "^0.85.1",
-				"diff": "8.0.4",
-				"ignore": "7.0.8",
-				"typebox": "1.3.27",
-				"yaml": "2.9.0"
+				"@punch-bot/ai": "^1.0.0",
+				"typebox": "1.3.27"
 			},
 			"engines": {
 				"node": ">=22.19.0"
 			}
 		},
-		"node_modules/@punch-bot/agent/node_modules/ignore": {
-			"version": "7.0.8",
-			"resolved": "https://registry.npmjs.org/ignore/-/ignore-7.0.8.tgz",
-			"integrity": "sha512-YYNsSlXBjMk92SKnkwvB5LOVSa6OznlFUGcsvrFgNJbJCd0M1XKeFVRc8ZByeCqz32FivYNHJVooLmdqrmvp/Q==",
-			"license": "MIT",
-			"engines": {
-				"node": ">= 4"
-			}
-		},
-		"node_modules/@punch-bot/agent/node_modules/typebox": {
-			"version": "1.3.27",
-			"resolved": "https://registry.npmjs.org/typebox/-/typebox-1.3.27.tgz",
-			"integrity": "sha512-zu+jc1pcy4UiNThxikUr36f0Rybk9PEeCg/NE6adeWr/SKsdNO4EzZHYRDlv2YCVAfj3Odq3dESSo/jNyoBXzA==",
-			"license": "MIT"
-		},
 		"node_modules/@punch-bot/ai": {
-			"version": "0.85.1",
-			"resolved": "https://registry.npmjs.org/@punch-bot/ai/-/ai-0.85.1.tgz",
+			"version": "1.0.0",
+			"resolved": "https://registry.npmjs.org/@punch-bot/ai/-/ai-1.0.0.tgz",
 			"license": "MIT",
 			"dependencies": {
 				"@anthropic-ai/sdk": "0.124.0",
 				"@aws-sdk/client-bedrock-runtime": "3.1127.0",
-				"@punch-bot/telemetry": "^0.85.1",
+				"@punch-bot/telemetry": "^1.0.0",
 				"@google/genai": "2.21.0",
 				"@smithy/node-http-handler": "4.12.1",
 				"http-proxy-agent": "9.1.0",
 				"https-proxy-agent": "9.1.0",
-				"openai": "6.40.0",
+				"openai": "7.19.0",
 				"partial-json": "0.1.7",
 				"typebox": "1.3.27"
 			},
@@ -1121,15 +1104,9 @@
 				"node": ">= 20"
 			}
 		},
-		"node_modules/@punch-bot/ai/node_modules/typebox": {
-			"version": "1.3.27",
-			"resolved": "https://registry.npmjs.org/typebox/-/typebox-1.3.27.tgz",
-			"integrity": "sha512-zu+jc1pcy4UiNThxikUr36f0Rybk9PEeCg/NE6adeWr/SKsdNO4EzZHYRDlv2YCVAfj3Odq3dESSo/jNyoBXzA==",
-			"license": "MIT"
-		},
 		"node_modules/@punch-bot/chord": {
-			"version": "0.85.1",
-			"resolved": "https://registry.npmjs.org/@punch-bot/chord/-/chord-0.85.1.tgz",
+			"version": "1.0.0",
+			"resolved": "https://registry.npmjs.org/@punch-bot/chord/-/chord-1.0.0.tgz",
 			"license": "MIT",
 			"dependencies": {
 				"esbuild": "0.28.2"
@@ -1138,9 +1115,31 @@
 				"node": ">=22.19.0"
 			}
 		},
+		"node_modules/@punch-bot/codemode": {
+			"version": "1.0.0",
+			"resolved": "https://registry.npmjs.org/@punch-bot/codemode/-/codemode-1.0.0.tgz",
+			"license": "MIT",
+			"dependencies": {
+				"quickjs-wasi": "3.6.2"
+			},
+			"engines": {
+				"node": ">=22.19.0"
+			}
+		},
+		"node_modules/@punch-bot/mcp": {
+			"version": "1.0.0",
+			"resolved": "https://registry.npmjs.org/@punch-bot/mcp/-/mcp-1.0.0.tgz",
+			"license": "MIT",
+			"dependencies": {
+				"cross-spawn": "7.0.6"
+			},
+			"engines": {
+				"node": ">=22.19.0"
+			}
+		},
 		"node_modules/@punch-bot/telemetry": {
-			"version": "0.85.1",
-			"resolved": "https://registry.npmjs.org/@punch-bot/telemetry/-/telemetry-0.85.1.tgz",
+			"version": "1.0.0",
+			"resolved": "https://registry.npmjs.org/@punch-bot/telemetry/-/telemetry-1.0.0.tgz",
 			"license": "MIT",
 			"engines": {
 				"node": ">=22.19.0"
@@ -2232,21 +2231,40 @@
 			}
 		},
 		"node_modules/openai": {
-			"version": "6.40.0",
-			"resolved": "https://registry.npmjs.org/openai/-/openai-6.40.0.tgz",
-			"integrity": "sha512-MWtTjd/gQt4jpbji61NTgFWJLoY/PdRJ6wG9/ZDRMYNMlBKrCrSlkLI+KgHP1vR1qT6LKSAyAqIxno6lcK9JiA==",
+			"version": "7.19.0",
+			"resolved": "https://registry.npmjs.org/openai/-/openai-7.19.0.tgz",
+			"integrity": "sha512-MX2s3u2L5racTO0CC/SWpCOasJQBCJrqLKXK+l82cAhdeF8mPMBEe/gxMm0ZFa2xpKpOFLRjxv5afYEZbBXmbQ==",
 			"license": "Apache-2.0",
 			"peerDependencies": {
-				"ws": "^8.18.0",
+				"@aws-sdk/credential-provider-node": ">=3.972.0 <4",
+				"@smithy/hash-node": ">=4.3.0 <5",
+				"@smithy/signature-v4": ">=5.4.0 <6",
+				"undici": ">=5 <9",
+				"ws": "^8.21.0",
 				"zod": "^3.25 || ^4.0"
 			},
 			"peerDependenciesMeta": {
+				"@aws-sdk/credential-provider-node": {
+					"optional": true
+				},
+				"@smithy/hash-node": {
+					"optional": true
+				},
+				"@smithy/signature-v4": {
+					"optional": true
+				},
+				"undici": {
+					"optional": true
+				},
 				"ws": {
 					"optional": true
 				},
 				"zod": {
 					"optional": true
 				}
+			},
+			"engines": {
+				"node": ">=22.0.0"
 			}
 		},
 		"node_modules/p-retry": {
@@ -2434,6 +2452,12 @@
 			"funding": {
 				"url": "https://github.com/sponsors/ljharb"
 			}
+		},
+		"node_modules/quickjs-wasi": {
+			"version": "3.6.2",
+			"resolved": "https://registry.npmjs.org/quickjs-wasi/-/quickjs-wasi-3.6.2.tgz",
+			"integrity": "sha512-FCqGtGOrMgzUiIrMNMA2YnsOxCNwo31dzqXvclXUC6xeT35NJLKXQJsvbeCTjvoFAwZgEAPg8U6+KAPDGXn8Mg==",
+			"license": "MIT"
 		},
 		"node_modules/range-parser": {
 			"version": "1.3.0",

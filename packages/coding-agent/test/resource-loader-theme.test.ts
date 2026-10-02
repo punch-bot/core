@@ -1,7 +1,6 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { resetCapabilitiesCache, setCapabilityOverrides } from "@punch-bot/tui";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DefaultResourceLoader } from "../src/core/resource-loader.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
@@ -19,9 +18,10 @@ describe("DefaultResourceLoader theme color mode", () => {
 		mkdirSync(agentDir, { recursive: true });
 		mkdirSync(cwd, { recursive: true });
 
-		const themeJson = JSON.parse(
-			readFileSync(join(process.cwd(), "src", "modes", "interactive", "theme", "dark.json"), "utf-8"),
-		) as { name: string; colors: Record<string, string | number> };
+		const themeJson = JSON.parse(readFileSync(join(process.cwd(), "src", "core", "theme", "dark.json"), "utf-8")) as {
+			name: string;
+			colors: Record<string, string | number>;
+		};
 		themeJson.name = "capability-test";
 		themeJson.colors.userMessageBg = "#3c3544";
 		themePath = join(tempDir, "capability-test.json");
@@ -30,8 +30,6 @@ describe("DefaultResourceLoader theme color mode", () => {
 
 	afterEach(() => {
 		vi.unstubAllEnvs();
-		setCapabilityOverrides({});
-		resetCapabilitiesCache();
 		rmSync(tempDir, { recursive: true, force: true });
 	});
 
@@ -53,8 +51,6 @@ describe("DefaultResourceLoader theme color mode", () => {
 		"uses the $setting setting over a $environment environment",
 		async ({ environmentOverride, setting, expected }) => {
 			vi.stubEnv("PI_TRUE_COLOR", environmentOverride);
-			setCapabilityOverrides({});
-			resetCapabilitiesCache();
 
 			const loader = new DefaultResourceLoader({
 				cwd,
@@ -75,8 +71,6 @@ describe("DefaultResourceLoader theme color mode", () => {
 
 	it("returns to automatic detection after an explicit setting is removed", async () => {
 		vi.stubEnv("PI_TRUE_COLOR", "1");
-		setCapabilityOverrides({});
-		resetCapabilitiesCache();
 
 		const settingsPath = join(agentDir, "settings.json");
 		writeFileSync(settingsPath, JSON.stringify({ terminal: { trueColor: false } }));
@@ -92,7 +86,6 @@ describe("DefaultResourceLoader theme color mode", () => {
 			noContextFiles: true,
 		});
 		await loader.reload();
-		setCapabilityOverrides(settingsManager.getTerminalCapabilityOverrides());
 
 		writeFileSync(settingsPath, "{}");
 		await loader.reload();

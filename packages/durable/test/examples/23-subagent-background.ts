@@ -8,11 +8,11 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
 import { type AssistantMessage, type FauxResponseStep, Type } from "@punch-bot/ai";
 import { createModels } from "@punch-bot/ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from "@punch-bot/ai/providers/faux";
 import { openaiProvider } from "@punch-bot/ai/providers/openai";
+import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
 import {
 	type AgentEvent,
 	AssistantEntry,

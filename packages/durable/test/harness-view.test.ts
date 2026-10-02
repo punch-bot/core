@@ -1,5 +1,5 @@
-import { applyImmutable, type Op } from "@punch-bot/chord/delta";
 import { type AssistantMessage, type FauxResponseStep, fauxAssistantMessage, fauxText } from "@punch-bot/ai";
+import { applyImmutable, type Op } from "@punch-bot/chord/delta";
 import {
 	AgentDoc,
 	type Conversation,

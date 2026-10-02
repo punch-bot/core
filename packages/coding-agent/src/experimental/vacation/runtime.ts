@@ -1,6 +1,6 @@
+import { clampThinkingLevel, getSupportedThinkingLevels, type ModelThinkingLevel } from "@punch-bot/ai";
 import type { AttachedReplicatedState } from "@punch-bot/chord";
 import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
-import { clampThinkingLevel, getSupportedThinkingLevels, type ModelThinkingLevel } from "@punch-bot/ai";
 import {
 	type AgentState,
 	type Conversation,

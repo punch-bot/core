@@ -2,7 +2,6 @@ import * as bundledPiAgentCore from "@punch-bot/agent";
 import * as bundledPiAiCompat from "@punch-bot/ai/compat";
 import * as bundledPiAiOauth from "@punch-bot/ai/oauth";
 import * as bundledPiAiProviders from "@punch-bot/ai/providers/all";
-import * as bundledPiTui from "@punch-bot/tui";
 import * as bundledTypebox from "typebox";
 import * as bundledTypeboxCompile from "typebox/compile";
 import * as bundledTypeboxValue from "typebox/value";
@@ -19,7 +18,6 @@ export const VIRTUAL_MODULES: Record<string, unknown> = {
 	"@sinclair/typebox/compile": bundledTypeboxCompile,
 	"@sinclair/typebox/value": bundledTypeboxValue,
 	"@punch-bot/agent": bundledPiAgentCore,
-	"@punch-bot/tui": bundledPiTui,
 	// Extensions resolve the pi-ai root to the compat entrypoint (a strict
 	// superset of the core entrypoint): existing extensions using the old
 	// global API keep working at runtime until compat is removed.
@@ -29,7 +27,6 @@ export const VIRTUAL_MODULES: Record<string, unknown> = {
 	"@punch-bot/ai/providers/all": bundledPiAiProviders,
 	"@punch-bot/cli": bundledPiCodingAgent,
 	"@mariozechner/pi-agent-core": bundledPiAgentCore,
-	"@mariozechner/pi-tui": bundledPiTui,
 	"@mariozechner/pi-ai": bundledPiAiCompat,
 	"@mariozechner/pi-ai/compat": bundledPiAiCompat,
 	"@mariozechner/pi-ai/oauth": bundledPiAiOauth,

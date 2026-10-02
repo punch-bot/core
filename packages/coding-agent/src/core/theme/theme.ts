@@ -1,6 +1,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ThinkingLevel } from "@punch-bot/agent";
+import chalk from "chalk";
+import { getCustomThemesDir, getThemesDir } from "../../config.ts";
 import {
 	backgroundAnsi,
 	type Color,
@@ -15,12 +17,10 @@ import {
 	type TerminalColorMode,
 	type TextAttributes,
 } from "../../utils/colors.ts";
-import chalk from "chalk";
-import { getCustomThemesDir, getThemesDir } from "../../config.ts";
-import type { SourceInfo } from "../source-info.ts";
 import { closeWatcher, watchWithErrorHandler } from "../../utils/fs-watch.ts";
 import { highlight, supportsLanguage } from "../../utils/syntax-highlight.ts";
 import { stripBom } from "../../utils/text.ts";
+import type { SourceInfo } from "../source-info.ts";
 import { generateSystemThemeColors, SYSTEM_THEME_NAME, terminalAppearance } from "./system-theme.ts";
 
 export { SYSTEM_THEME_NAME } from "./system-theme.ts";
@@ -1085,11 +1085,18 @@ export function getLanguageFromPath(filePath: string): string | undefined {
 	return extToLang[ext];
 }
 
+export interface RgbColor {
+	r: number;
+	g: number;
+	b: number;
+}
+export interface TerminalColors {
+	foreground?: RgbColor;
+	background?: RgbColor;
+	palette?: RgbColor[];
+}
 
-export interface RgbColor { r: number; g: number; b: number; }
-export interface TerminalColors { foreground?: RgbColor; background?: RgbColor; palette?: RgbColor[]; }
-
-function detectColorMode(trueColor?: boolean): TerminalColorMode {
+export function detectColorMode(trueColor?: boolean): TerminalColorMode {
 	if (trueColor === true) return "truecolor";
 	if (trueColor === false) return "256color";
 	const override = process.env.PI_TRUE_COLOR?.toLowerCase();

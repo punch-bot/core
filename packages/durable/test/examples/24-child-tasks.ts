@@ -5,8 +5,8 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
 import { createModels } from "@punch-bot/ai/models";
+import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
 import {
 	type Conversation,
 	createRegistry,

@@ -1,9 +1,10 @@
 // Open a Harness with a registry of extensions.
 // Run from packages/durable:
 //   node --conditions=source --experimental-strip-types test/examples/06-harness.ts
-import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
+
 import { Type } from "@punch-bot/ai";
 import { createModels } from "@punch-bot/ai/models";
+import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
 import {
 	AgentDoc,
 	createRegistry,

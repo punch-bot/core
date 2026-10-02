@@ -1,8 +1,8 @@
+import type { ImageContent, TextContent, ToolCall, ToolResultMessage } from "@punch-bot/ai";
+import { validateToolArguments } from "@punch-bot/ai/utils/validation";
 import { type Context, copyJson, type JsonValue } from "@punch-bot/chord";
 import { awaitWithContext } from "@punch-bot/chord/context";
 import { overlap } from "@punch-bot/chord/delta";
-import type { ImageContent, TextContent, ToolCall, ToolResultMessage } from "@punch-bot/ai";
-import { validateToolArguments } from "@punch-bot/ai/utils/validation";
 import { AssistantEntry, ToolResultEntry } from "../entries.ts";
 import { defineTask } from "../tasks.ts";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, utf8ByteLength } from "../truncate.ts";

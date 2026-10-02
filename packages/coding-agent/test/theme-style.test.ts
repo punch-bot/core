@@ -1,9 +1,9 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { colorToHex, okhslColor, styleText } from "@punch-bot/tui";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadThemeFromPath, setTerminalColors } from "../src/core/theme/theme.ts";
+import { colorToHex, okhslColor, styleText } from "../src/utils/colors.ts";
 
 const tempDirs: string[] = [];
 
@@ -17,7 +17,7 @@ type ThemeFile = {
 /** Load a copy of a built-in theme, modified by `edit`. */
 function loadTheme(base: "dark" | "light", edit: (theme: ThemeFile) => void = () => {}) {
 	const themeJson = JSON.parse(
-		readFileSync(new URL(`../src/modes/interactive/theme/${base}.json`, import.meta.url), "utf8"),
+		readFileSync(new URL(`../src/core/theme/${base}.json`, import.meta.url), "utf8"),
 	) as ThemeFile;
 	edit(themeJson);
 	const dir = mkdtempSync(join(tmpdir(), "pi-theme-style-"));

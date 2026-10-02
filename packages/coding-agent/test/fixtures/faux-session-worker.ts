@@ -1,8 +1,8 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createModels, fauxAssistantMessage, fauxProvider } from "@punch-bot/ai";
 import { createStaticFacetLoader, defineFacet } from "@punch-bot/chord";
 import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
-import { createModels, fauxAssistantMessage, fauxProvider } from "@punch-bot/ai";
 import { createRegistry, Harness } from "@punch-bot/durable";
 import { openNodeSqliteStorage } from "@punch-bot/durable/storage/sqlite/node";
 import { consumeInternalProcessRole } from "../../src/experimental/process.ts";

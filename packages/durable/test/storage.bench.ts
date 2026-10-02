@@ -9,7 +9,7 @@ import {
 	seedStorageBenchmark,
 	seedStorageWriteBenchmark,
 } from "@punch-bot/durable/testing";
-import { afterAll, bench, describe } from "vitest";
+import { afterAll, describe, test } from "vitest";
 import { openNodeJsonlStorage } from "../src/storage/jsonl/node.ts";
 import { MemoryStorage } from "../src/storage/memory.ts";
 import { openNodeSqliteStorage } from "../src/storage/sqlite/node.ts";
@@ -69,13 +69,11 @@ for (const scenario of STORAGE_READ_BENCHMARKS) {
 		for (let index = 0; index < readFixtures.length; index++) {
 			const fixture = readFixtures[index];
 			const dataset = readDatasets[index];
-			bench(
-				fixture.backend,
-				async () => {
+			test(fixture.backend, async ({ bench }) => {
+				await bench(fixture.backend, async () => {
 					await scenario.run(fixture.storage, dataset);
-				},
-				READ_OPTIONS,
-			);
+				}).run(READ_OPTIONS);
+			});
 		}
 	});
 }
@@ -101,15 +99,13 @@ for (const scenario of STORAGE_WRITE_BENCHMARKS) {
 	describe(scenario.name, () => {
 		for (const backend of STORAGE_BENCHMARK_BACKENDS) {
 			const pool = writePools.get(`${scenario.name}:${backend}`)!;
-			bench(
-				backend,
-				async () => {
+			test(backend, async ({ bench }) => {
+				await bench(backend, async () => {
 					const fixture = pool.shift();
 					if (fixture === undefined) throw new Error("Write benchmark fixture pool was exhausted");
 					await scenario.run(fixture.storage);
-				},
-				WRITE_OPTIONS,
-			);
+				}).run(WRITE_OPTIONS);
+			});
 		}
 	});
 }
@@ -171,16 +167,14 @@ for (const fixture of reopenFixtures) {
 
 describe("reopen and first exact read", () => {
 	for (const fixture of reopenFixtures) {
-		bench(
-			fixture.backend,
-			async () => {
+		test(fixture.backend, async ({ bench }) => {
+			await bench(fixture.backend, async () => {
 				const path = fixture.samples.shift();
 				if (path === undefined) throw new Error("Reopen benchmark fixture pool was exhausted");
 				const result = await reopenAndRead(fixture.backend, path, fixture.firstEntryId);
 				reopenedStorages.push(result.storage);
-			},
-			REOPEN_OPTIONS,
-		);
+			}).run(REOPEN_OPTIONS);
+		});
 	}
 });
 

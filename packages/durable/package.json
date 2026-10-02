@@ -93,7 +93,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/earendil-works/pi.git",
+		"url": "git+https://github.com/punch-bot/core.git",
 		"directory": "packages/durable"
 	},
 	"engines": {
@@ -107,6 +107,6 @@
 	},
 	"devDependencies": {
 		"shx": "0.4.0",
-		"vitest": "4.1.11"
+		"vitest": "5.0.0"
 	}
 }

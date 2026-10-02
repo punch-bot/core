@@ -1,6 +1,6 @@
+import type { Message, Models } from "@punch-bot/ai";
 import type { AttachedReplicatedState, Context, Draft, JsonValue } from "@punch-bot/chord";
 import type { Op } from "@punch-bot/chord/delta";
-import type { Message, Models } from "@punch-bot/ai";
 import type { ExecutionEnv } from "./env/index.ts";
 import type {
 	Agent,

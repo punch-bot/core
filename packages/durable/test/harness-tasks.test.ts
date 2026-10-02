@@ -1,6 +1,6 @@
+import { createModels, Type } from "@punch-bot/ai";
 import type { Context } from "@punch-bot/chord";
 import { withCancel } from "@punch-bot/chord/context";
-import { createModels, Type } from "@punch-bot/ai";
 import {
 	type Conversation,
 	createRegistry,

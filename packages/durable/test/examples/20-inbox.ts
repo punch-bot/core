@@ -1,10 +1,11 @@
 // The inbox: what happens to submissions while a conversation is busy.
 // Run from packages/durable:
 //   node --conditions=source --experimental-strip-types test/examples/20-inbox.ts
-import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
+
 import type { FauxResponseStep } from "@punch-bot/ai";
 import { createModels } from "@punch-bot/ai/models";
 import { fauxAssistantMessage, fauxProvider } from "@punch-bot/ai/providers/faux";
+import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
 import { createRegistry, Harness, InboxDoc, MemoryStorage, type Submission } from "../../src/index.ts";
 
 const context = BACKGROUND_CONTEXT;

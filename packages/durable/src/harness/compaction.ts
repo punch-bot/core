@@ -1,7 +1,7 @@
-import type { Context, Draft } from "@punch-bot/chord";
 import type { AssistantMessage, Message, ModelThinkingLevel, SimpleStreamOptions } from "@punch-bot/ai";
 import { calculateContextTokens, estimateMessageTokens } from "@punch-bot/ai/utils/estimate";
 import { isRetryableAssistantError, retryDelayMs } from "@punch-bot/ai/utils/retry";
+import type { Context, Draft } from "@punch-bot/chord";
 import { CompactionEntry } from "../entries.ts";
 import { defineTask } from "../tasks.ts";
 import type {

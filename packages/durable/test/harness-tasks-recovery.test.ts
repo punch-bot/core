@@ -1,8 +1,8 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Context, JsonValue } from "@punch-bot/chord";
 import { createModels, Type } from "@punch-bot/ai";
+import type { Context, JsonValue } from "@punch-bot/chord";
 import {
 	createRegistry,
 	defineDoc,

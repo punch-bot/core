@@ -1,7 +1,6 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { JsonValue } from "@punch-bot/chord";
 import {
 	type AssistantMessage,
 	type FauxResponseStep,
@@ -12,6 +11,7 @@ import {
 	type ToolResultMessage,
 	Type,
 } from "@punch-bot/ai";
+import type { JsonValue } from "@punch-bot/chord";
 import {
 	AgentDoc,
 	type Conversation,

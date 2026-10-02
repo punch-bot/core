@@ -70,12 +70,6 @@ export async function readClipboardText(): Promise<string | null> {
 	return null;
 }
 
-/** Read file paths, such as Finder file copies, from the native clipboard. */
-export async function readClipboardFilePaths(): Promise<string[] | null> {
-	const paths = await getNativeClipboard()?.getFilePaths?.();
-	return paths?.length ? paths : null;
-}
-
 export async function copyToClipboard(text: string): Promise<void> {
 	const p = platform();
 	const env = process.env;

@@ -1,5 +1,5 @@
-import type { JsonValue } from "@punch-bot/chord";
 import type { TSchema } from "@punch-bot/ai";
+import type { JsonValue } from "@punch-bot/chord";
 import type { AnyTask, Extension, HookRegistration, HooksOf, PromptSection, ToolRegistration, Wrap } from "./types.ts";
 
 /** Identity function that types an extension. */

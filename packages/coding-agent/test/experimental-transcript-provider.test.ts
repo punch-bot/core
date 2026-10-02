@@ -1,6 +1,6 @@
+import { fauxAssistantMessage } from "@punch-bot/ai";
 import { createFacetHost, defineFacet } from "@punch-bot/chord";
 import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
-import { fauxAssistantMessage } from "@punch-bot/ai";
 import type { ConversationView } from "@punch-bot/durable";
 import { describe, expect, test } from "vitest";
 import { Transcript } from "../src/experimental/services/transcript.ts";

@@ -9,10 +9,10 @@
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
 import { createModels } from "@punch-bot/ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from "@punch-bot/ai/providers/faux";
 import { openaiProvider } from "@punch-bot/ai/providers/openai";
+import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
 import { NodeExecutionEnv } from "../../src/env/node.ts";
 import {
 	createRegistry,

@@ -1,4 +1,3 @@
-import type { Draft } from "@punch-bot/chord";
 import {
 	type AssistantMessage,
 	type FauxResponseStep,
@@ -8,6 +7,7 @@ import {
 	fauxToolCall,
 	Type,
 } from "@punch-bot/ai";
+import type { Draft } from "@punch-bot/chord";
 import {
 	AgentDoc,
 	type AgentEvent,

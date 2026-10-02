@@ -30,8 +30,8 @@ export type {
 	// Re-exports
 	AgentToolResult,
 	AgentToolUpdateCallback,
-	AutocompleteItem,
 	AppendEntryHandler,
+	AutocompleteItem,
 	// App keybindings (for custom editors)
 	// Events - Tool (ToolCallEvent types)
 	BashToolCallEvent,

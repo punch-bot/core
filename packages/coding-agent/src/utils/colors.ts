@@ -1,5 +1,5 @@
-import { linearSrgbToRgb, okhslToRgb, oklabToLinearSrgb, rgbToOkhsl, rgbToOklab } from "./oklab.ts";
 import type { RgbColor } from "../core/theme/theme.ts";
+import { linearSrgbToRgb, okhslToRgb, oklabToLinearSrgb, rgbToOkhsl, rgbToOklab } from "./oklab.ts";
 
 export interface IndexedColor {
 	readonly kind: "indexed";

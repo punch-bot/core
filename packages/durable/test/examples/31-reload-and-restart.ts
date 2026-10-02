@@ -5,10 +5,10 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
 import { type ToolResultMessage, Type } from "@punch-bot/ai";
 import { createModels } from "@punch-bot/ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@punch-bot/ai/providers/faux";
+import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
 import { createRegistry, defineExtension, defineTool, Harness, ToolResultEntry } from "../../src/index.ts";
 import { openNodeSqliteStorage } from "../../src/storage/sqlite/node.ts";
 

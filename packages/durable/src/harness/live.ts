@@ -1,5 +1,5 @@
-import type { Draft, JsonRepresentation, JsonValue } from "@punch-bot/chord";
 import type { AssistantMessage } from "@punch-bot/ai";
+import type { Draft, JsonRepresentation, JsonValue } from "@punch-bot/chord";
 import { defineDoc } from "../documents.ts";
 import type { Transaction } from "../session/transaction.ts";
 import type { EntryId, SubmissionId, SubmissionSettlement, TaskId, TaskRecord, Tx } from "../types.ts";

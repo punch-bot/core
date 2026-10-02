@@ -1,6 +1,6 @@
 {
 	"name": "@punch-bot/a2a",
-	"version": "0.85.1",
+	"version": "1.0.0",
 	"description": "Agent2Agent (A2A) protocol integration for punch agents",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -18,9 +18,9 @@
 	],
 	"scripts": {
 		"clean": "shx rm -rf dist",
-		"build": "tsgo -p tsconfig.build.json",
+		"build": "tsc -p tsconfig.build.json",
 		"test": "vitest --run",
-		"typecheck": "tsgo -p tsconfig.test.json",
+		"typecheck": "tsc -p tsconfig.test.json",
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"keywords": [

@@ -1,10 +1,10 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
-import { detectCapabilities, getTerminalColorMode, type TerminalColorMode } from "@punch-bot/tui";
 import chalk from "chalk";
 import { CONFIG_DIR_NAME } from "../config.ts";
+import type { TerminalColorMode } from "../utils/colors.ts";
 import type { ResourceDiagnostic } from "./diagnostics.ts";
-import { loadThemeFromPath, type Theme } from "./theme/theme.ts";
+import { detectColorMode, loadThemeFromPath, type Theme } from "./theme/theme.ts";
 
 export type { ResourceCollision, ResourceDiagnostic } from "./diagnostics.ts";
 
@@ -54,11 +54,9 @@ const HOST_PROVIDED_EXTENSION_PACKAGES = new Set([
 	"@punch-bot/agent",
 	"@punch-bot/ai",
 	"@punch-bot/cli",
-	"@punch-bot/tui",
 	"@mariozechner/pi-agent-core",
 	"@mariozechner/pi-ai",
 	"@mariozechner/pi-coding-agent",
-	"@mariozechner/pi-tui",
 	"@sinclair/typebox",
 	"typebox",
 ]);
@@ -881,11 +879,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		if (this.noThemes && themePaths.length === 0) {
 			themesResult = { themes: [], diagnostics: [] };
 		} else {
-			// Theme construction only needs trueColor, so skip the unrelated tmux hyperlink probe.
-			const colorMode = getTerminalColorMode({
-				...detectCapabilities(() => false),
-				...this.settingsManager.getTerminalCapabilityOverrides(),
-			});
+			const colorMode = detectColorMode(this.settingsManager.getTerminalCapabilityOverrides().trueColor);
 			const loaded = this.loadThemes(themePaths, false, colorMode);
 			const deduped = this.dedupeThemes(loaded.themes);
 			themesResult = { themes: deduped.themes, diagnostics: [...loaded.diagnostics, ...deduped.diagnostics] };

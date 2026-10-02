@@ -1,4 +1,3 @@
-import type { Context } from "@punch-bot/chord";
 import {
 	createModels,
 	type FauxProviderHandle,
@@ -8,6 +7,7 @@ import {
 	type Models,
 	type RegisterFauxProviderOptions,
 } from "@punch-bot/ai";
+import type { Context } from "@punch-bot/chord";
 import {
 	type Conversation,
 	createRegistry,

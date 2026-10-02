@@ -13,7 +13,11 @@ Directory names did not change with the npm rename. `@punch-bot/cli` lives in `p
 | `@punch-bot/protocol` | `packages/protocol` |
 | `@punch-bot/client` | `packages/client` |
 | `@punch-bot/server` | `packages/server` |
-| `@punch-bot/sqlite-node` | `packages/session-backends/sqlite-node` |
+| `@punch-bot/chord` | `packages/chord` |
+| `@punch-bot/durable` | `packages/durable` |
+| `@punch-bot/mcp` | `packages/mcp` |
+| `@punch-bot/codemode` | `packages/codemode` |
+| `@punch-bot/a2a` | `packages/a2a` |
 
 # Development Rules
 

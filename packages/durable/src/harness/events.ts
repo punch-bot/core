@@ -1,6 +1,6 @@
+import type { AssistantMessage, Message, Usage } from "@punch-bot/ai";
 import type { Context, JsonValue } from "@punch-bot/chord";
 import type { Op, Path } from "@punch-bot/chord/delta";
-import type { AssistantMessage, Message, Usage } from "@punch-bot/ai";
 import { CommittedWatch } from "../session/observation.ts";
 import type {
 	CommitChange,

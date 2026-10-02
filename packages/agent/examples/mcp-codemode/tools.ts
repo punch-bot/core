@@ -11,12 +11,7 @@ import {
 	runToolCall,
 } from "@punch-bot/agent";
 import type { ImageContent, JsonObject, JsonValue, TextContent } from "@punch-bot/ai";
-import {
-	type CodemodeJsonSchema,
-	CodemodeSandbox,
-	type CodemodeTool,
-	renderDeclarations,
-} from "@punch-bot/codemode";
+import { type CodemodeJsonSchema, CodemodeSandbox, type CodemodeTool, renderDeclarations } from "@punch-bot/codemode";
 import { type McpClient, toLlmContent } from "@punch-bot/mcp";
 import { Type } from "typebox";
 

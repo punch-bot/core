@@ -1,6 +1,6 @@
-import type { Context } from "@punch-bot/chord";
 import type { Message, SystemMessage, Tool, ToolReference } from "@punch-bot/ai";
 import { declarationsEqual, getCurrentTools, toToolDeclaration } from "@punch-bot/ai/utils/transcript";
+import type { Context } from "@punch-bot/chord";
 import { SystemEntry } from "../entries.ts";
 import type { ContextEdit, TypedEntryDraft } from "../types.ts";
 import type { ContextView, PromptInput, PromptSection, ToolRegistration } from "./types.ts";

@@ -1,19 +1,20 @@
 import { fileURLToPath } from "node:url";
-import { defineConfig } from "vitest/config";
+import { defineConfig, mergeConfig } from "vitest/config";
+import baseConfig from "../../vitest.base.ts";
 
 const durableSrcIndex = fileURLToPath(new URL("./src/index.ts", import.meta.url));
 const durableSrcTesting = fileURLToPath(new URL("./src/testing/index.ts", import.meta.url));
 
-export default defineConfig({
+export default mergeConfig(baseConfig, defineConfig({
 	test: {
 		environment: "node",
 	},
 	resolve: {
 		conditions: ["source"],
 		alias: [
-			{ find: /^@earendil-works\/pi-durable$/, replacement: durableSrcIndex },
-			{ find: /^@earendil-works\/pi-durable\/testing$/, replacement: durableSrcTesting },
+			{ find: /^@punch-bot\/durable$/, replacement: durableSrcIndex },
+			{ find: /^@punch-bot\/durable\/testing$/, replacement: durableSrcTesting },
 		],
 	},
 	ssr: { resolve: { conditions: ["source"] } },
-});
+}));

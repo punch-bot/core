@@ -1,8 +1,9 @@
 // Conversation handles, typed entries, created conversations, and forks.
 // Run from packages/durable:
 //   node --conditions=source --experimental-strip-types test/examples/08-harness-conversations.ts
-import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
+
 import { createModels } from "@punch-bot/ai/models";
+import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
 import { createRegistry, defineEntry, Harness, MemoryStorage } from "../../src/index.ts";
 
 const context = BACKGROUND_CONTEXT;

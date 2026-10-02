@@ -317,6 +317,18 @@ export {
 	type SkillFrontmatter,
 } from "./core/skills.ts";
 export { createSyntheticSourceInfo } from "./core/source-info.ts";
+// Theme utilities for custom tools and extensions
+export {
+	getLanguageFromPath,
+	highlightCode,
+	initTheme,
+	Theme,
+	type ThemeAppearance,
+	type ThemeBg,
+	type ThemeColor,
+	type ThemeStyle,
+	type ThemeToken,
+} from "./core/theme/theme.ts";
 export { type EditDiffResult, generateDiffString, generateUnifiedPatch } from "./core/tools/edit-diff.ts";
 // Tools
 export {
@@ -415,18 +427,6 @@ export {
 	runPrintMode,
 	runRpcMode,
 } from "./modes/index.ts";
-// Theme utilities for custom tools and extensions
-export {
-	getLanguageFromPath,
-	highlightCode,
-	initTheme,
-	Theme,
-	type ThemeAppearance,
-	type ThemeBg,
-	type ThemeColor,
-	type ThemeStyle,
-	type ThemeToken,
-} from "./core/theme/theme.ts";
 // Clipboard utilities
 export { copyToClipboard } from "./utils/clipboard.ts";
 export { parseFrontmatter, stripFrontmatter } from "./utils/frontmatter.ts";

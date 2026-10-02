@@ -4,7 +4,7 @@
 	"private": true,
 	"type": "module",
 	"peerDependencies": {
-		"@punch-bot/chord": "^0.84.4",
-		"@punch-bot/cli": "^0.84.4"
+		"@punch-bot/chord": "^1.0.0",
+		"@punch-bot/cli": "^1.0.0"
 	}
 }

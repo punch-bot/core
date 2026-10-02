@@ -1,5 +1,5 @@
-import { defineFacet, type Facet, type JsonValue } from "@punch-bot/chord";
 import type { ModelThinkingLevel } from "@punch-bot/ai";
+import { defineFacet, type Facet, type JsonValue } from "@punch-bot/chord";
 import { AgentController } from "./agent-controller.ts";
 import { type ModelSummary, Models, type Models as ModelsService } from "./models.ts";
 import { PresentationPlugins, SessionPlugins } from "./plugins.ts";

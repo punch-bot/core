@@ -1,10 +1,11 @@
 // An extension that keeps its own per-conversation document.
 // Run from packages/durable:
 //   node --conditions=source --experimental-strip-types test/examples/11-extension-state.ts
-import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
+
 import { Type } from "@punch-bot/ai";
 import { createModels } from "@punch-bot/ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@punch-bot/ai/providers/faux";
+import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
 import {
 	createRegistry,
 	defineDoc,

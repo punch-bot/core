@@ -1,9 +1,10 @@
 // A chat turn.
 // Run from packages/durable:
 //   node --conditions=source --experimental-strip-types test/examples/14-chat.ts
-import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
+
 import { createModels } from "@punch-bot/ai/models";
 import { fauxAssistantMessage, fauxProvider } from "@punch-bot/ai/providers/faux";
+import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
 import { AssistantEntry, createRegistry, defineExtension, Harness, MemoryStorage, section } from "../../src/index.ts";
 
 const context = BACKGROUND_CONTEXT;

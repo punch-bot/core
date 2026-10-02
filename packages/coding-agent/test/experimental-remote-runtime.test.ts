@@ -602,9 +602,21 @@ describe("experimental durable server composition", () => {
 		onTestFinished(() => spawn.mockRestore());
 		const { directory } = await makeServer();
 
-		const result = await runClient({ command: "client", sessionId: "demo-1", prompt: "question" }, { directory });
+		const observed: string[][] = [];
+		const result = await runClient(
+			{ command: "client", sessionId: "demo-1", prompt: "question" },
+			{
+				directory,
+				onView: async (view) => {
+					await Promise.resolve();
+					observed.push(view.entries.map((entry) => entry.kind));
+				},
+			},
+		);
 
 		expect(result).toMatchObject({ kind: "prompted", text: "deterministic remote answer" });
+		expect(observed.length).toBeGreaterThan(1);
+		expect(observed.at(-1)).toContain("pi.assistant");
 	});
 
 	test("replicates the transcript after consecutive prompts", async ({ onTestFinished }) => {
@@ -655,7 +667,7 @@ describe("experimental durable server composition", () => {
 		await client.dispose();
 		clients.delete(client);
 		await expect.poll(() => runtime.workerPids.has("demo-1")).toBe(false);
-		expect(processExists(pid!)).toBe(false);
+		await expect.poll(() => processExists(pid!)).toBe(false);
 	});
 
 	test("starts one process per attached session and stops them during shutdown", async () => {
@@ -737,7 +749,7 @@ describe("experimental durable server composition", () => {
 		expect(replacement.workerPids.get("demo-1")).toBe(workerPid);
 
 		await expect.poll(() => replacement.workerPids.has("demo-1"), { timeout: 5_000 }).toBe(false);
-		expect(processExists(workerPid!)).toBe(false);
+		await expect.poll(() => processExists(workerPid!)).toBe(false);
 	});
 
 	test("restores tracked sessions that are outside the replacement catalog", async () => {

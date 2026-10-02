@@ -1,13 +1,7 @@
+import { clampThinkingLevel, getSupportedThinkingLevels, type ModelThinkingLevel } from "@punch-bot/ai";
 import { type Context, defineFacet, type Facet, type MutableReplicatedState } from "@punch-bot/chord";
 import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
-import { clampThinkingLevel, getSupportedThinkingLevels, type ModelThinkingLevel } from "@punch-bot/ai";
-import {
-	AgentDoc,
-	type AgentState,
-	type Conversation,
-	type DocumentState,
-	type Harness,
-} from "@punch-bot/durable";
+import { AgentDoc, type AgentState, type Conversation, type DocumentState, type Harness } from "@punch-bot/durable";
 import type { ModelRuntime } from "../../core/model-runtime.ts";
 import type { SettingsManager } from "../../core/settings-manager.ts";
 import { Models, type Models as ModelsService, type ModelsState } from "./models.ts";

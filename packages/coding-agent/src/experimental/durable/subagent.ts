@@ -1,5 +1,5 @@
-import type { Context } from "@punch-bot/chord";
 import { type AssistantMessage, Type } from "@punch-bot/ai";
+import type { Context } from "@punch-bot/chord";
 import {
 	AssistantEntry,
 	configure,

@@ -3,11 +3,10 @@
  *
  * Usage: /debug-provider [on|off]
  * With no argument, the command toggles capture. Captured events are persisted
- * as expandable custom entries.
+ * as custom entries.
  */
 
-import { type ExtensionAPI, keyHint } from "@punch-bot/cli";
-import { Box, Text } from "@punch-bot/tui";
+import type { ExtensionAPI } from "@punch-bot/cli";
 
 const ENTRY_TYPE = "debug-provider-events";
 const STATUS_KEY = "debug-provider";
@@ -23,26 +22,6 @@ export default function (pi: ExtensionAPI) {
 	let enabled = false;
 	let activeEvents: unknown[] | undefined;
 	let completedEntry: ProviderDebugEntry | undefined;
-
-	pi.registerEntryRenderer<ProviderDebugEntry>(ENTRY_TYPE, (entry, { expanded }, theme) => {
-		const data = entry.data;
-		if (!data) return new Text(theme.fg("warning", "[provider debug] Missing event data"), 0, 0);
-
-		const box = new Box(1, 1, (text) => theme.bg("customMessageBg", text));
-		const count = `${data.events.length} event${data.events.length === 1 ? "" : "s"}`;
-		const expandHint = expanded ? "" : ` (${keyHint("app.tools.expand", "to view events")})`;
-		box.addChild(
-			new Text(
-				`${theme.fg("accent", "[provider debug]")} ${data.provider}/${data.model} (${data.api}) · ${count}${expandHint}`,
-				0,
-				0,
-			),
-		);
-		if (expanded) {
-			box.addChild(new Text(JSON.stringify(data.events, null, 2), 0, 0));
-		}
-		return box;
-	});
 
 	pi.registerCommand("debug-provider", {
 		description: "Toggle capture of raw provider stream events",

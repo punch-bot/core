@@ -1,5 +1,5 @@
-import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
 import { createModels, type FauxProviderHandle, type FauxResponseStep, fauxProvider } from "@punch-bot/ai";
+import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
 import { type Conversation, createRegistry, Harness, MemoryStorage } from "@punch-bot/durable";
 
 export interface FauxConversation {

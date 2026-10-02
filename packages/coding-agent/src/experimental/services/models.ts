@@ -1,5 +1,5 @@
-import { type Context, defineService, type ReplicatedState } from "@punch-bot/chord";
 import type { ModelThinkingLevel } from "@punch-bot/ai";
+import { type Context, defineService, type ReplicatedState } from "@punch-bot/chord";
 
 export interface ModelRef {
 	provider: string;

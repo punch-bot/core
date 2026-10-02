@@ -2,10 +2,11 @@
 // view or the snapshot event, and then only what changes after that.
 // Run from packages/durable:
 //   node --conditions=source --experimental-strip-types test/examples/21-late-join.ts
-import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
+
 import { Type } from "@punch-bot/ai";
 import { createModels } from "@punch-bot/ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from "@punch-bot/ai/providers/faux";
+import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
 import {
 	type AgentEvent,
 	createRegistry,

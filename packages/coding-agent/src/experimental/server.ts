@@ -2,8 +2,6 @@ import { randomUUID } from "node:crypto";
 import { chmod, lstat, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
-import { BACKGROUND_CONTEXT, type JsonlSessionMetadata, JsonlSessionRepo, TODO_CONTEXT } from "@punch-bot/agent";
-import { NodeExecutionEnv } from "@punch-bot/agent/node";
 import type { Context } from "@punch-bot/chord";
 import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
 import type { FacetBundleArtifact } from "@punch-bot/chord/node";

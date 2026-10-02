@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
+import type { ConversationView } from "@punch-bot/durable";
 import type { ClientCommand } from "../cli/experimental/commands/client.ts";
 import { activateBuiltinClientServices, openClientRuntime } from "./client-runtime.ts";
 import type { SessionAddress } from "./services/sessions.ts";
@@ -15,6 +16,8 @@ export type ClientResult =
 export interface RunClientOptions {
 	/** Directory searched when --connect is omitted. Defaults to PI_SERVER_DIR or ~/.pi/server. */
 	readonly directory?: string;
+	/** Receives ordered durable conversation views while a prompt is active. */
+	readonly onView?: (view: ConversationView) => void | Promise<void>;
 }
 
 /** Discover servers, then list Sessions, attach to one, or create one for a prompt. */
@@ -75,11 +78,22 @@ export async function runClient(command: ClientCommand, options: RunClientOption
 			return { kind: "attached", serverId: match.route.serverId, sessionId };
 		}
 
-		const response = await match.agent.prompt({ message: command.prompt, images: null }, BACKGROUND_CONTEXT);
-		if (!response.accepted) throw new Error(response.error.message);
-		const result = await match.agent.waitForPrompt(response.operationId, BACKGROUND_CONTEXT);
-		if (result.status === "unanswered") throw new Error(`Prompt was not answered: ${result.reason}`);
-		return { kind: "prompted", serverId: match.route.serverId, sessionId, text: result.text };
+		let deliveryTail = Promise.resolve();
+		const unsubscribe = options.onView
+			? match.transcript.state.subscribe((view) => {
+					deliveryTail = deliveryTail.then(() => options.onView?.(view));
+				})
+			: undefined;
+		try {
+			const response = await match.agent.prompt({ message: command.prompt, images: null }, BACKGROUND_CONTEXT);
+			if (!response.accepted) throw new Error(response.error.message);
+			const result = await match.agent.waitForPrompt(response.operationId, BACKGROUND_CONTEXT);
+			if (result.status === "unanswered") throw new Error(`Prompt was not answered: ${result.reason}`);
+			return { kind: "prompted", serverId: match.route.serverId, sessionId, text: result.text };
+		} finally {
+			unsubscribe?.();
+			await deliveryTail;
+		}
 	} finally {
 		await runtime.dispose();
 	}
