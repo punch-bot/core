@@ -94,9 +94,7 @@ export default function contextPruningExtension(pi: ExtensionAPI): void {
 				? `\n\n## Context pruning now\nUsage ${Math.round(usage.percent)}% — compress stale complete ranges with compress_context before continuing. Keep current work and recent turns raw.`
 				: "";
 		if (!nudge) return;
-		return {
-			systemPrompt: `${event.systemPrompt}${nudge}`,
-		};
+		event.systemPromptOptions.sections.context_pruning = nudge.trim();
 	});
 
 	pi.on("context", (event, ctx) => {

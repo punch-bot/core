@@ -8,15 +8,22 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentMessage, AgentTool } from "@punch-bot/agent";
 import { Agent } from "@punch-bot/agent";
-import type { FauxModelDefinition, FauxProviderRegistration, FauxResponseStep, Model } from "@punch-bot/ai/compat";
+import type {
+	FauxModelDefinition,
+	FauxProviderRegistration,
+	FauxResponseStep,
+	Model,
+	ToolResultMessage,
+} from "@punch-bot/ai/compat";
 import { registerFauxProvider, streamSimple } from "@punch-bot/ai/compat";
 import { AgentSession, type AgentSessionEvent } from "../../src/core/agent-session.ts";
 import { AuthStorage } from "../../src/core/auth-storage.ts";
-import type { ExtensionRunner } from "../../src/core/extensions/index.ts";
+import type { ExtensionRunner, ExtensionUIContext } from "../../src/core/extensions/index.ts";
 import { convertToLlm } from "../../src/core/messages.ts";
 import { SessionManager } from "../../src/core/session-manager.ts";
 import type { Settings } from "../../src/core/settings-manager.ts";
 import { SettingsManager } from "../../src/core/settings-manager.ts";
+import { theme } from "../../src/core/theme/theme.ts";
 import type { InlineExtension, ResourceLoader } from "../../src/index.ts";
 import {
 	type CreateTestExtensionsResultInput,
@@ -55,10 +62,50 @@ export function getAssistantTexts(harness: Harness): string[] {
 		.map((message) => getMessageText(message));
 }
 
+/** The latest result of `toolName` in the session transcript. */
+export function getToolResult(harness: Harness, toolName: string): ToolResultMessage {
+	const result = harness.session.messages.findLast(
+		(message): message is ToolResultMessage => message.role === "toolResult" && message.toolName === toolName,
+	);
+	if (!result) throw new Error(`No ${toolName} tool result`);
+	return result;
+}
+
+/** An extension UI context that does nothing, with `overrides` applied. */
+export function createTestUiContext(overrides: Partial<ExtensionUIContext> = {}): ExtensionUIContext {
+	return {
+		select: async () => undefined,
+		confirm: async () => false,
+		input: async () => undefined,
+		notify: () => {},
+		setStatus: () => {},
+		setWorkingMessage: () => {},
+		setWorkingVisible: () => {},
+		setWorkingIndicator: () => {},
+		setHiddenThinkingLabel: () => {},
+		setWidget: () => {},
+		setTitle: () => {},
+		pasteToEditor: () => {},
+		setEditorText: () => {},
+		getEditorText: () => "",
+		editor: async () => undefined,
+		get theme() {
+			return theme;
+		},
+		getAllThemes: () => [],
+		getTheme: () => undefined,
+		setTheme: () => ({ success: false, error: "Theme switching not available in tests" }),
+		getToolsExpanded: () => false,
+		setToolsExpanded: () => {},
+		...overrides,
+	};
+}
+
 export interface HarnessOptions {
 	models?: FauxModelDefinition[];
-	settings?: Partial<Settings>;
+	/** Override the production prompt for tests with deliberately small context windows. */
 	systemPrompt?: string;
+	settings?: Partial<Settings>;
 	tools?: AgentTool[];
 	initialActiveToolNames?: string[];
 	allowedToolNames?: string[];
@@ -67,6 +114,8 @@ export interface HarnessOptions {
 	extensionFactories?: Array<InlineExtension | CreateTestExtensionsResultInput>;
 	withConfiguredAuth?: boolean;
 	modelsJson?: Record<string, unknown>;
+	/** Session to continue, for example to test a resume. Default: a new in-memory session. */
+	sessionManager?: SessionManager;
 }
 
 export interface Harness {
@@ -104,7 +153,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 	const withConfiguredAuth = options.withConfiguredAuth ?? true;
 	const extensionRunnerRef: { current?: ExtensionRunner } = {};
 
-	const sessionManager = SessionManager.inMemory();
+	const sessionManager = options.sessionManager ?? SessionManager.inMemory();
 	const settingsManager = SettingsManager.inMemory(options.settings);
 
 	const authStorage = AuthStorage.inMemory();
@@ -127,6 +176,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 				api: registeredModel.api,
 				reasoning: registeredModel.reasoning,
 				input: registeredModel.input,
+				inputLimits: registeredModel.inputLimits,
 				cost: registeredModel.cost,
 				contextWindow: registeredModel.contextWindow,
 				maxTokens: registeredModel.maxTokens,
@@ -140,7 +190,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 		streamFn: streamSimple,
 		initialState: {
 			model,
-			systemPrompt: options.systemPrompt ?? "You are a test assistant.",
+			systemPrompt: "",
 			tools: [],
 		},
 		convertToLlm,
@@ -172,7 +222,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 		? await createTestExtensionsResult(options.extensionFactories, tempDir)
 		: undefined;
 	const resourceLoader =
-		options.resourceLoader ?? createTestResourceLoader(extensionsResult ? { extensionsResult } : undefined);
+		options.resourceLoader ?? createTestResourceLoader({ extensionsResult, systemPrompt: options.systemPrompt });
 
 	const session = new AgentSession({
 		agent,

@@ -1,6 +1,5 @@
-import type { SessionMetadata } from "@punch-bot/agent";
 import { Server } from "../../server.ts";
-import type { ServerHost } from "../../types.ts";
+import type { ServerHost, SessionMetadata } from "../../types.ts";
 import { createUnixListener } from "./listener.ts";
 import type { UnixServerOptions } from "./types.ts";
 

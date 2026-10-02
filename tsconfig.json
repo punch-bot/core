@@ -5,7 +5,6 @@
 		"module": "NodeNext",
 		"moduleResolution": "NodeNext",
 		"paths": {
-			"*": ["./*"],
 			"@punch-bot/chord": ["./packages/chord/src/index.ts"],
 			"@punch-bot/chord/bundler": ["./packages/chord/src/bundler.ts"],
 			"@punch-bot/chord/context": ["./packages/chord/src/context/index.ts"],
@@ -13,23 +12,27 @@
 			"@punch-bot/chord/node": ["./packages/chord/src/node.ts"],
 			"@punch-bot/telemetry": ["./packages/telemetry/src/index.ts"],
 			"@punch-bot/telemetry/testing": ["./packages/telemetry/src/testing/index.ts"],
+			"@punch-bot/codemode": ["./packages/codemode/src/index.ts"],
+			"@punch-bot/codemode/declarations": ["./packages/codemode/src/declarations.ts"],
+			"@punch-bot/codemode/source": ["./packages/codemode/src/source.ts"],
+			"@punch-bot/codemode/worker": ["./packages/codemode/src/runtime/worker.ts"],
+			"@punch-bot/mcp": ["./packages/mcp/src/index.ts"],
+			"@punch-bot/mcp/oauth": ["./packages/mcp/src/oauth/index.ts"],
+			"@punch-bot/mcp/testing": ["./packages/mcp/src/testing/index.ts"],
 			"@punch-bot/ai": ["./packages/ai/src/index.ts"],
 			"@punch-bot/ai/oauth": ["./packages/ai/src/oauth.ts"],
 			"@punch-bot/ai/*": ["./packages/ai/src/*.ts", "./packages/ai/src/providers/*.ts"],
 			"@punch-bot/ai/dist/*": ["./packages/ai/src/*"],
+			"@punch-bot/durable": ["./packages/durable/src/index.ts"],
+			"@punch-bot/durable/testing": ["./packages/durable/src/testing/index.ts"],
+			"@punch-bot/durable/*": [
+				"./packages/durable/src/*.ts",
+				"./packages/durable/src/*/index.ts",
+				"./packages/durable/src/*"
+			],
 			"@punch-bot/agent": ["./packages/agent/src/index.ts"],
-			"@punch-bot/agent/harness/session/testing": [
-				"./packages/agent/src/harness/session/testing/index.ts"
-			],
-			"@punch-bot/agent/node": ["./packages/agent/src/node.ts"],
-			"@punch-bot/agent/*": [
-				"./packages/agent/src/*.ts",
-				"./packages/agent/src/*/index.ts",
-				"./packages/agent/src/*"
-			],
 			"@punch-bot/a2a": ["./packages/a2a/src/index.ts"],
 			"@punch-bot/a2a/*": ["./packages/a2a/src/*"],
-			"@punch-bot/sqlite-node": ["./packages/session-backends/sqlite-node/src/index.ts"],
 			"@punch-bot/cli": ["./packages/coding-agent/src/index.ts"],
 			"@punch-bot/cli/experimental/plugin": [
 				"./packages/coding-agent/src/experimental/plugin.ts"
@@ -47,6 +50,6 @@
 			"typebox": ["./node_modules/typebox"]
 		}
 	},
-	"include": ["packages/*/src/**/*", "packages/*/test/**/*", "packages/session-backends/*/src/**/*", "packages/session-backends/*/test/**/*", "packages/coding-agent/examples/**/*"],
+	"include": ["scripts/model-catalog-protocol.ts", "scripts/model-catalog-protocol.test.ts", "packages/*/src/**/*", "packages/*/test/**/*", "packages/coding-agent/examples/**/*", "packages/agent/examples/**/*"],
 	"exclude": ["**/dist/**", "packages/coding-agent/examples/extensions/gondolin/**"]
 }

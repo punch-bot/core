@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { BACKGROUND_CONTEXT, type Context, type SessionMetadata } from "@punch-bot/agent";
-import type { JsonValue, ServiceCall, ServiceProviderUpdate } from "@punch-bot/chord";
+import type { Context, JsonValue, ServiceCall, ServiceProviderUpdate } from "@punch-bot/chord";
+import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
 import type { RpcTarget, SessionTarget } from "@punch-bot/protocol";
 import { ServerDrainingError, SessionNotAttachedError } from "./errors.ts";
-import type { RoutedSessionAttachment, RoutedSessionHandle, ServerHost } from "./types.ts";
+import type { RoutedSessionAttachment, RoutedSessionHandle, ServerHost, SessionMetadata } from "./types.ts";
 
 class SessionCleanupError extends AggregateError {}
 

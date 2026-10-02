@@ -52,27 +52,27 @@ Replace the default system prompt with:
 - `.pi/SYSTEM.md` for a project
 - `~/.pi/agent/SYSTEM.md` globally
 
-Append to the default prompt without replacing it with `APPEND_SYSTEM.md` in either location.
+Run `pi` from the folder you want to work in. Pi uses that folder to discover files, instructions, and configuration, and to group saved sessions. If you have not installed Pi or chosen a model yet, follow the [Quickstart](quickstart.md).
 
-### Project Trust
+Pi may ask whether you trust the working folder before loading its project resources. See [Project trust](security.md#understand-project-trust).
 
 Trusting a project allows pi to load `.pi/settings.json` and `.pi` resources, install missing project packages, and execute project extensions.
 
-Before the trust decision, pi loads only context files, user/global extensions, and CLI `-e` extensions so they can handle the `project_trust` event. Project-local extensions, project package-managed extensions, and project settings are loaded only after the project is trusted. This split also applies when switching to a session from a different cwd whose trust has not been resolved in the current process.
+The transcript shows your prompts, Pi's responses, tool calls, results, and errors. You write prompts and commands in the editor. The footer shows the current folder, session, model, context usage, and accumulated usage and cost.
 
 Headless modes (`-p`, `--mode json`, and `--mode rpc`) do not show a trust prompt. Without an applicable saved trust decision, they use `defaultProjectTrust` from global settings: `ask` (default) and `never` ignore those project resources, while `always` trusts them. Pass `--approve`/`-a` or `--no-approve`/`-na` to override project trust for one run.
 
 If no extension or saved decision applies, `defaultProjectTrust` controls the fallback behavior. Set it to `"ask"`, `"always"`, or `"never"` in `~/.pi/agent/settings.json`.
 
-`pi config` and package commands use the same project trust flow, except `pi update` never prompts. Pass `--approve` to trust project-local settings for one command or `--no-approve` to ignore them.
+To include files or images:
 
 ## Exporting and Sharing Sessions
 
 Use `pi --export <session> [output.html]` or the RPC `export_html` command to write a session to HTML.
 
-If you use pi for open source work and want to publish sessions for model, prompt, tool, and evaluation research, see [`badlogic/pi-share-hf`](https://github.com/badlogic/pi-share-hf). It publishes sessions to Hugging Face datasets.
+## Change direction
 
-## CLI Reference
+You can send more input while Pi is working:
 
 ```bash
 pi [options] [--] [@files...] [messages...]
@@ -94,11 +94,11 @@ pi list                      # List installed packages
 pi config                    # Print resolved package resource paths as JSON
 ```
 
-These commands manage pi packages and `pi update` can update the pi CLI installation. To uninstall pi itself, see [Quickstart](quickstart.md#uninstall). `pi config` and project package commands accept `--approve`/`--no-approve` to trust or ignore project-local settings for one command. `pi update` never prompts for project trust.
+A message sent with `Enter` waits until the current response and its tool calls finish, then guides the next response. A follow-up sent with `Alt+Enter` waits until Pi finishes the current task. Aborting returns queued messages to the editor.
 
-See [Pi Packages](packages.md) for package sources and security notes.
+Windows Terminal reserves some Alt shortcuts. See [Terminal Setup](terminal-setup.md) for the Windows alternatives.
 
-### Modes
+## Change the model or settings
 
 | Flag | Description |
 |------|-------------|
@@ -108,11 +108,12 @@ See [Pi Packages](packages.md) for package sources and security notes.
 | `--mode rpc` | RPC mode over stdin/stdout; see [RPC mode](rpc.md) |
 | `--export <in> [out]` | Export a session to HTML |
 
-In print mode, pi also reads piped stdin and merges it into the initial prompt:
+- `/model` selects a model. Press `Ctrl+L` to open the same selector.
+- `/thinking` selects how much reasoning the current model uses. Press `Shift+Tab` to cycle through supported levels.
+- `/login` and `/logout` manage provider access.
+- `/settings` changes common preferences.
 
-```bash
-cat README.md | pi -p "Summarize this text"
-```
+Prompt templates, skills, and extensions can add more commands to the same menu. See [Choose a Model](models.md), [Configuration](configuration.md), or the complete [Slash Commands reference](slash-commands.md).
 
 ### Model Options
 
@@ -168,7 +169,7 @@ Combine `--no-*` with explicit flags to load exactly what you need, ignoring set
 pi --no-extensions -e ./my-extension.ts
 ```
 
-### Other Options
+Pi saves sessions automatically unless session persistence is disabled.
 
 | Option | Description |
 |--------|-------------|
@@ -184,12 +185,10 @@ pi --no-extensions -e ./my-extension.ts
 
 ### File Arguments
 
-Prefix files with `@` to include them in the message:
+Prefix a command with `!` to run it and include its output in the conversation:
 
-```bash
-pi @prompt.md "Answer this"
-pi -p @screenshot.png "What's in this image?"
-pi @code.ts @test.ts "Review these files"
+```text
+!git status
 ```
 
 ### Examples
@@ -201,14 +200,11 @@ pi "List all .ts files in src/"
 # Explicit print mode
 pi -p "Summarize this codebase"
 
-# Prompt beginning with a dash
-pi -p -- "- Summarize these points"
+Press `Ctrl+X` or run `/copy` to copy the last assistant response. Use `/export` to save the session as HTML or JSONL.
 
-# Non-interactive with piped stdin
-cat README.md | pi -p "Summarize this text"
+Use `/share` to upload the session and get a viewer link. With Radius authentication, the artifact is visible to your Radius organization. Otherwise, Pi creates a private GitHub gist through the GitHub CLI. Review the session first because it can contain prompts, tool output, file contents, and credentials exposed during the conversation.
 
-# Named one-shot session
-pi --name "release audit" -p "Audit this repository"
+## Adjust the terminal
 
 # Different model
 pi --provider openai --model gpt-4o "Help me refactor"
@@ -229,10 +225,10 @@ pi --tools read,grep,find,ls -p "Review the code"
 pi --exclude-tools ask_question
 ```
 
-## Design Principles
+Terminal support for mouse input, keyboard shortcuts, and inline images varies. See [Terminal Setup](terminal-setup.md) for platform-specific configuration and [Keybindings](keybindings.md) for every configurable shortcut. Run `/hotkeys` to inspect the shortcuts active in your current session.
 
-Pi keeps the core small and pushes workflow-specific behavior into extensions, skills, prompt templates, and packages.
+## Collect diagnostic information
 
-It intentionally does not include built-in MCP, sub-agents, permission popups, plan mode, to-dos, or background bash. You can build or install those workflows as extensions or packages, or use external tools such as containers and tmux.
+When troubleshooting terminal rendering or conversation state, run `/debug`. Pi writes the rendered terminal lines and current session messages to `pi-debug.log` in your [agent directory](configuration.md#agent-directory).
 
-For the full rationale, read the [blog post](https://mariozechner.at/posts/2025-11-30-pi-coding-agent/).
+Review this file before sharing it. It can contain prompts, model responses, tool output, file contents, and terminal data.

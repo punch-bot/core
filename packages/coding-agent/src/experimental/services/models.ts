@@ -1,4 +1,4 @@
-import type { ThinkingLevel } from "@punch-bot/agent";
+import type { ModelThinkingLevel } from "@punch-bot/ai";
 import { type Context, defineService, type ReplicatedState } from "@punch-bot/chord";
 
 export interface ModelRef {
@@ -18,7 +18,7 @@ export interface ModelsState {
 	};
 	configuration: {
 		model: ModelRef | null;
-		thinkingLevel: ThinkingLevel;
+		thinkingLevel: ModelThinkingLevel;
 	};
 	refresh: { status: "idle" | "refreshing" | "done" } | { status: "warning"; errors: Record<string, string> };
 }
@@ -26,10 +26,10 @@ export interface ModelsState {
 export interface Models {
 	readonly state: ReplicatedState<ModelsState>;
 	cycleThinking(context: Context): Promise<void>;
-	getThinkingLevels(context: Context): Promise<ThinkingLevel[]>;
+	getThinkingLevels(context: Context): Promise<ModelThinkingLevel[]>;
 	refresh(context: Context): Promise<void>;
 	select(model: ModelRef, context: Context): Promise<void>;
-	selectThinking(level: ThinkingLevel, context: Context): Promise<void>;
+	selectThinking(level: ModelThinkingLevel, context: Context): Promise<void>;
 }
 
 export const Models = defineService<Models>("pi.models");

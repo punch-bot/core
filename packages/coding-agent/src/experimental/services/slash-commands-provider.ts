@@ -1,4 +1,4 @@
-import type { ThinkingLevel } from "@punch-bot/agent";
+import type { ModelThinkingLevel } from "@punch-bot/ai";
 import { defineFacet, type Facet, type JsonValue } from "@punch-bot/chord";
 import { AgentController } from "./agent-controller.ts";
 import { type ModelSummary, Models, type Models as ModelsService } from "./models.ts";
@@ -6,7 +6,7 @@ import { PresentationPlugins, SessionPlugins } from "./plugins.ts";
 import { PresentationUI } from "./presentation-ui.ts";
 import { type SlashCommandContribution, SlashCommands } from "./slash-commands.ts";
 
-const THINKING_DESCRIPTIONS: Record<ThinkingLevel, string> = {
+const THINKING_DESCRIPTIONS: Record<ModelThinkingLevel, string> = {
 	off: "No reasoning",
 	minimal: "Very brief reasoning",
 	low: "Light reasoning",

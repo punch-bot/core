@@ -3,7 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { discoverAndLoadExtensions } from "../src/core/extensions/loader.ts";
+import { discoverAndLoadExtensions, loadExtensions } from "../src/core/extensions/loader.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -67,6 +67,41 @@ describe("extensions discovery", () => {
 
 		expect(result.errors).toHaveLength(0);
 		expect(result.extensions).toHaveLength(1);
+	});
+
+	it("does not infer package ownership from ancestor manifests", async () => {
+		// Regression for #9863.
+		const dependencyDir = path.join(tempDir, "node_modules", "@punch-bot", "cli");
+		fs.mkdirSync(dependencyDir, { recursive: true });
+		fs.writeFileSync(
+			path.join(tempDir, "package.json"),
+			JSON.stringify({
+				name: "application",
+				type: "module",
+				dependencies: { "@punch-bot/cli": "1.0.0" },
+			}),
+		);
+		fs.writeFileSync(
+			path.join(dependencyDir, "package.json"),
+			JSON.stringify({ name: "@punch-bot/cli", type: "module", exports: "./index.js" }),
+		);
+		fs.writeFileSync(path.join(dependencyDir, "index.js"), "export const physicalDependency = true;");
+		fs.writeFileSync(
+			path.join(extensionsDir, "compiled-esm-extension.js"),
+			`
+				import { physicalDependency } from "@punch-bot/cli";
+				export default function(pi) {
+					if (physicalDependency) pi.registerCommand("physical-dependency", { handler: async () => {} });
+				}
+			`,
+		);
+
+		const result = await discoverAndLoadExtensions([], tempDir, tempDir);
+
+		expect(result.errors).toEqual([]);
+		expect(result.extensions).toHaveLength(1);
+		expect(result.extensions[0].commands.has("physical-dependency")).toBe(true);
+		expect(result.warnings).toEqual([]);
 	});
 
 	it("keeps the type-only pi-ai OAuth compatibility barrel resolvable", async () => {
@@ -484,7 +519,6 @@ describe("extensions discovery", () => {
 		fs.writeFileSync(explicitPath, extensionCodeWithTool("explicit"));
 
 		// Use loadExtensions directly to skip discovery
-		const { loadExtensions } = await import("../src/core/extensions/loader.ts");
 		const result = await loadExtensions([explicitPath], tempDir);
 
 		expect(result.errors).toHaveLength(0);
@@ -498,7 +532,6 @@ describe("extensions discovery", () => {
 		fs.writeFileSync(path.join(extensionsDir, "discovered.ts"), extensionCode);
 
 		// Use loadExtensions directly with empty paths
-		const { loadExtensions } = await import("../src/core/extensions/loader.ts");
 		const result = await loadExtensions([], tempDir);
 
 		expect(result.errors).toHaveLength(0);

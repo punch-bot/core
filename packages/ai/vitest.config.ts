@@ -14,7 +14,6 @@ export default defineConfig({
 	resolve: {
 		alias: [
 			{ find: /^@punch-bot\/telemetry$/, replacement: telemetrySrcIndex },
-			{ find: /^@earendil-works\/pi-telemetry$/, replacement: telemetrySrcIndex },
 		],
 	},
 });

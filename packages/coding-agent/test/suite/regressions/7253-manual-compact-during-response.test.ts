@@ -34,6 +34,7 @@ describe("issue #7253: manual compaction during an active response", () => {
 		});
 
 		const harness = await createHarness({
+			systemPrompt: "You are a coding assistant.",
 			models: [{ id: "faux-1", contextWindow: 1000, maxTokens: 1000 }],
 			settings: { compaction: { enabled: true, reserveTokens: 200, keepRecentTokens: 2 } },
 			tools: [createNoopTool()],

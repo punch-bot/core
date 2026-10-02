@@ -1,5 +1,4 @@
-import type { Context, SessionMetadata } from "@punch-bot/agent";
-import type { JsonValue, ServiceCall, ServiceProviderUpdate } from "@punch-bot/chord";
+import type { Context, JsonValue, ServiceCall, ServiceProviderUpdate } from "@punch-bot/chord";
 import type { ServerListener } from "./listener.ts";
 
 export interface ServerOptions {
@@ -13,6 +12,11 @@ export interface ServerOptions {
 }
 
 export type MaybePromise<T> = T | Promise<T>;
+
+/** Minimal durable Session metadata the server needs for routing. Applications may extend it. */
+export interface SessionMetadata {
+	readonly id: string;
+}
 
 /** One presentation connection's live capability for a hosted Session. */
 export interface RoutedSessionAttachment {

@@ -1,8 +1,8 @@
-# Terminal Setup
+# Configure your terminal
 
-Pi uses the [Kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/) for reliable modifier key detection. Most modern terminals support this protocol, but some require configuration.
+Most modern terminals work with Pi without additional setup. Use this page when modified keys, scrolling, links, images, colors, or input-method editor (IME) positioning do not behave as expected.
 
-## Capability Overrides
+Pi uses extended-key protocols so terminals can distinguish combinations such as `Shift+Enter` and `Alt+Enter` from plain `Enter`. Terminal proxies, multiplexers, and built-in IDE terminals can change or discard that information.
 
 Pi auto-detects truecolor support for themed output. If detection fails behind a terminal proxy or multiplexer, use this advanced override:
 
@@ -10,7 +10,7 @@ Pi auto-detects truecolor support for themed output. If detection fails behind a
 |------------|----------------------|--------------|
 | Truecolor | `PI_TRUE_COLOR=1\|0\|auto` | `terminal.trueColor: true\|false\|"auto"` |
 
-Settings take precedence over environment variables; unset or `auto` preserves detection. Only force capabilities supported by the complete terminal path, since unsupported escape sequences can corrupt rendering.
+Use `/hotkeys` to inspect Pi's active shortcuts. See [Keybindings](keybindings.md) to change them.
 
 ## Terminal emulators
 

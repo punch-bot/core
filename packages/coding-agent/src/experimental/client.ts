@@ -1,9 +1,8 @@
 import { resolve } from "node:path";
-import { BACKGROUND_CONTEXT, type LaneWatchEvent } from "@punch-bot/agent";
-import type { AssistantMessage } from "@punch-bot/ai";
+import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
+import type { ConversationView } from "@punch-bot/durable";
 import type { ClientCommand } from "../cli/experimental/commands/client.ts";
 import { activateBuiltinClientServices, openClientRuntime } from "./client-runtime.ts";
-import type { AgentOperationResponse } from "./services/agent-controller.ts";
 import type { SessionAddress } from "./services/sessions.ts";
 
 export type ClientResult =
@@ -17,8 +16,8 @@ export type ClientResult =
 export interface RunClientOptions {
 	/** Directory searched when --connect is omitted. Defaults to PI_SERVER_DIR or ~/.pi/server. */
 	readonly directory?: string;
-	/** Receives snapshot-ordered main-lane events while a prompt is active. */
-	readonly onEvent?: (event: LaneWatchEvent) => void | Promise<void>;
+	/** Receives ordered durable conversation views while a prompt is active. */
+	readonly onView?: (view: ConversationView) => void | Promise<void>;
 }
 
 /** Discover servers, then list Sessions, attach to one, or create one for a prompt. */
@@ -79,46 +78,23 @@ export async function runClient(command: ClientCommand, options: RunClientOption
 			return { kind: "attached", serverId: match.route.serverId, sessionId };
 		}
 
-		const agent = match.agent;
-		const completedText = new Map<string, string>();
 		let deliveryTail = Promise.resolve();
-		const unsubscribe = match.transcript.state.subscribe((value, _context, delivery) => {
-			if (delivery.kind !== "update" || value.event === null) return;
-			const event = value.event;
-			deliveryTail = deliveryTail.then(async () => {
-				if (event.type === "message_end" && event.runId !== undefined && event.message.role === "assistant") {
-					completedText.set(event.runId, messageText(event.message));
-				}
-				await options.onEvent?.(event);
-			});
-		});
-		if (match.transcript.state.value?.snapshot === null || match.transcript.state.value?.snapshot === undefined) {
-			unsubscribe();
-			throw new Error("Transcript has no initialized snapshot");
-		}
-		let response: AgentOperationResponse;
+		const unsubscribe = options.onView
+			? match.transcript.state.subscribe((view) => {
+					deliveryTail = deliveryTail.then(() => options.onView?.(view));
+				})
+			: undefined;
 		try {
-			response = await agent.prompt({ message: command.prompt, images: null }, BACKGROUND_CONTEXT);
+			const response = await match.agent.prompt({ message: command.prompt, images: null }, BACKGROUND_CONTEXT);
+			if (!response.accepted) throw new Error(response.error.message);
+			const result = await match.agent.waitForPrompt(response.operationId, BACKGROUND_CONTEXT);
+			if (result.status === "unanswered") throw new Error(`Prompt was not answered: ${result.reason}`);
+			return { kind: "prompted", serverId: match.route.serverId, sessionId, text: result.text };
 		} finally {
-			unsubscribe();
+			unsubscribe?.();
 			await deliveryTail;
 		}
-		if (!response.accepted) throw new Error(response.error.message);
-		if (response.error !== null) throw new Error(response.error.message);
-		return {
-			kind: "prompted",
-			serverId: match.route.serverId,
-			sessionId,
-			text: completedText.get(response.operationId) ?? "",
-		};
 	} finally {
 		await runtime.dispose();
 	}
-}
-
-function messageText(message: AssistantMessage): string {
-	return message.content
-		.filter((content) => content.type === "text")
-		.map((content) => content.text)
-		.join("");
 }
