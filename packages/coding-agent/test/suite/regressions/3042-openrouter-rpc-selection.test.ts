@@ -4,6 +4,7 @@ import { fauxAssistantMessage } from "@punch-bot/ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ENV_AGENT_DIR } from "../../../src/config.ts";
 import type { AgentSessionRuntime } from "../../../src/core/agent-session-runtime.ts";
+import { defaultModelPerProvider } from "../../../src/core/model-resolver.ts";
 import { SessionManager } from "../../../src/core/session-manager.ts";
 import { stopThemeWatcher } from "../../../src/core/theme/theme.ts";
 import { main } from "../../../src/main.ts";
@@ -142,13 +143,14 @@ describe("regression #3042: OpenRouter RPC startup and session selection", () =>
 			success: true,
 			data: { model: { provider: "openrouter", id: "fixture/model:free" } },
 		});
-		for (const modelId of ["fixture/model:batch", "fixture/model:free", "fixture/model"]) {
+		for (const modelId of ["fixture/model:batch", "fixture/model:free", "fixture/model:nitro", "fixture/model"]) {
 			expect(await request({ type: "set_model", provider: "openrouter", modelId })).toMatchObject({
 				success: true,
 				data: { id: modelId },
 			});
 		}
-		for (const modelId of ["fixture/model:unknown", "fixture/model:free:high", "model", "fixture/missing"]) {
+		// RPC never matches partially, and a thinking level is not a variant suffix
+		for (const modelId of ["fixture/model:free:high", "model", "fixture/missing"]) {
 			expect(await request({ type: "set_model", provider: "openrouter", modelId })).toMatchObject({
 				success: false,
 				error: expect.stringContaining("Model not found"),
@@ -170,26 +172,30 @@ describe("regression #3042: OpenRouter RPC startup and session selection", () =>
 		});
 	});
 
-	it.each([{ args: [] }, { args: ["--model", "openrouter/fixture/model"] }])(
-		"fails startup for a missing explicit or saved default base with flags $args",
+	it.each([{ args: ["--model", "openrouter/fixture/model"] }, { args: ["--models", "openrouter/fixture/model"] }])(
+		"names the variant a partial match picks when the base is missing, with flags $args",
 		async ({ args }) => {
 			writeCatalog(["fixture/model:free"]);
-			await expect(start(args)).rejects.toThrow("fixture/model");
-			expect(process.exit).toHaveBeenCalledWith(1);
-			expect(rpcIo.hosts).toEqual([]);
+			const request = await start(args);
+			expect(await request({ type: "get_state" })).toMatchObject({ data: { model: { id: "fixture/model:free" } } });
+			expect(diagnostics.join("\n")).toContain(
+				'No exact match for "openrouter/fixture/model". Using openrouter/fixture/model:free.',
+			);
 		},
 	);
 
-	it("rejects an empty explicit model instead of using the default", async () => {
-		await expect(start(["--model", ""])).rejects.toThrow('Model "" not found');
-		expect(rpcIo.hosts).toEqual([]);
+	it("names the model it uses when the saved default is missing", async () => {
+		writeCatalog(["fixture/model:free"]);
+		const request = await start();
+		const fallback = defaultModelPerProvider.openrouter;
+		expect(await request({ type: "get_state" })).toMatchObject({ data: { model: { id: fallback } } });
+		expect(diagnostics.join("\n")).toContain(
+			`Could not select default model openrouter/fixture/model (model not found). Using openrouter/${fallback}.`,
+		);
 	});
 
-	it("fails an explicit model scope instead of ignoring the missing base", async () => {
-		writeCatalog(["fixture/model:free"]);
-		await expect(start(["--models", "openrouter/fixture/model"])).rejects.toThrow(
-			'Model "openrouter/fixture/model" not found',
-		);
+	it("rejects an empty explicit model instead of using the default", async () => {
+		await expect(start(["--model", ""])).rejects.toThrow('Model "" not found');
 		expect(rpcIo.hosts).toEqual([]);
 	});
 
@@ -217,9 +223,10 @@ describe("regression #3042: OpenRouter RPC startup and session selection", () =>
 		expect(await request({ type: "get_state" })).toMatchObject({ data: { model: { id: "fixture/model" } } });
 		expect(await request({ type: "switch_session", sessionPath: variant })).toMatchObject({ success: true });
 		expect(await request({ type: "get_state" })).toMatchObject({ data: { model: { id: "fixture/model:free" } } });
-		expect(await request({ type: "switch_session", sessionPath: missing })).toMatchObject({
-			success: false,
-			error: expect.stringContaining("Could not restore model openrouter/fixture/missing"),
+		// A session whose model is gone falls back to the default instead of the startup --model
+		expect(await request({ type: "switch_session", sessionPath: missing })).toMatchObject({ success: true });
+		expect(await request({ type: "get_state" })).toMatchObject({
+			data: { sessionFile: missing, model: { id: "fixture/model" } },
 		});
 		expect(await request({ type: "new_session" })).toMatchObject({ success: true });
 		expect(await request({ type: "get_state" })).toMatchObject({ data: { model: { id: "fixture/model" } } });
@@ -264,40 +271,27 @@ describe("regression #3042: OpenRouter RPC startup and session selection", () =>
 		});
 	});
 
-	it("restores variants on startup and switch, and rejects unavailable sessions/defaults", async () => {
+	it("restores variants on startup and switch, including routing suffixes", async () => {
 		const variant = savedSession("fixture/model:free");
-		const missing = savedSession("fixture/missing");
+		const routed = savedSession("fixture/model:nitro");
 		const request = await start(["--session", variant]);
 		expect(await request({ type: "get_state" })).toMatchObject({ data: { model: { id: "fixture/model:free" } } });
 		expect(await request({ type: "new_session" })).toMatchObject({ success: true });
 		expect(await request({ type: "get_state" })).toMatchObject({ data: { model: { id: "fixture/model" } } });
-		expect(await request({ type: "switch_session", sessionPath: variant })).toMatchObject({ success: true });
-		expect(await request({ type: "switch_session", sessionPath: missing })).toMatchObject({
-			success: false,
-			error: expect.stringContaining("Could not restore model openrouter/fixture/missing"),
-		});
+		expect(await request({ type: "switch_session", sessionPath: routed })).toMatchObject({ success: true });
 		expect(await request({ type: "get_state" })).toMatchObject({
-			data: { sessionFile: variant, model: { id: "fixture/model:free" } },
-		});
-		writeFileSync(
-			join(agentDir, "settings.json"),
-			JSON.stringify({ defaultProvider: "openrouter", defaultModel: "fixture/missing" }),
-		);
-		expect(await request({ type: "new_session" })).toMatchObject({
-			success: false,
-			error: expect.stringContaining("Could not select default model"),
-		});
-		expect(await request({ type: "get_state" })).toMatchObject({
-			data: { sessionFile: variant, model: { id: "fixture/model:free" } },
+			data: { sessionFile: routed, model: { id: "fixture/model:nitro" } },
 		});
 	});
 
-	it("fails resume when the saved base is missing even though its variant is present", async () => {
+	it("warns instead of restoring a variant when the saved base is missing", async () => {
 		const sessionPath = savedSession("fixture/model");
 		writeCatalog(["fixture/model:free"]);
-		await expect(start(["--session", sessionPath])).rejects.toThrow(
-			"Could not restore model openrouter/fixture/model",
+		const request = await start(["--session", sessionPath]);
+		const fallback = defaultModelPerProvider.openrouter;
+		expect(await request({ type: "get_state" })).toMatchObject({ data: { model: { id: fallback } } });
+		expect(diagnostics.join("\n")).toContain(
+			`Could not restore model openrouter/fixture/model. Using openrouter/${fallback}`,
 		);
-		expect(process.exit).toHaveBeenCalledWith(1);
 	});
 });

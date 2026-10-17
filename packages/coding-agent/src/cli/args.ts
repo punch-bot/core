@@ -292,8 +292,8 @@ ${chalk.bold("Commands:")}
   ${APP_NAME} <command> --help          Show help for install/remove/uninstall/update/list/config/auth/mcp
 
 ${chalk.bold("Options:")}
-  --provider <name>              Provider for --model (requires --model)
-  --model <id>                   Exact model ID as "provider/id" (or with --provider), optional ":<thinking>"
+  --provider <name>              Provider to search for --model (requires --model)
+  --model <pattern>              Model ID or partial match (supports "provider/id" and optional ":<thinking>")
   --api-key <key>                API key (defaults to env vars)
   --system-prompt <text>         System prompt (default: coding assistant prompt)
   --append-system-prompt <text>  Append text or file contents to the system prompt (can be used multiple times)
@@ -307,8 +307,8 @@ ${chalk.bold("Options:")}
   --session-dir <dir>            Directory for session storage and lookup
   --no-session                   Don't save session (ephemeral)
   --name, -n <name>              Set session display name
-  --models <ids>                 Comma-separated exact model IDs or globs available to the session
-                                 Globs such as anthropic/* or *sonnet*
+  --models <patterns>            Comma-separated model patterns available to the session
+                                 Supports globs (anthropic/*, *sonnet*) and partial matching
   --no-tools, -nt                Disable all tools by default (built-in and extension)
   --no-builtin-tools, -nbt       Disable built-in tools by default but keep extension/custom tools enabled
   --tools, -t <tools>            Comma-separated allowlist of tool names or patterns (*) to enable

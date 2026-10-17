@@ -70,8 +70,8 @@ import { getAgentDir } from "../config.ts";
 import { operationSignal, raceWithAbortSignal } from "../utils/abort.ts";
 import { AuthStorage as DefaultAuthStorage } from "./auth-storage.ts";
 import { ModelConfig } from "./model-config.ts";
+import { findModelOrSuffixVariant } from "./model-suffix-variants.ts";
 import { FileModelsStore, InMemoryCodingAgentModelsStore } from "./models-store.ts";
-import { resolveOpenRouterRoutingVariant } from "./openrouter-routing.ts";
 import {
 	type AuthStatus,
 	type CompatibilityRequestConfig,
@@ -451,12 +451,12 @@ export class ModelRuntime implements Models {
 		return this.models.getModels(providerId);
 	}
 
-	/** Find a catalog model by exact ID. OpenRouter IDs may carry routing suffixes such as ":floor". */
+	/**
+	 * Find a catalog model by exact ID, or a suffix variant of one (`<catalog id>:<suffix>`, such as OpenRouter's
+	 * `:nitro`), so sessions and settings that saved a variant restore it.
+	 */
 	getModel(providerId: string, modelId: string): Model<Api> | undefined {
-		return (
-			this.models.getModel(providerId, modelId) ??
-			resolveOpenRouterRoutingVariant(providerId, modelId, (baseId) => this.models.getModel(providerId, baseId))
-		);
+		return findModelOrSuffixVariant(modelId, (id) => this.models.getModel(providerId, id));
 	}
 
 	getModelsOfType<TType extends ModelType>(type: TType, providerId?: string): readonly ModelTypeMap[TType][] {

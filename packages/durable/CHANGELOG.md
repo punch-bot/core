@@ -2,18 +2,7 @@
 
 ## [Unreleased]
 
-### Added
-
-- `SqliteStorage.open(database, { prefix })` can namespace every table and index; `openNodeSqliteStorage()` and `openDurableObjectSqliteStorage()` forward it, for databases shared with host tables.
-
-### Changed
-
-- Cloudflare Durable Object SQLite adapters created for the same storage object now coordinate their operations, allowing multiple Pi storages to safely share one Durable Object database.
-
-### Fixed
-
-- The system baseline written after a compaction now leads the model context when the kept history includes an assistant message, as does a first baseline written after earlier answers, instead of following the new input; Anthropic and OpenAI Codex requests sent it as a mid-conversation system message without an initial prompt or tool set. Other system messages after an assistant message stay in place ([#10904](https://github.com/earendil-works/pi/issues/10904)).
-- `toBase64`, used by `read` and the Photon image processor, no longer takes about 140 MB of heap to encode a 3 MiB image, which exceeded the 128 MB memory limit of a Cloudflare Durable Object; it now builds a binary string 8 KiB at a time and encodes it with `btoa` ([#10923](https://github.com/earendil-works/pi/issues/10923)).
+## [1.3.0] - 2026-10-17
 
 ## [1.2.0] - 2026-10-12
 
@@ -41,19 +30,25 @@
 - `@punch-bot/durable/codemode`: a `codemode` tool (`createCodemodeExtension({ sandbox })`) whose scripts call the conversation's tools as nested calls and survive a restart: the script is replayed deterministically from a journal of the results it got, written before each delivery, reattaching to its nested calls, and then continues. Divergence, a changed sandbox fingerprint or module version, and a passed deadline end the call with an error. As in the coding agent, a `codemode` prompt section lists the tools scripts can call (`namespaces`, an inline token budget), scripts find tools with `searchTools()`, `describeTool()`, and `describeNamespace()`, and the result is laid out with a header, text item markers, a console block, truncation to `max_output_tokens` with a spill file, and saved images. Scripts get `models.*` (the catalog, `models.classify()`, `models.generateImages()`; the last two as nested calls of internal tools, at most four at once), and the tool declares the Lark grammar of its source for models that support grammar-constrained sampling. A failed call rejects in the script with its text, except an error result of a schema tool with its own value, which resolves: `tools.bash` gives `{ output, exitCode, ... }` for a nonzero exit. Scripts keep `store()`/`load()` values per conversation, forked as of the fork's entry. The result's `details.calls` list the script's tool calls with their status; live progress is in `pi.live.nestedTools` (`npm run bench:codemode`).
 - `read` returns images as one image block instead of an `unsupported_image` error: PNG, JPEG, GIF, and WebP within the model's image limits (by default 2000x2000 pixels and 4.5 MB of base64) as they are, or, with `createCodingTools({ images })`, oriented, converted, and shrunk to fit. `@punch-bot/durable/images` provides a Photon (WebAssembly) image processor, with `/images/node` and `/images/cloudflare` loaders; `/images/node` prepares images in a worker thread, so a large photo never blocks the event loop, and the thread exits after 30 s without images; nothing loads it unless imported. A model without image input gets a diagnostic saying it sees a placeholder.
 - `pi.live.compactionFailure` keeps the newest compaction failure (task, reason, error) until a compaction produces a summary; the agent events' snapshot carries it as `compactionFailure`, and `compaction_end` carries `error` for a compaction that failed. A failed background or manual compaction was invisible once its status was removed.
+- `SqliteStorage.open(database, { prefix })` can namespace every table and index; `openNodeSqliteStorage()` and `openDurableObjectSqliteStorage()` forward it, for databases shared with host tables.
+
+### Changed
+
+- Cloudflare Durable Object SQLite adapters created for the same storage object now coordinate their operations, allowing multiple Pi storages to safely share one Durable Object database.
 
 ### Fixed
 
 - A wait that closes a cycle through waits and held owners is rejected by `runtime.commit()`, naming the cycle, instead of leaving every task on it waiting forever; waiting on itself or on an owner chain were the only cycles caught. A background task may now wait on the owner of its conversation, which is no cycle ([#10411](https://github.com/earendil-works/pi/issues/10411); tests and approach from [#10533](https://github.com/earendil-works/pi/pull/10533) by [@odysseus0](https://github.com/odysseus0))
 - Appending to an array in a document no longer costs a walk over the whole array per commit: Chord's delta tracker plans inserts and removals that keep the remaining elements in order from the changed ranges alone, and builds an appended array in one copy instead of two. 32,000 one-item appends, one commit each, take 1.4 s instead of 11.3 s; what remains is the copy each immutable value needs (`npm run bench:document-append`).
 - A generation whose blocking threshold compaction failed, faulted, was orphaned, or was aborted directly now fails with `model_error` (`Compaction failed: <error>`) instead of sending its request anyway. The context was still above the blocking threshold, so the request at best left no room for the answer: a session at 996K of a 1M window got an empty `length` answer on every turn, with no visible error.
-
 - Compaction no longer includes thinking in the summarization request. Replayed thinking is often not in the live context, so a request that included it could be larger than the context it summarized and fail with "prompt is too long" on every attempt.
 - A throwing `onReport` no longer replaces the error being reported or becomes an unhandled rejection, a throwing `now()` is reported once and `Date.now` used, and a watch listener's error is reported as well as ending the watch with `listener_error`.
 - A task whose fault write failed no longer runs again in the same process.
 - The scheduler no longer visits every live task on each pass: abort cascades start only from tasks with cancellation intent, owned live work and idle scopes are walks down an in-memory ownership index, and reservation, finalization, and failFast checks keep their own candidate sets. A chain of 500 owned tasks that took 12 s to settle takes 50 ms, 20,000 take 1.5 s; a tool making 8000 parallel nested calls finishes in 2.7 s instead of 18.8 s, with one document per nested call instead of one growing index (`npm run bench:scheduler-fanout`).
 - The scheduler's ownership indexes are bounded by live work: it keeps a conversation's owner and an ended task's ownership only while live work is below them, instead of every conversation and subagent chain it ever saw. Work that later appears in an old conversation loads its chain from storage again. After 10,000 ended subagent calls under a live parent it kept 10,000 ended tasks and 10,001 conversation edges; now none of either beyond the parent's conversation (`npm run bench:scheduler-memory`). A queued input no longer makes the scheduler scan every queued submission when nothing is being cancelled.
 - The Session's document cache is bounded by use: a loaded document that no watch or document state observes leaves memory once it was not read or written for `documentRetentionMs` (new in `HarnessSettings` and `createSession()` options; default ten minutes, `0` drops it right after use) and loads from Storage again on its next access. It held every conversation and session document ever touched, built-in and third-party, for the life of the process: 5,000 conversations kept 26,000 documents and about 3.8 KB each; with retention 0 they keep none (`npm run bench:document-cache`).
+- The system baseline written after a compaction now leads the model context when the kept history includes an assistant message, as does a first baseline written after earlier answers, instead of following the new input; Anthropic and OpenAI Codex requests sent it as a mid-conversation system message without an initial prompt or tool set. Other system messages after an assistant message stay in place ([#10904](https://github.com/earendil-works/pi/issues/10904)).
+- `toBase64`, used by `read` and the Photon image processor, no longer takes about 140 MB of heap to encode a 3 MiB image, which exceeded the 128 MB memory limit of a Cloudflare Durable Object; it now builds a binary string 8 KiB at a time and encodes it with `btoa` ([#10923](https://github.com/earendil-works/pi/issues/10923)).
 
 ## [1.1.0] - 2026-10-07
 

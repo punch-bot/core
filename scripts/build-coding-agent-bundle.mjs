@@ -32,7 +32,34 @@ const allowedExternalPackages = new Set([
 	// esbuild's placeholder for dynamic require() calls left in place, e.g.
 	// express's lazy view-engine loader.
 	"<runtime>",
+	// Bun's SQLite driver, required only when the Node bundle runs under Bun.
+	"bun:sqlite",
 ]);
+
+// The `#punch-sqlite` import map selects `bun:sqlite` under the `bun` condition, but esbuild resolves it once at
+// build time with Node's conditions, which left a static `node:sqlite` import that Bun cannot load. Select the
+// driver when the bundle runs instead.
+const runtimeSqliteDriverPlugin = {
+	name: "runtime-sqlite-driver",
+	setup(build) {
+		build.onResolve({ filter: /^#punch-sqlite$/ }, () => ({
+			namespace: "runtime-sqlite-driver",
+			path: "#punch-sqlite",
+		}));
+		build.onLoad({ filter: /.*/, namespace: "runtime-sqlite-driver" }, () => ({
+			contents: `
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+
+export const DatabaseSync = process.versions.bun
+	? require("bun:sqlite").Database
+	: require("node:sqlite").DatabaseSync;
+`,
+			loader: "js",
+		}));
+	},
+};
 
 const lazyJitiPlugin = {
 	name: "lazy-jiti-transform",
@@ -88,7 +115,7 @@ function commonBuildOptions() {
 		banner,
 		bundle: true,
 		define: { PI_BUNDLED_NODE: "true" },
-		external: ["@silvia-odwyer/photon-node", "playwright", "playwright-core"],
+		external: ["@silvia-odwyer/photon-node", "playwright", "playwright-core", "bun:sqlite"],
 		format: "esm",
 		legalComments: "none",
 		logLevel: "warning",
@@ -100,7 +127,7 @@ function commonBuildOptions() {
 		// package replaces it with a synchronous lazy require so jiti loads only
 		// when importing an extension; Babel remains deferred until a cache miss
 		// needs transformation.
-		plugins: [lazyJitiPlugin, httpsProxyAgentNamedExportPlugin],
+		plugins: [lazyJitiPlugin, httpsProxyAgentNamedExportPlugin, runtimeSqliteDriverPlugin],
 		sourcemap: false,
 		target: "node22.19",
 		// Do not apply the monorepo's source-oriented path aliases while bundling

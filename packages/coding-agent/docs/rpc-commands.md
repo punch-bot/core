@@ -209,7 +209,7 @@ Messages are `AgentMessage` objects (see [Message Types](message-types.md)).
 
 ### set_model
 
-Switch to an exact provider and model ID. `modelId` is literal, including catalog suffixes such as `:free`; use `set_thinking_level` separately. For `openrouter`, an available catalog ID may also carry OpenRouter routing suffixes (`:exacto`, `:floor`, `:nitro`, `:online`, each at most once, in any order), for example `openai/gpt-6.1-sol:floor`. The selected model is a copy of the base catalog model whose `id` keeps the suffixes, so they reach OpenRouter verbatim, and whose `name` lists them. Missing or unavailable IDs, unknown suffixes, and suffixes on other providers return an error and leave the current model selected.
+Switch to an exact provider and model ID. `modelId` is literal, including catalog suffixes such as `:free`, and is never matched partially; use `set_thinking_level` separately. An available catalog ID may also carry suffixes the catalog does not list, such as OpenRouter's routing variants (`openai/gpt-6.1-sol:floor`, `openai/gpt-6.1-sol:nitro:exacto`). The selected model is a copy of the base catalog model whose `id` keeps the suffixes, so they reach the provider verbatim, and whose `name` lists them. Missing or unavailable IDs, empty suffixes, and thinking levels used as suffixes (`:high`) return an error and leave the current model selected.
 
 ```json
 {"type": "set_model", "provider": "anthropic", "modelId": "claude-sonnet-4-20250514"}

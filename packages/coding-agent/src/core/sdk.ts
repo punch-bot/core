@@ -56,8 +56,6 @@ export interface CreateAgentSessionOptions {
 
 	/** Model to use. Default: from settings, else first available */
 	model?: Model<any>;
-	/** Fail when a saved session/default model cannot be selected exactly. Default: true. */
-	strictModelSelection?: boolean;
 	/** Thinking level. Default: from settings, else 'medium' (clamped to model capabilities) */
 	thinkingLevel?: ThinkingLevel;
 	/** Models available for cycling (Ctrl+P in interactive mode) */
@@ -215,34 +213,21 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 
 	let model = options.model;
 	let modelFallbackMessage: string | undefined;
-	const strictModelSelection = options.strictModelSelection ?? true;
 
 	// Assistant messages name the physical model that answered, so a virtual selection is only in
 	// model_change entries.
-	const branch = sessionManager.getBranch();
-	const savedChange = branch.findLast((entry) => entry.type === "model_change");
-	// getBranchSelection falls back to the last physical response when the saved virtual model is gone. Strict
-	// selection fails on the missing saved model instead of silently running another one.
-	const sessionModel =
-		strictModelSelection &&
-		savedChange?.type === "model_change" &&
-		!modelRuntime.getModel(savedChange.provider, savedChange.modelId)
-			? { provider: savedChange.provider, modelId: savedChange.modelId }
-			: getBranchSelection(branch, (provider, modelId) => modelRuntime.getModel(provider, modelId));
+	const sessionModel = getBranchSelection(sessionManager.getBranch(), (provider, modelId) =>
+		modelRuntime.getModel(provider, modelId),
+	);
 
-	// Restore the session's saved model. Strict selection also restores a saved model with no messages.
-	if (!model && sessionModel && (hasExistingSession || strictModelSelection)) {
+	// Restore the session's saved model, including a model-only session without messages
+	if (!model && sessionModel) {
 		const restoredModel = modelRuntime.getModel(sessionModel.provider, sessionModel.modelId);
 		if (restoredModel && modelRuntime.hasConfiguredAuth(restoredModel.provider)) {
 			model = restoredModel;
 		}
 		if (!model) {
 			modelFallbackMessage = `Could not restore model ${sessionModel.provider}/${sessionModel.modelId}`;
-			if (strictModelSelection) {
-				throw new Error(
-					`${modelFallbackMessage}: ${restoredModel ? "no auth configured" : "model not found; define the exact model in models.json"}.`,
-				);
-			}
 		}
 	}
 
@@ -255,7 +240,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			defaultModelId: settingsManager.getDefaultModel(),
 			defaultThinkingLevel: settingsManager.getDefaultThinkingLevel(),
 			modelThinkingLevels: settingsManager.getAllModelThinkingLevels(),
-			strictModelSelection,
 			modelRuntime,
 		});
 		model = result.model;
@@ -263,6 +247,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			modelFallbackMessage = formatNoModelsAvailableMessage();
 		} else if (modelFallbackMessage) {
 			modelFallbackMessage += `. Using ${model.provider}/${model.id}`;
+		} else {
+			modelFallbackMessage = result.fallbackMessage;
 		}
 	}
 
@@ -465,14 +451,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	if (hasExistingSession) {
 		if (!hasThinkingEntry) {
 			sessionManager.appendThinkingLevelChange(thinkingLevel);
-		}
-		// Record an explicit model for an existing session. Otherwise the branch keeps naming the older saved model,
-		// and a later strict restore fails if that model is gone even though this one answered.
-		if (
-			options.model &&
-			(sessionModel?.provider !== options.model.provider || sessionModel?.modelId !== options.model.id)
-		) {
-			sessionManager.appendModelChange(options.model.provider, options.model.id);
 		}
 	} else {
 		// Save initial model and thinking level for new sessions so they can be restored on resume

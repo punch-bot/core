@@ -6,18 +6,13 @@ import {
 	createAgentSessionFromServices,
 	createAgentSessionRuntime,
 } from "../../../src/core/agent-session-runtime.ts";
-import {
-	findInitialModel,
-	resolveCliModel,
-	resolveModelScopeFromModels,
-	resolveModelScopeWithDiagnostics,
-} from "../../../src/core/model-resolver.ts";
+import { resolveCliModel, resolveModelScopeFromModels } from "../../../src/core/model-resolver.ts";
 import { createAgentSession } from "../../../src/core/sdk.ts";
 import { SessionManager } from "../../../src/core/session-manager.ts";
 import { createTestResourceLoader } from "../../utilities.ts";
 import { createHarness, type Harness } from "../harness.ts";
 
-describe("regressions #2954 and #3042: exact OpenRouter selection", () => {
+describe("regressions #2954 and #3042: OpenRouter base models and variants", () => {
 	let harness: Harness;
 	const cleanups: Array<() => void | Promise<void>> = [];
 
@@ -41,7 +36,7 @@ describe("regressions #2954 and #3042: exact OpenRouter selection", () => {
 		return resolveCliModel({ cliModel, cliProvider, modelRuntime: harness.session.modelRuntime });
 	}
 
-	const strictRuntimeFactory: CreateAgentSessionRuntimeFactory = async ({
+	const runtimeFactory: CreateAgentSessionRuntimeFactory = async ({
 		cwd,
 		agentDir,
 		sessionManager,
@@ -56,12 +51,7 @@ describe("regressions #2954 and #3042: exact OpenRouter selection", () => {
 			diagnostics: [],
 		};
 		return {
-			...(await createAgentSessionFromServices({
-				services,
-				sessionManager,
-				sessionStartEvent,
-				strictModelSelection: true,
-			})),
+			...(await createAgentSessionFromServices({ services, sessionManager, sessionStartEvent })),
 			services,
 			diagnostics: [],
 		};
@@ -78,35 +68,47 @@ describe("regressions #2954 and #3042: exact OpenRouter selection", () => {
 			]) {
 				expect(result.model).toBe(faux.getModel(id));
 				expect(result.error).toBeUndefined();
+				expect(result.warning).toBeUndefined();
 				expect(result.thinkingLevel).toBeUndefined();
 			}
 		}
 	});
 
-	it("rejects a missing base when only its service variants exist", async () => {
-		await catalog(["fixture/model:free", "fixture/model:batch"]);
-		for (const result of [
-			resolve("fixture/model", "openrouter"),
-			resolve("openrouter/fixture/model"),
-			resolve("fixture/model"),
-			resolve("model", "openrouter"),
-			resolve("fixture/model:typo", "openrouter"),
-		]) {
-			expect(result.model).toBeUndefined();
-			expect(result.error).toContain("not found");
-			expect(result.error).toContain("models.json");
+	it("matches a partial id to the base model instead of its variants, with a warning", async () => {
+		const faux = await catalog(["fixture/model", "fixture/model:free", "fixture/model:batch"]);
+		for (const [cliModel, cliProvider] of [["model", "openrouter"], ["openrouter/model"]]) {
+			expect(resolve(cliModel, cliProvider)).toMatchObject({
+				model: faux.getModel("fixture/model"),
+				warning: `No exact match for "${cliModel}". Using openrouter/fixture/model.`,
+			});
 		}
+		expect(resolve("model:high", "openrouter")).toMatchObject({
+			model: { id: "fixture/model" },
+			thinkingLevel: "high",
+		});
+		const scope = resolveModelScopeFromModels(["openrouter/model"], faux.models);
+		expect(scope.scopedModels.map((scoped) => scoped.model.id)).toEqual(["fixture/model"]);
+		expect(scope.diagnostics).toMatchObject([{ code: "partial-match" }]);
 	});
 
-	it("uses exact IDs in automation scopes and keeps explicitly requested globs", async () => {
-		const faux = await catalog(["fixture/model:free", "fixture/model:batch", "fixture/model-plus"]);
-		const missing = resolveModelScopeFromModels(["openrouter/fixture/model", "fixture/model"], faux.models);
-		expect(missing.scopedModels).toEqual([]);
-		expect(missing.diagnostics).toHaveLength(2);
-		const variant = resolveModelScopeFromModels(["openrouter/fixture/model:free:high"], faux.models);
-		expect(variant.scopedModels).toMatchObject([{ model: { id: "fixture/model:free" }, thinkingLevel: "high" }]);
-		const glob = resolveModelScopeFromModels(["openrouter/fixture/model:*"], faux.models);
-		expect(glob.scopedModels.map((scoped) => scoped.model.id)).toEqual(["fixture/model:free", "fixture/model:batch"]);
+	it("names the variant it picks when only variants match", async () => {
+		await catalog(["fixture/model:free", "fixture/model:batch"]);
+		const result = resolve("fixture/model", "openrouter");
+		expect(result.model?.id).toBe("fixture/model:free");
+		expect(result.warning).toBe('No exact match for "fixture/model". Using openrouter/fixture/model:free.');
+	});
+
+	it("sends an unknown suffix on a catalog id with the catalog model's metadata", async () => {
+		const faux = await catalog(["fixture/model"]);
+		const base = faux.getModel("fixture/model")!;
+		for (const result of [resolve("openrouter/fixture/model:nitro"), resolve("fixture/model:nitro", "openrouter")]) {
+			expect(result.model).toEqual({ ...base, id: "fixture/model:nitro", name: `${base.name} (nitro)` });
+			expect(result.warning).toContain("Using custom model id");
+		}
+		expect(resolve("openrouter/fixture/model:nitro:high")).toMatchObject({
+			model: { id: "fixture/model:nitro" },
+			thinkingLevel: "high",
+		});
 	});
 
 	it("preserves raw IDs starting with the explicit provider name", async () => {
@@ -119,42 +121,6 @@ describe("regressions #2954 and #3042: exact OpenRouter selection", () => {
 		expect(resolve("openrouter/openrouter/fusion").model?.id).toBe("openrouter/fusion");
 	});
 
-	it("does not change an inferred provider based on authentication or a missing ID", async () => {
-		await catalog(["fixture/model"], "vendor");
-		await catalog(["vendor/fixture/model", "vendor/missing"]);
-		expect(resolve("vendor/fixture/model").model?.provider).toBe("vendor");
-		expect(resolve("vendor/missing").error).toContain("not found");
-		expect(resolve("vendor/fixture/model", "unknown").model).toBeUndefined();
-	});
-
-	it("rejects ambiguous bare IDs even when only one provider has credentials", async () => {
-		await catalog(["fixture/model"]);
-		const other = fauxProvider({ provider: "gateway", models: [{ id: "fixture/model" }] });
-		harness.session.modelRuntime.registerNativeProvider({ ...other.provider, auth: {} });
-		await harness.session.modelRuntime.refresh({ allowNetwork: false });
-		expect(harness.session.modelRuntime.hasConfiguredAuth("gateway")).toBe(false);
-		for (const id of ["fixture/model", "fixture/model:high"]) {
-			expect(resolve(id).error).toContain("ambiguous");
-		}
-		expect(resolve("fixture/model", "openrouter").model?.provider).toBe("openrouter");
-		const scope = await resolveModelScopeWithDiagnostics(["fixture/model"], harness.session.modelRuntime);
-		expect(scope.scopedModels).toEqual([]);
-		expect(scope.diagnostics[0]?.message).toContain("ambiguous");
-	});
-
-	it("does not reinterpret an unavailable scoped provider as an OpenRouter vendor", async () => {
-		const vendor = fauxProvider({ provider: "vendor", models: [{ id: "fixture/model" }] });
-		harness.session.modelRuntime.registerNativeProvider({ ...vendor.provider, auth: {} });
-		await catalog(["vendor/fixture/model"]);
-		const scope = await resolveModelScopeWithDiagnostics(
-			["vendor/fixture/model", "vendor/*"],
-			harness.session.modelRuntime,
-		);
-		expect(scope.scopedModels).toEqual([]);
-		expect(scope.diagnostics).toHaveLength(2);
-		expect(scope.diagnostics[0]?.message).toContain('Model "vendor/fixture/model" is unavailable');
-	});
-
 	it("preserves literal colon IDs before parsing one thinking suffix", async () => {
 		await catalog(["fixture/model", "fixture/model:free", "fixture/model:high", "fixture/model:free:high"]);
 		expect(resolve("openrouter/fixture/model:high").thinkingLevel).toBeUndefined();
@@ -164,7 +130,6 @@ describe("regressions #2954 and #3042: exact OpenRouter selection", () => {
 			model: { id: "fixture/model:free:high" },
 			thinkingLevel: "low",
 		});
-		expect(resolve("openrouter/fixture/model:low:high").model).toBeUndefined();
 	});
 
 	it("preserves literal brackets and colon suffixes in automation scopes", async () => {
@@ -215,59 +180,29 @@ describe("regressions #2954 and #3042: exact OpenRouter selection", () => {
 		});
 	});
 
-	it("propagates an explicit initial-model error and rejects unavailable saved defaults", async () => {
-		await catalog(["fixture/model:free"]);
-		await expect(
-			findInitialModel({
-				cliModel: "openrouter/fixture/model",
-				scopedModels: [],
-				isContinuing: false,
-				strictModelSelection: true,
-				modelRuntime: harness.session.modelRuntime,
-			}),
-		).rejects.toThrow("not found");
-		harness.settingsManager.setDefaultModelAndProvider("openrouter", "fixture/model");
-		await expect(
-			createAgentSession({
-				cwd: harness.tempDir,
-				agentDir: harness.tempDir,
-				modelRuntime: harness.session.modelRuntime,
-				settingsManager: harness.settingsManager,
-				resourceLoader: createTestResourceLoader(),
-				sessionManager: SessionManager.inMemory(harness.tempDir),
-				strictModelSelection: true,
-			}),
-		).rejects.toThrow("Could not select default model openrouter/fixture/model");
-	});
-
-	it("restores model-only sessions exactly and rejects a missing saved base", async () => {
-		await catalog(["fixture/model:free"]);
-		for (const id of ["fixture/model:free", "fixture/model"]) {
+	it("restores saved variants exactly, including routing suffixes and model-only sessions", async () => {
+		await catalog(["fixture/model", "fixture/model:free"]);
+		for (const id of ["fixture/model:free", "fixture/model:nitro"]) {
 			const manager = SessionManager.inMemory(harness.tempDir);
 			manager.appendModelChange("openrouter", id);
-			const result = createAgentSession({
+			const { session, modelFallbackMessage } = await createAgentSession({
 				cwd: harness.tempDir,
 				agentDir: harness.tempDir,
 				modelRuntime: harness.session.modelRuntime,
 				settingsManager: harness.settingsManager,
 				resourceLoader: createTestResourceLoader(),
 				sessionManager: manager,
-				strictModelSelection: true,
 			});
-			if (id.endsWith(":free")) {
-				const { session } = await result;
-				cleanups.push(() => session.dispose());
-				expect(session.model?.id).toBe(id);
-			} else {
-				await expect(result).rejects.toThrow("Could not restore model openrouter/fixture/model");
-			}
+			cleanups.push(() => session.dispose());
+			expect(session.model?.id).toBe(id);
+			expect(modelFallbackMessage).toBeUndefined();
 		}
 	});
 
-	it("selects new and resumed sessions exactly and keeps the current session after model errors", async () => {
+	it("falls back to the default and says why when a saved model is gone", async () => {
 		const faux = await catalog(["fixture/model", "fixture/model:free"]);
 		harness.settingsManager.setDefaultModelAndProvider("openrouter", "fixture/model");
-		const runtime = await createAgentSessionRuntime(strictRuntimeFactory, {
+		const runtime = await createAgentSessionRuntime(runtimeFactory, {
 			cwd: harness.tempDir,
 			agentDir: harness.tempDir,
 			sessionManager: SessionManager.inMemory(harness.tempDir),
@@ -278,42 +213,17 @@ describe("regressions #2954 and #3042: exact OpenRouter selection", () => {
 		saved.appendMessage({ ...fauxAssistantMessage("saved"), provider: "openrouter", model: "fixture/model:free" });
 		await runtime.switchSession(saved.getSessionFile()!);
 		expect(runtime.session.model?.id).toBe("fixture/model:free");
-		await runtime.newSession();
-		expect(runtime.session.model?.id).toBe("fixture/model");
-		const current = runtime.session;
+
 		const missing = SessionManager.create(harness.tempDir, join(harness.tempDir, "sessions"));
 		missing.appendModelChange("openrouter", "fixture/missing");
 		missing.appendMessage({ ...fauxAssistantMessage("missing"), provider: "openrouter", model: "fixture/missing" });
-		await expect(runtime.switchSession(missing.getSessionFile()!)).rejects.toThrow("Could not restore model");
-		expect(runtime.session).toBe(current);
-		harness.settingsManager.setDefaultModelAndProvider("openrouter", "fixture/missing");
-		await expect(runtime.newSession()).rejects.toThrow("Could not select default model");
-		expect(runtime.session).toBe(current);
+		await runtime.switchSession(missing.getSessionFile()!);
+		expect(runtime.session.model?.id).toBe("fixture/model");
+		expect(runtime.modelFallbackMessage).toBe(
+			"Could not restore model openrouter/fixture/missing. Using openrouter/fixture/model",
+		);
 		faux.setResponses([fauxAssistantMessage("still usable")]);
-		await runtime.session.prompt("after rejected selection");
-		expect(runtime.session.getLastAssistantText()).toBe("still usable");
-	});
-
-	it("keeps the current session when a fork's saved model is missing", async () => {
-		const faux = await catalog(["fixture/model"]);
-		harness.settingsManager.setDefaultModelAndProvider("openrouter", "fixture/model");
-		const runtime = await createAgentSessionRuntime(strictRuntimeFactory, {
-			cwd: harness.tempDir,
-			agentDir: harness.tempDir,
-			sessionManager: SessionManager.inMemory(harness.tempDir),
-		});
-		cleanups.push(() => runtime.dispose());
-		const manager = runtime.session.sessionManager;
-		const userMessage = (text: string) => ({ role: "user" as const, content: text, timestamp: Date.now() });
-		manager.appendModelChange("openrouter", "fixture/missing");
-		const forkEntryId = manager.appendMessage(userMessage("from missing model"));
-		manager.appendModelChange("openrouter", "fixture/model");
-		manager.appendMessage(userMessage("from current model"));
-		const current = runtime.session;
-		await expect(runtime.fork(forkEntryId)).rejects.toThrow("Could not restore model");
-		expect(runtime.session).toBe(current);
-		faux.setResponses([fauxAssistantMessage("still usable")]);
-		await runtime.session.prompt("after rejected fork");
+		await runtime.session.prompt("after fallback");
 		expect(runtime.session.getLastAssistantText()).toBe("still usable");
 	});
 });

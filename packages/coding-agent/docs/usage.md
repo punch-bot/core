@@ -120,10 +120,10 @@ Prompt templates, skills, and extensions can add more commands to the same menu.
 | Option | Description |
 |--------|-------------|
 | `--provider <name>` | Provider, such as `anthropic`, `openai`, or `google` |
-| `--model <id>` | Exact model ID as `provider/id` (or with `--provider`), optional `:<thinking>` |
+| `--model <pattern>` | Model ID or partial match (warns), supports `provider/id` and optional `:<thinking>` |
 | `--api-key <key>` | API key, overriding environment variables |
 | `--thinking <level>` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
-| `--models <ids>` | Comma-separated exact model IDs or globs (e.g. `openrouter/*`) available to the session |
+| `--models <patterns>` | Comma-separated model patterns or globs (e.g. `openrouter/*`) available to the session |
 | `--list-models [search]` | List available models |
 
 ### Session Options

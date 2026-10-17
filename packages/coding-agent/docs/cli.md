@@ -61,15 +61,15 @@ pi --model sonnet:high
 See [Choose a Model](models.md) for model selection and [Providers](providers.md) for credentials.
 
 - `--provider <name>`<br>
-  Selects the provider for `--model`. It requires `--model`. Provider names ignore case only when that leaves a single match.
-- `--model <id>`<br>
-  Selects one exact catalog ID as `provider/id` or with `--provider`. Case is ignored only when that leaves a single match. A bare ID offered by several providers requires a provider. For `openrouter`, an exact catalog ID may also carry OpenRouter routing suffixes (`:exacto`, `:floor`, `:nitro`, `:online`), each at most once, for example `openrouter/openai/gpt-6.1-sol:floor`; other suffixes fail. One trailing `:<thinking>` suffix is parsed only when the full string is not a catalog ID, including after routing suffixes (`openrouter/openai/gpt-6.1-sol:floor:high`).
+  Selects the provider to search for `--model`. It requires `--model`.
+- `--model <pattern>`<br>
+  Selects by exact ID or partial ID/name match. It accepts `provider/id` and an optional `:<thinking>` suffix, which is parsed only when the full string is not a catalog ID. If several providers match, Pi prefers the one with credentials, otherwise it asks for `--provider`. A partial match prints a warning naming the model it selected. Among partial matches, a base ID beats its catalog variants (`gemini-2.5-pro` selects `google/gemini-2.5-pro`, not `google/gemini-2.5-pro:batch`), an ID ending in the text beats one continuing it (`sonnet-5` selects `claude-sonnet-5`, not `claude-sonnet-5.5`), and otherwise the latest ID wins. An ID the catalog does not list is used as a custom model ID with a warning. If it is a catalog ID plus a suffix, such as OpenRouter's routing variants (`openrouter/openai/gpt-6.1-sol:nitro`), it keeps that model's limits and prices.
 - `--api-key <key>`<br>
   Uses a non-persistent API-key override. It requires a model selected through `--model` or `--models`. It does not choose between providers that offer the same model.
 - `--thinking <level>`<br>
   Sets `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. It overrides a `--model` suffix and is clamped to the model's capabilities.
-- `--models <ids>`<br>
-  Sets a comma-separated scope for startup and cycling. It accepts exact IDs, globs (`*`, `?`, `[...]`), and optional `:<thinking>` suffixes. An entry that matches nothing fails startup.
+- `--models <patterns>`<br>
+  Sets a comma-separated scope for startup and cycling. It accepts exact IDs, partial matches (with a warning), case-insensitive globs, and optional `:<thinking>` suffixes. A model offered by several providers is added for each, with a warning. An entry that matches nothing is skipped with a warning.
 - `--list-models [search]`<br>
   Lists available models, optionally filtered by a fuzzy search, then exits.
 

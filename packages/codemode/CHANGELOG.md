@@ -2,24 +2,14 @@
 
 ## [Unreleased]
 
-### Breaking Changes
-
-- Worker-backed results and `close()` now settle after requesting shutdown, not after worker exit. Hosts that require actual exit must track `onWorkerStarted(exited)` or retain capacity through `acquireWorker()`'s release callback
-
-### Added
-
-- Added `CodemodeSandbox`'s `onWorkerStarted(exited)` callback so hosts can count a worker against concurrency limits until it actually exits, independently of its script result
-- Added `CodemodeSandbox`'s `acquireWorker()` hook to reserve shared capacity before starting a worker and release it only on actual exit or constructor failure
-
-### Fixed
-
-- Fixed aborts, timeouts, and `close()` waiting for worker termination on Bun while a non-interruptible built-in runs; shutdown now requests termination without waiting for exit ([#10748](https://github.com/earendil-works/pi/issues/10748))
+## [1.3.0] - 2026-10-17
 
 ## [1.2.0] - 2026-10-12
 
 ### Breaking Changes
 
 - Removed `MCP_TYPESCRIPT_PREAMBLE` and `mcpStructuredContentSchema()`. `renderToolOutputType()` and the declarations built on it render every output schema as its own type and no longer turn MCP `CallToolResult` schemas into `CallToolResult<T>`; describe MCP results in the output schema instead
+- Worker-backed results and `close()` now settle after requesting shutdown, not after worker exit. Hosts that require actual exit must track `onWorkerStarted(exited)` or retain capacity through `acquireWorker()`'s release callback
 
 ### Added
 
@@ -27,6 +17,8 @@
 - Added `InlineCodemodeSandbox`, which runs the VM on the calling thread for runtimes without worker threads. Its `interruptBudget` limits scripts that compute without awaiting a tool
 - Added the `@punch-bot/codemode/portable` entry, which has no Node imports, and `CodemodeSandboxBase`, the API all three sandboxes share
 - Added `sandbox.start()`, a deterministic run whose calls the host answers itself (`onCall`, `run.deliver()`), so a host can replay a script after a restart: a virtual clock from `startedAt`, randomness from `seed`, UTC, no `WeakRef`/`FinalizationRegistry`, results applied in the order the host numbers them, the VM's fingerprint (`onStarted`), the calls issued after each result (`onIdle`), and whether the run has its outcome (`run.finished`). Works with every sandbox; `execute()` is unchanged
+- Added `CodemodeSandbox`'s `onWorkerStarted(exited)` callback so hosts can count a worker against concurrency limits until it actually exits, independently of its script result
+- Added `CodemodeSandbox`'s `acquireWorker()` hook to reserve shared capacity before starting a worker and release it only on actual exit or constructor failure
 
 ### Changed
 
@@ -38,6 +30,7 @@
 
 - Fixed `parseCodemodeSource()` ignoring a `// @options:` line that is not the first line, so its `timeout_ms` never applied; it now throws `CodemodeSourceError` ([#10631](https://github.com/earendil-works/pi/issues/10631))
 - Fixed `CodemodeSandbox` failing with a broken bridge error when the host runs under `node --watch` on Node 24 or 26, which posts `watch:import`/`watch:require` messages on the worker channel ([#10725](https://github.com/earendil-works/pi/issues/10725))
+- Fixed aborts, timeouts, and `close()` waiting for worker termination on Bun while a non-interruptible built-in runs; shutdown now requests termination without waiting for exit ([#10748](https://github.com/earendil-works/pi/issues/10748))
 
 ## [1.1.0] - 2026-10-07
 

@@ -468,10 +468,10 @@ cat README.md | pi -p "Summarize this text"
 | Option | Description |
 |--------|-------------|
 | `--provider <name>` | Provider (anthropic, openai, google, etc.) |
-| `--model <id>` | Exact model ID as `provider/id` (or with `--provider`), optional `:<thinking>` |
+| `--model <pattern>` | Model ID or partial match (warns), supports `provider/id` and optional `:<thinking>` |
 | `--api-key <key>` | API key (overrides env vars) |
 | `--thinking <level>` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
-| `--models <ids>` | Comma-separated exact model IDs or globs (e.g. `openrouter/*`) available to the session |
+| `--models <patterns>` | Comma-separated model patterns or globs (e.g. `openrouter/*`) available to the session |
 | `--list-models [search]` | List available models |
 
 ### Session Options

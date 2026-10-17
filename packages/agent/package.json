@@ -1,6 +1,6 @@
 {
 	"name": "@punch-bot/agent",
-	"version": "1.2.0",
+	"version": "1.3.0",
 	"description": "General-purpose agent with transport abstraction, state management, and attachment support",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -23,7 +23,7 @@
 		"prepublishOnly": "npm run build"
 	},
 	"dependencies": {
-		"@punch-bot/ai": "1.2.0",
+		"@punch-bot/ai": "1.3.0",
 		"typebox": "1.3.27"
 	},
 	"keywords": [

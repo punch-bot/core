@@ -26,7 +26,7 @@ import type {
 	ExtensionWidgetOptions,
 	WorkingIndicatorOptions,
 } from "../../core/extensions/index.ts";
-import { resolveOpenRouterRoutingVariant } from "../../core/openrouter-routing.ts";
+import { findModelOrSuffixVariant } from "../../core/model-suffix-variants.ts";
 import {
 	flushRawStdout,
 	takeOverStdout,
@@ -361,11 +361,10 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	await rebindSession();
 	registerSignalHandlers();
 
-	// set_model and resolve_model pick an authenticated model by exact ID, plus OpenRouter routing suffixes.
+	// set_model and resolve_model pick an authenticated model by exact ID, or a suffix variant of one (`:nitro`).
 	const findAvailableModel = (provider: string, modelId: string): Model<Api> | undefined => {
 		const models = session.modelRuntime.getAvailableSnapshot();
-		const find = (id: string) => models.find((m) => m.provider === provider && m.id === id);
-		return find(modelId) ?? resolveOpenRouterRoutingVariant(provider, modelId, find);
+		return findModelOrSuffixVariant(modelId, (id) => models.find((m) => m.provider === provider && m.id === id));
 	};
 
 	// Handle a single command

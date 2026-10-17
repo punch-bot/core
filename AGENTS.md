@@ -29,7 +29,7 @@ Punch dropped several parts of pi. Upstream merges bring changes to them back as
   - TUI-only examples and tests.
   Theme tokens moved to `src/core/theme`.
 - [PR #9](https://github.com/punch-bot/core/pull/9) disabled GitHub Actions. Workflows live in `.github/workflows-disabled/`. Put new upstream workflows there, not in `.github/workflows/`.
-- [PR #30](https://github.com/punch-bot/core/pull/30) made model lookup exact. Do not merge back fuzzy matching.
+- Model selection uses pi's resolver (partial matching, lenient session restore) with Punch patches in `src/core/model-resolver.ts` and `src/core/model-suffix-variants.ts`: partial matches prefer a base ID over its `:variant` and an ID ending in the typed text over one continuing it, and warn with the selected model; `<catalog id>:<suffix>` IDs (OpenRouter routing variants such as `:nitro`) copy the catalog model; restore and saved-default fallbacks print a warning. Keep these patches when merging upstream resolver changes, and do not add provider-specific suffix lists.
 - pi 1.0.1 removed `packages/coding-agent/npm-shrinkwrap.json` and its generator. Punch keeps both, along with `check:shrinkwrap` and the `shrinkwrap` step in `prepublishOnly` and `scripts/release.mjs`.
 - The pi 1.1 merge left out the Nix flake (`flake.nix`, `flake.lock`, `nix/`, `nix.yml`, `scripts/update-model-catalog-pin.mjs`). It packages `packages/tui` and pins pi.dev's model catalog.
 - Rename new upstream `@earendil-works/*` packages, imports, and docs references to `@punch-bot/*`, and add new packages to the table above.

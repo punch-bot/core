@@ -2,7 +2,7 @@ import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Agent } from "@punch-bot/agent";
-import type { Model } from "@punch-bot/ai";
+import type { Api, Model } from "@punch-bot/ai";
 import { getModel, streamSimple } from "@punch-bot/ai/compat";
 import { getBuiltinModels, getBuiltinProviders } from "@punch-bot/ai/providers/all";
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -11,7 +11,10 @@ import { AuthStorage } from "../src/core/auth-storage.ts";
 import {
 	defaultModelPerProvider,
 	findInitialModel,
+	type ModelReferenceRequest,
 	resolveCliModel,
+	resolveModelReference,
+	resolveModelScope,
 	resolveModelScopeWithDiagnostics,
 	restoreModelFromSession,
 } from "../src/core/model-resolver.ts";
@@ -78,248 +81,293 @@ const mockOpenRouterModels: Model<"anthropic-messages">[] = [
 
 const allModels = [...mockModels, ...mockOpenRouterModels];
 
-function runtimeFor(models: Model<"anthropic-messages">[], available = models) {
+function referenceModel(provider: string, id: string): Model<Api> {
 	return {
-		getModels: () => models,
-		getAvailable: async () => available,
-	} as unknown as Parameters<typeof resolveCliModel>[0]["modelRuntime"];
+		id,
+		name: id,
+		api: "openai-completions",
+		provider,
+		baseUrl: "https://example.invalid",
+		reasoning: true,
+		input: ["text"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 128000,
+		maxTokens: 8192,
+	};
 }
 
-function withId(id: string, provider: string): Model<"anthropic-messages"> {
-	return { ...mockModels[1], id, name: id, provider };
+const referenceCatalog = [
+	referenceModel("anthropic", "claude-sonnet-4-5"),
+	referenceModel("anthropic", "claude-sonnet-4-5-20250929"),
+	referenceModel("anthropic", "claude-opus-4-8"),
+	referenceModel("anthropic", "exact"),
+	// Fuzzy-matches "shared"; an ambiguous exact "shared" must not fall through to it.
+	referenceModel("anthropic", "shared-pro"),
+	referenceModel("openai", "gpt-4o"),
+	referenceModel("openrouter", "qwen/qwen3-coder:exacto"),
+	referenceModel("openrouter", "openai/gpt-4o:extended"),
+	referenceModel("gw-a", "shared"),
+	referenceModel("gw-a", "anthropic/future"),
+	referenceModel("gw-a", "anthropic/exact"),
+	referenceModel("gw-a", "anthropic/claude-opus-4.8"),
+	referenceModel("gw-a", "anthropic/claude-opus"),
+	referenceModel("gw-b", "shared"),
+	referenceModel("gw-b", "anthropic/future"),
+	referenceModel("gw-b", "claude-opus-4-8"),
+	referenceModel("gw-b", "gw-b/free"),
+	referenceModel("gw-b", "zz:free"),
+];
+
+type ReferenceExpected =
+	| { model: string; thinkingLevel?: string; warning?: string }
+	| { ambiguous: string[]; usableCount: number }
+	| "not-found";
+
+interface ReferenceCase {
+	name: string;
+	text: string;
+	expected: ReferenceExpected;
+	usable?: string[];
+	provider?: string;
+	thinkingSuffix?: ModelReferenceRequest["thinkingSuffix"];
+	fuzzy?: boolean;
 }
 
-describe("resolveCliModel", () => {
-	test("selects the same model from provider/id, --provider, and a redundant prefix", () => {
-		const modelRuntime = runtimeFor(allModels);
-		for (const options of [
-			{ cliModel: "openrouter/qwen/qwen3-coder:exacto" },
-			{ cliProvider: "openrouter", cliModel: "qwen/qwen3-coder:exacto" },
-			{ cliProvider: "openrouter", cliModel: "openrouter/qwen/qwen3-coder:exacto" },
-		]) {
-			const result = resolveCliModel({ ...options, modelRuntime });
-			expect(result.error).toBeUndefined();
-			expect(result.model).toBe(mockOpenRouterModels[0]);
+const referenceCases: ReferenceCase[] = [
+	// Reference syntax
+	{ name: "exact id", text: "claude-sonnet-4-5", expected: { model: "anthropic/claude-sonnet-4-5" } },
+	{ name: "exact id is case-insensitive", text: "GPT-4O", expected: { model: "openai/gpt-4o" } },
+	{ name: "fuzzy prefers aliases over dated ids", text: "sonnet", expected: { model: "anthropic/claude-sonnet-4-5" } },
+	{
+		name: "thinking suffix",
+		text: "sonnet:high",
+		expected: { model: "anthropic/claude-sonnet-4-5", thinkingLevel: "high" },
+	},
+	{
+		name: "colon in a literal id is not a thinking suffix",
+		text: "qwen/qwen3-coder:exacto",
+		expected: { model: "openrouter/qwen/qwen3-coder:exacto" },
+	},
+	{
+		name: "provider prefix, colon id, and thinking suffix",
+		text: "openrouter/qwen/qwen3-coder:exacto:high",
+		expected: { model: "openrouter/qwen/qwen3-coder:exacto", thinkingLevel: "high" },
+	},
+	{
+		name: "raw id wins when the provider prefix names no matching model",
+		text: "openai/gpt-4o:extended",
+		expected: { model: "openrouter/openai/gpt-4o:extended" },
+	},
+	{
+		name: "fuzzy searches the prefixed provider first",
+		text: "openrouter/qwen",
+		expected: { model: "openrouter/qwen/qwen3-coder:exacto" },
+	},
+	{ name: "strict keeps an invalid suffix in the id", text: "gpt-4o:random", expected: "not-found" },
+	{
+		name: "lenient drops an invalid suffix with a warning",
+		text: "gpt-4o:random",
+		thinkingSuffix: "lenient",
+		expected: { model: "openai/gpt-4o", warning: 'Invalid thinking level "random"' },
+	},
+	{
+		name: "lenient invalid outer suffix discards the inner thinking level",
+		text: "qwen/qwen3-coder:exacto:high:random",
+		thinkingSuffix: "lenient",
+		expected: { model: "openrouter/qwen/qwen3-coder:exacto", warning: 'Invalid thinking level "random"' },
+	},
+	{ name: "none keeps the suffix in the id", text: "gpt-4o:high", thinkingSuffix: "none", expected: "not-found" },
+	{ name: "exact-only skips fuzzy matches", text: "sonnet", fuzzy: false, expected: "not-found" },
+	{ name: "empty text", text: "  ", expected: "not-found" },
+
+	// Exact matches across providers
+	// #7327
+	{ name: "sole usable provider wins", text: "shared", usable: ["gw-b"], expected: { model: "gw-b/shared" } },
+	{
+		name: "no usable provider is ambiguous instead of falling through to fuzzy",
+		text: "shared",
+		expected: { ambiguous: ["gw-a/shared", "gw-b/shared"], usableCount: 0 },
+	},
+	{
+		name: "several usable providers are ambiguous",
+		text: "shared",
+		usable: ["gw-a", "gw-b"],
+		expected: { ambiguous: ["gw-a/shared", "gw-b/shared"], usableCount: 2 },
+	},
+	{
+		name: "thinking suffix does not change provider selection",
+		text: "shared:high",
+		usable: ["gw-b"],
+		expected: { model: "gw-b/shared", thinkingLevel: "high" },
+	},
+	{
+		name: "thinking suffix does not bypass ambiguity",
+		text: "shared:high",
+		usable: ["gw-a", "gw-b"],
+		expected: { ambiguous: ["gw-a/shared", "gw-b/shared"], usableCount: 2 },
+	},
+	{
+		// #10160
+		name: "provider prefix without a direct model selects the usable raw id",
+		text: "anthropic/future",
+		usable: ["gw-b"],
+		expected: { model: "gw-b/anthropic/future" },
+	},
+	{
+		// #5823
+		name: "usable qualified match beats a usable raw id",
+		text: "anthropic/exact",
+		usable: ["anthropic", "gw-a"],
+		expected: { model: "anthropic/exact" },
+	},
+	{
+		// #5643
+		name: "usable raw id beats an unusable qualified match",
+		text: "anthropic/exact",
+		usable: ["gw-a"],
+		expected: { model: "gw-a/anthropic/exact" },
+	},
+	{
+		name: "unusable qualified match is kept when nothing is usable",
+		text: "anthropic/exact",
+		expected: { model: "anthropic/exact" },
+	},
+
+	{
+		// Like `mistral/codestral` -> mistral/codestral-latest despite gateway id `mistral/codestral`
+		name: "named provider's usable fuzzy match beats a raw id elsewhere",
+		text: "anthropic/claude-opus",
+		usable: ["anthropic"],
+		expected: { model: "anthropic/claude-opus-4-8" },
+	},
+	{
+		name: "usable raw id beats the named provider's unusable fuzzy match",
+		text: "anthropic/claude-opus",
+		usable: ["gw-a"],
+		expected: { model: "gw-a/anthropic/claude-opus" },
+	},
+	{
+		name: "named provider's fuzzy match is kept when nothing is usable",
+		text: "anthropic/claude-opus",
+		expected: { model: "anthropic/claude-opus-4-8" },
+	},
+	{
+		name: "named provider's literal id beats its fuzzy matches",
+		text: "gw-b/free",
+		expected: { model: "gw-b/gw-b/free" },
+	},
+
+	// Fuzzy matches across providers
+	{
+		// The id ending in the text (`claude-opus`) beats the one continuing it (`claude-opus-4.8`)
+		name: "fuzzy prefers usable providers",
+		text: "opus",
+		usable: ["gw-a"],
+		expected: { model: "gw-a/anthropic/claude-opus" },
+	},
+	{
+		name: "fuzzy id tie across usable providers is ambiguous",
+		text: "opus-4-8",
+		usable: ["anthropic", "gw-a", "gw-b"],
+		expected: { ambiguous: ["anthropic/claude-opus-4-8", "gw-b/claude-opus-4-8"], usableCount: 2 },
+	},
+	{
+		name: "fuzzy id tie resolves to the sole usable provider",
+		text: "opus",
+		usable: ["anthropic"],
+		expected: { model: "anthropic/claude-opus-4-8" },
+	},
+
+	// Explicit provider constraint
+	{
+		name: "explicit provider ignores usable providers elsewhere",
+		text: "shared",
+		provider: "gw-a",
+		usable: ["gw-b"],
+		expected: { model: "gw-a/shared" },
+	},
+	{
+		name: "explicit provider accepts its own prefix",
+		text: "GW-B/shared",
+		provider: "gw-b",
+		expected: { model: "gw-b/shared" },
+	},
+	{
+		name: "explicit provider allows fuzzy matches",
+		text: "4o",
+		provider: "openai",
+		expected: { model: "openai/gpt-4o" },
+	},
+	{ name: "explicit provider never leaves the provider", text: "gpt-4o", provider: "gw-a", expected: "not-found" },
+];
+
+function modelRef(m: Model<Api>): string {
+	return `${m.provider}/${m.id}`;
+}
+
+describe("resolveModelReference", () => {
+	test.each(referenceCases)("$name", (testCase) => {
+		const usable = new Set(testCase.usable);
+		const request: ModelReferenceRequest = {
+			text: testCase.text,
+			provider: testCase.provider,
+			thinkingSuffix: testCase.thinkingSuffix ?? "strict",
+			fuzzy: testCase.fuzzy ?? true,
+		};
+		// Catalog order must never decide the result.
+		for (const models of [referenceCatalog, [...referenceCatalog].reverse()]) {
+			const result = resolveModelReference(request, models, (provider) => usable.has(provider));
+			const expected = testCase.expected;
+			if (expected === "not-found") {
+				expect(result.status).toBe("not-found");
+			} else if ("ambiguous" in expected) {
+				expect(result.status).toBe("ambiguous");
+				if (result.status !== "ambiguous") continue;
+				expect(result.candidates.map(modelRef).sort()).toEqual(expected.ambiguous);
+				expect(result.usableCount).toBe(expected.usableCount);
+			} else {
+				expect(result.status).toBe("resolved");
+				if (result.status !== "resolved") continue;
+				expect(modelRef(result.model)).toBe(expected.model);
+				expect(result.thinkingLevel).toBe(expected.thinkingLevel);
+				if (expected.warning) expect(result.warning).toContain(expected.warning);
+				else expect(result.warning).toBeUndefined();
+			}
 		}
-	});
-
-	test("ignores case only when a single model matches", () => {
-		const lower = withId("vendor/model", "openrouter");
-		const upper = withId("Vendor/Model", "openrouter");
-		const other = withId("vendor/other", "openrouter");
-		expect(resolveCliModel({ cliModel: "OpenRouter/VENDOR/OTHER", modelRuntime: runtimeFor([other]) }).model).toBe(
-			other,
-		);
-		const both = runtimeFor([lower, upper]);
-		expect(resolveCliModel({ cliModel: "openrouter/Vendor/Model", modelRuntime: both }).model).toBe(upper);
-		expect(resolveCliModel({ cliModel: "openrouter/VENDOR/MODEL", modelRuntime: both }).error).toContain("ambiguous");
-	});
-
-	test("prefers an exact-case provider over a case-insensitive one", () => {
-		const lower = withId("fixture/model", "openrouter");
-		const upper = withId("fixture/model", "OpenRouter");
-		const modelRuntime = runtimeFor([lower, upper]);
-		expect(resolveCliModel({ cliModel: "openrouter/fixture/model", modelRuntime }).model).toBe(lower);
-		expect(resolveCliModel({ cliProvider: "OpenRouter", cliModel: "fixture/model", modelRuntime }).model).toBe(upper);
-		const result = resolveCliModel({ cliModel: "OPENROUTER/fixture/model", modelRuntime });
-		expect(result.model).toBeUndefined();
-		expect(result.error).toContain("not found");
-	});
-
-	test("does not match partial IDs or invent missing models", () => {
-		const modelRuntime = runtimeFor(allModels);
-		for (const cliModel of ["sonnet", "anthropic/sonnet", "openrouter/qwen", "openai/gpt-5-missing", ""]) {
-			const result = resolveCliModel({ cliModel, modelRuntime });
-			expect(result.model).toBeUndefined();
-			expect(result.error).toContain("not found");
-		}
-		expect(resolveCliModel({ cliProvider: "nope", cliModel: "gpt-4o", modelRuntime }).error).toContain(
-			'Unknown provider "nope"',
-		);
-	});
-
-	test("strips one valid thinking suffix only when the full ID is not in the catalog", () => {
-		const modelRuntime = runtimeFor([...allModels, withId("vendor/model:high", "openrouter")]);
-		expect(resolveCliModel({ cliModel: "openai/gpt-4o:medium", modelRuntime })).toMatchObject({
-			model: { provider: "openai", id: "gpt-4o" },
-			thinkingLevel: "medium",
-		});
-		expect(resolveCliModel({ cliModel: "openrouter/vendor/model:high", modelRuntime })).toMatchObject({
-			model: { id: "vendor/model:high" },
-			thinkingLevel: undefined,
-		});
-		expect(resolveCliModel({ cliModel: "openai/gpt-4o:banana", modelRuntime }).model).toBeUndefined();
-	});
-
-	test("prefers the provider/id split over a gateway model whose ID has the same text", () => {
-		const zaiModel = withId("glm-5", "zai");
-		const gatewayModel = withId("zai/glm-5", "vercel-ai-gateway");
-		const modelRuntime = runtimeFor([zaiModel, gatewayModel]);
-		expect(resolveCliModel({ cliModel: "zai/glm-5", modelRuntime }).model).toBe(zaiModel);
-		expect(resolveCliModel({ cliModel: "vercel-ai-gateway/zai/glm-5", modelRuntime }).model).toBe(gatewayModel);
-	});
-
-	test("rejects a bare ID that exists under more than one provider", () => {
-		const modelRuntime = runtimeFor([withId("gpt-5.6-sol", "azure"), withId("gpt-5.6-sol", "openai")]);
-		const result = resolveCliModel({ cliModel: "gpt-5.6-sol", modelRuntime });
-		expect(result.model).toBeUndefined();
-		expect(result.error).toBe(
-			'Model "gpt-5.6-sol" is ambiguous: azure/gpt-5.6-sol, openai/gpt-5.6-sol. Use --provider or provider/model.',
-		);
-	});
-});
-
-describe("OpenRouter routing suffixes", () => {
-	const base = withId("vendor/base", "openrouter");
-	const free = withId("vendor/base:free", "openrouter");
-	const literalOnline = withId("vendor/other:online", "openrouter");
-	const gateway = withId("vendor/base", "vercel-ai-gateway");
-	const modelRuntime = runtimeFor([...allModels, base, free, literalOnline, gateway]);
-	const resolve = (cliModel: string, cliProvider?: string) => resolveCliModel({ cliProvider, cliModel, modelRuntime });
-
-	test("resolves an allowed suffix on a catalog model to a copy with the suffixed ID", () => {
-		for (const result of [resolve("openrouter/vendor/base:floor"), resolve("vendor/base:floor", "openrouter")]) {
-			expect(result.error).toBeUndefined();
-			expect(result.model).toEqual({ ...base, id: "vendor/base:floor", name: "vendor/base (floor)" });
-		}
-		for (const suffix of ["nitro", "online", "exacto"]) {
-			expect(resolve(`openrouter/vendor/base:${suffix}`).model?.id).toBe(`vendor/base:${suffix}`);
-		}
-		expect(resolve("openrouter/vendor/base:nitro:exacto").model).toMatchObject({
-			id: "vendor/base:nitro:exacto",
-			name: "vendor/base (nitro, exacto)",
-		});
-	});
-
-	test("rejects unknown, repeated, or differently cased suffixes", () => {
-		for (const cliModel of [
-			"openrouter/vendor/base:turbo",
-			"openrouter/vendor/base:floor:floor",
-			"openrouter/vendor/base:FLOOR",
-			"openrouter/vendor/base:",
-			"openrouter/vendor/base:floor:turbo",
-		]) {
-			expect(resolve(cliModel)).toMatchObject({
-				model: undefined,
-				error: `Model "${cliModel}" not found. Use --list-models or define the exact model in models.json.`,
-			});
-		}
-	});
-
-	test("rejects an allowed suffix on an unknown or near-miss base", () => {
-		for (const cliModel of [
-			"openrouter/vendor/missing:floor",
-			"openrouter/vendor/bas:floor",
-			"openrouter/vendor:floor",
-		]) {
-			expect(resolve(cliModel).model).toBeUndefined();
-			expect(resolve(cliModel).error).toContain("not found");
-		}
-	});
-
-	test("resolves catalog variants and literal suffixed IDs exactly", () => {
-		expect(resolve("openrouter/vendor/base:free").model).toBe(free);
-		expect(resolve("openrouter/vendor/other:online").model).toBe(literalOnline);
-		expect(resolve("openrouter/qwen/qwen3-coder:exacto").model).toBe(mockOpenRouterModels[0]);
-		expect(resolve("openrouter/vendor/base:free:nitro").model).toMatchObject({
-			id: "vendor/base:free:nitro",
-			cost: free.cost,
-		});
-	});
-
-	test("parses one thinking suffix after routing suffixes", () => {
-		expect(resolve("openrouter/vendor/base:floor:high")).toMatchObject({
-			model: { id: "vendor/base:floor" },
-			thinkingLevel: "high",
-		});
-		expect(resolve("openrouter/vendor/base:high")).toMatchObject({ model: base, thinkingLevel: "high" });
-		expect(resolve("openrouter/vendor/base:high:floor").model).toBeUndefined();
-	});
-
-	test("does not apply routing suffixes to other providers", () => {
-		expect(resolve("openai/gpt-4o:floor").model).toBeUndefined();
-		expect(resolve("gpt-4o:nitro", "openai").model).toBeUndefined();
-		expect(resolve("vercel-ai-gateway/vendor/base:floor").model).toBeUndefined();
-		// Without a provider, only the OpenRouter base can take the suffix.
-		expect(resolve("vendor/base:floor").model).toMatchObject({ provider: "openrouter", id: "vendor/base:floor" });
-	});
-
-	test("accepts a suffixed scope entry when its base is available", async () => {
-		const result = await resolveModelScopeWithDiagnostics(
-			["openrouter/vendor/base:nitro", "openrouter/vendor/base:turbo"],
-			runtimeFor([base, gateway], [base]),
-		);
-		expect(result.scopedModels.map((scoped) => scoped.model.id)).toEqual(["vendor/base:nitro"]);
-		expect(result.diagnostics).toHaveLength(1);
-	});
-
-	describe("model runtime lookups", () => {
-		const builtinBase = getBuiltinModels("openrouter").find((model) => !model.id.includes(":"))!;
-
-		async function createRuntime() {
-			const authStorage = AuthStorage.inMemory({ openrouter: { type: "api_key", key: "test-key" } });
-			return getModelRuntime(await createInMemoryModelRegistry(authStorage));
-		}
-
-		test("getModel resolves routing suffixes for saved defaults and restored sessions", async () => {
-			const runtime = await createRuntime();
-			const suffixedId = `${builtinBase.id}:floor`;
-			expect(runtime.getModel("openrouter", suffixedId)).toMatchObject({
-				provider: "openrouter",
-				id: suffixedId,
-				contextWindow: builtinBase.contextWindow,
-			});
-			expect(runtime.getModel("openrouter", `${builtinBase.id}:turbo`)).toBeUndefined();
-
-			const initial = await findInitialModel({
-				scopedModels: [],
-				isContinuing: false,
-				defaultProvider: "openrouter",
-				defaultModelId: suffixedId,
-				modelRuntime: runtime,
-			});
-			expect(initial.model?.id).toBe(suffixedId);
-
-			const restored = await restoreModelFromSession("openrouter", suffixedId, undefined, false, runtime);
-			expect(restored).toEqual({ model: expect.objectContaining({ id: suffixedId }), fallbackMessage: undefined });
-		});
-
-		test("a saved default with an unknown suffix still fails", async () => {
-			const runtime = await createRuntime();
-			await expect(
-				findInitialModel({
-					scopedModels: [],
-					isContinuing: false,
-					defaultProvider: "openrouter",
-					defaultModelId: `${builtinBase.id}:turbo`,
-					modelRuntime: runtime,
-				}),
-			).rejects.toThrow("model not found");
-		});
 	});
 });
 
 describe("resolveModelScopeWithDiagnostics", () => {
-	test("returns structured diagnostics without writing console warnings", async () => {
+	test("returns scoped models and structured diagnostics without writing console warnings", async () => {
 		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 		try {
-			const result = await resolveModelScopeWithDiagnostics(
-				["anthropic/claude-sonnet-4-5:high", "openai/gpt-4o", "sonnet"],
-				runtimeFor(allModels, mockModels.slice(0, 1)),
-			);
-			expect(result.scopedModels).toEqual([{ model: mockModels[0], thinkingLevel: "high" }]);
+			const registry = {
+				getAvailable: () => allModels,
+			} as unknown as Parameters<typeof resolveModelScopeWithDiagnostics>[1];
+
+			const result = await resolveModelScopeWithDiagnostics(["sonnet:high", "gpt-4o:invalid", "missing"], registry);
+
+			expect(result.scopedModels.map((scoped) => scoped.model.id)).toEqual(["claude-sonnet-4-5", "gpt-4o"]);
+			expect(result.scopedModels[0].thinkingLevel).toBe("high");
+			expect(result.scopedModels[1].thinkingLevel).toBeUndefined();
 			expect(result.diagnostics).toEqual([
 				{
 					type: "warning",
-					code: "no-match",
-					message: 'Model "openai/gpt-4o" is unavailable. Configure authentication for its provider.',
-					pattern: "openai/gpt-4o",
+					message: 'No exact match for "sonnet:high". Using anthropic/claude-sonnet-4-5.',
+					code: "partial-match",
+					pattern: "sonnet:high",
 				},
 				{
 					type: "warning",
+					message: 'Invalid thinking level "invalid" in pattern "gpt-4o:invalid". Using default instead.',
+					code: "invalid-thinking-level",
+					pattern: "gpt-4o:invalid",
+				},
+				{
+					type: "warning",
+					message: 'No models match pattern "missing"',
 					code: "no-match",
-					message: 'Model "sonnet" not found. Use --list-models or define the exact model in models.json.',
-					pattern: "sonnet",
+					pattern: "missing",
 				},
 			]);
 			expect(warn).not.toHaveBeenCalled();
@@ -328,64 +376,319 @@ describe("resolveModelScopeWithDiagnostics", () => {
 		}
 	});
 
-	test("resolves literal bracketed IDs before treating them as globs", async () => {
-		const bracketed = withId("bracketed-model[1m]", "custom");
-		const result = await resolveModelScopeWithDiagnostics(
-			["custom/bracketed-model[1m]:high"],
-			runtimeFor([...allModels, bracketed]),
-		);
-		expect(result.scopedModels).toEqual([{ model: bracketed, thinkingLevel: "high" }]);
+	test("resolveModelScope preserves CLI warning output", async () => {
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+		try {
+			const registry = {
+				getAvailable: () => allModels,
+			} as unknown as Parameters<typeof resolveModelScope>[1];
+
+			const scopedModels = await resolveModelScope(["missing"], registry);
+
+			expect(scopedModels).toEqual([]);
+			expect(warn).toHaveBeenCalledOnce();
+			expect(warn.mock.calls[0][0]).toContain('Warning: No models match pattern "missing"');
+		} finally {
+			warn.mockRestore();
+		}
+	});
+
+	test("adds every provider for a pattern matching the same id on several providers, with a warning", async () => {
+		const registry = {
+			getAvailable: () => [
+				...allModels,
+				{ ...mockModels[1], provider: "azure" },
+				{ ...mockModels[1], provider: "openai-codex", id: "gpt-4o-mini" },
+			],
+		} as unknown as Parameters<typeof resolveModelScopeWithDiagnostics>[1];
+
+		for (const [pattern, thinkingLevel] of [
+			["gpt-4o:high", "high"],
+			["GPT-4o", undefined],
+		] as const) {
+			const result = await resolveModelScopeWithDiagnostics([pattern], registry);
+
+			expect(
+				result.scopedModels.map((scoped) => [`${scoped.model.provider}/${scoped.model.id}`, scoped.thinkingLevel]),
+			).toEqual(
+				expect.arrayContaining([
+					["azure/gpt-4o", thinkingLevel],
+					["openai/gpt-4o", thinkingLevel],
+				]),
+			);
+			expect(result.scopedModels).toHaveLength(2);
+			expect(result.diagnostics).toEqual([
+				{
+					type: "warning",
+					code: "ambiguous",
+					message: `Pattern "${pattern}" matches several providers: azure, openai. Use provider/id to choose one.`,
+					pattern,
+				},
+			]);
+		}
+	});
+
+	test("resolves bracketed model ids as exact references before glob matching", async () => {
+		const bracketedModel: Model<"anthropic-messages"> = {
+			id: "bracketed-model[1m]",
+			name: "Bracketed Model",
+			api: "anthropic-messages",
+			provider: "custom",
+			baseUrl: "https://example.invalid",
+			reasoning: true,
+			input: ["text"],
+			cost: { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 1 },
+			contextWindow: 128000,
+			maxTokens: 8192,
+		};
+		const registry = {
+			getAvailable: () => [...allModels, bracketedModel],
+		} as unknown as Parameters<typeof resolveModelScopeWithDiagnostics>[1];
+
+		const result = await resolveModelScopeWithDiagnostics(["custom/bracketed-model[1m]"], registry);
+
+		expect(result.scopedModels.map((scoped) => scoped.model.id)).toEqual(["bracketed-model[1m]"]);
 		expect(result.diagnostics).toEqual([]);
 	});
 
-	test("reports ambiguous literal IDs instead of glob matching", async () => {
-		const result = await resolveModelScopeWithDiagnostics(
-			["model[1m]"],
-			runtimeFor([withId("model[1m]", "alpha"), withId("model[1m]", "beta"), withId("model1", "gamma")]),
-		);
-		expect(result.scopedModels).toEqual([]);
-		expect(result.diagnostics).toEqual([
-			expect.objectContaining({
-				code: "no-match",
-				pattern: "model[1m]",
-				message: expect.stringContaining("ambiguous"),
-			}),
-		]);
+	test("resolves bracketed model ids with thinking levels as exact references before glob matching", async () => {
+		const bracketedModel: Model<"anthropic-messages"> = {
+			id: "bracketed-model[1m]",
+			name: "Bracketed Model",
+			api: "anthropic-messages",
+			provider: "custom",
+			baseUrl: "https://example.invalid",
+			reasoning: true,
+			input: ["text"],
+			cost: { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 1 },
+			contextWindow: 128000,
+			maxTokens: 8192,
+		};
+		const registry = {
+			getAvailable: () => [...allModels, bracketedModel],
+		} as unknown as Parameters<typeof resolveModelScopeWithDiagnostics>[1];
+
+		const result = await resolveModelScopeWithDiagnostics(["custom/bracketed-model[1m]:high"], registry);
+
+		expect(result.scopedModels.map((scoped) => scoped.model.id)).toEqual(["bracketed-model[1m]"]);
+		expect(result.scopedModels[0].thinkingLevel).toBe("high");
+		expect(result.diagnostics).toEqual([]);
+	});
+});
+
+describe("resolveCliModel", () => {
+	test("does not strip invalid :suffix as thinking level in --model (treat as raw id)", () => {
+		const registry = {
+			getModels: () => allModels,
+		} as unknown as Parameters<typeof resolveCliModel>[0]["modelRuntime"];
+
+		const result = resolveCliModel({
+			cliProvider: "openai",
+			cliModel: "gpt-4o:extended",
+			modelRuntime: registry,
+		});
+
+		expect(result.error).toBeUndefined();
+		expect(result.model?.provider).toBe("openai");
+		expect(result.model?.id).toBe("gpt-4o:extended");
 	});
 
-	test("limits provider-prefixed globs to that provider", async () => {
-		const gatewayModel = withId("openai/gpt-4o", "vercel-ai-gateway");
-		const azureModel = withId("gpt-4o-mini", "azure");
-		const modelRuntime = runtimeFor([...allModels, gatewayModel, azureModel]);
-		const prefixed = await resolveModelScopeWithDiagnostics(["openai/*:low"], modelRuntime);
-		expect(prefixed.scopedModels).toEqual([{ model: mockModels[1], thinkingLevel: "low" }]);
-		const bare = await resolveModelScopeWithDiagnostics(["gpt-4o*"], modelRuntime);
-		// Bare-ID globs match on model.id across providers; the gateway ID contains "/" and does not match.
-		expect(bare.scopedModels.map(({ model }) => `${model.provider}/${model.id}`)).toEqual([
-			"openai/gpt-4o",
-			"azure/gpt-4o-mini",
-		]);
+	test("allows custom model ids for explicit providers without double prefixing", () => {
+		const registry = {
+			getModels: () => allModels,
+		} as unknown as Parameters<typeof resolveCliModel>[0]["modelRuntime"];
+
+		const result = resolveCliModel({
+			cliProvider: "openrouter",
+			cliModel: "openrouter/openai/ghost-model",
+			modelRuntime: registry,
+		});
+
+		expect(result.error).toBeUndefined();
+		expect(result.model?.provider).toBe("openrouter");
+		expect(result.model?.id).toBe("openai/ghost-model");
 	});
 
-	test("limits provider-prefixed globs to the exact-case provider", async () => {
-		const lower = withId("fixture-model", "openrouter");
-		const upper = withId("fixture-model", "OpenRouter");
-		const modelRuntime = runtimeFor([lower, upper]);
-		const exactCase = await resolveModelScopeWithDiagnostics(["OpenRouter/*"], modelRuntime);
-		expect(exactCase.scopedModels).toEqual([{ model: upper, thinkingLevel: undefined }]);
-		expect(exactCase.diagnostics).toEqual([]);
-		const lowerCase = await resolveModelScopeWithDiagnostics(["openrouter/*"], modelRuntime);
-		expect(lowerCase.scopedModels).toEqual([{ model: lower, thinkingLevel: undefined }]);
-		expect(lowerCase.diagnostics).toEqual([]);
-		const ambiguous = await resolveModelScopeWithDiagnostics(["OPENROUTER/*"], modelRuntime);
-		expect(ambiguous.scopedModels).toEqual([]);
-		expect(ambiguous.diagnostics).toEqual([
-			expect.objectContaining({
-				code: "no-match",
-				pattern: "OPENROUTER/*",
-				message: 'Provider "OPENROUTER" is ambiguous: OpenRouter, openrouter.',
-			}),
-		]);
+	test("returns a clear error when there are no models", () => {
+		const registry = {
+			getModels: () => [],
+		} as unknown as Parameters<typeof resolveCliModel>[0]["modelRuntime"];
+
+		const result = resolveCliModel({
+			cliProvider: "openai",
+			cliModel: "gpt-4o",
+			modelRuntime: registry,
+		});
+
+		expect(result.model).toBeUndefined();
+		expect(result.error).toContain("No models available");
+	});
+
+	describe("duplicate raw ids behind a known provider prefix (#10160)", () => {
+		const direct = { ...mockModels[0], id: "claude-sonnet-4-5", provider: "anthropic" };
+		const openrouter = { ...mockModels[0], id: "anthropic/claude-opus-5.5", provider: "openrouter" };
+		const vercel = { ...mockModels[0], id: "anthropic/claude-opus-5.5", provider: "vercel-ai-gateway" };
+		const registry = (configured: string[]) =>
+			({
+				getModels: () => [direct, openrouter, vercel],
+				hasConfiguredAuth: (provider: string) => configured.includes(provider),
+			}) as unknown as Parameters<typeof resolveCliModel>[0]["modelRuntime"];
+
+		test("selects the authenticated gateway, with or without a thinking suffix", () => {
+			for (const [cliModel, thinkingLevel] of [
+				["anthropic/claude-opus-5.5", undefined],
+				["anthropic/claude-opus-5.5:high", "high"],
+			] as const) {
+				const result = resolveCliModel({ cliModel, modelRuntime: registry(["vercel-ai-gateway"]) });
+
+				expect(result.error).toBeUndefined();
+				expect(result.model?.provider).toBe("vercel-ai-gateway");
+				expect(result.thinkingLevel).toBe(thinkingLevel);
+			}
+		});
+
+		test("reports ambiguity instead of choosing by catalog order", () => {
+			const result = resolveCliModel({ cliModel: "anthropic/claude-opus-5.5", modelRuntime: registry([]) });
+
+			expect(result.model).toBeUndefined();
+			expect(result.error).toContain(
+				"openrouter/anthropic/claude-opus-5.5, vercel-ai-gateway/anthropic/claude-opus-5.5",
+			);
+			expect(result.error).toContain("No matching provider is authenticated. Use --provider or provider/model.");
+		});
+
+		test("does not let stored credentials choose the provider for --api-key", () => {
+			const result = resolveCliModel({
+				cliModel: "anthropic/claude-opus-5.5",
+				inlineApiKey: true,
+				modelRuntime: registry(["vercel-ai-gateway"]),
+			});
+
+			expect(result.model).toBeUndefined();
+			expect(result.error).toContain("--api-key does not choose a provider.");
+		});
+	});
+
+	describe("custom model fallback with :thinking suffix (#5552)", () => {
+		// Models for a provider that has registered models but the specific model ID
+		// is not in the registry (triggers buildFallbackModel path).
+		const neuralwattModel: Model<"anthropic-messages"> = {
+			id: "some-base-model",
+			name: "Some Base Model",
+			api: "anthropic-messages",
+			provider: "neuralwatt",
+			baseUrl: "https://api.neuralwatt.com",
+			reasoning: false,
+			input: ["text"],
+			cost: { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 1 },
+			contextWindow: 128000,
+			maxTokens: 8192,
+		};
+
+		const modelsWithNeuralwatt = [...allModels, neuralwattModel];
+
+		test("strips :thinking suffix from custom model id in fallback path", () => {
+			const registry = {
+				getModels: () => modelsWithNeuralwatt,
+			} as unknown as Parameters<typeof resolveCliModel>[0]["modelRuntime"];
+
+			const result = resolveCliModel({
+				cliModel: "neuralwatt/zai-org/GLM-5.1-FP8:high",
+				modelRuntime: registry,
+			});
+
+			expect(result.error).toBeUndefined();
+			expect(result.model?.provider).toBe("neuralwatt");
+			// The :high suffix must NOT leak into the model id sent to the API
+			expect(result.model?.id).toBe("zai-org/GLM-5.1-FP8");
+			expect(result.model?.reasoning).toBe(true);
+			expect(result.thinkingLevel).toBe("high");
+		});
+
+		test("custom model without thinking suffix works normally in fallback path", () => {
+			const registry = {
+				getModels: () => modelsWithNeuralwatt,
+			} as unknown as Parameters<typeof resolveCliModel>[0]["modelRuntime"];
+
+			const result = resolveCliModel({
+				cliModel: "neuralwatt/zai-org/GLM-5.1-FP8",
+				modelRuntime: registry,
+			});
+
+			expect(result.error).toBeUndefined();
+			expect(result.model?.provider).toBe("neuralwatt");
+			expect(result.model?.id).toBe("zai-org/GLM-5.1-FP8");
+			expect(result.thinkingLevel).toBeUndefined();
+		});
+
+		test("all valid thinking levels work in fallback path", () => {
+			const registry = {
+				getModels: () => modelsWithNeuralwatt,
+			} as unknown as Parameters<typeof resolveCliModel>[0]["modelRuntime"];
+
+			for (const level of ["off", "minimal", "low", "medium", "high", "xhigh", "max"]) {
+				const result = resolveCliModel({
+					cliModel: `neuralwatt/zai-org/GLM-5.1-FP8:${level}`,
+					modelRuntime: registry,
+				});
+
+				expect(result.error).toBeUndefined();
+				expect(result.model?.id).toBe("zai-org/GLM-5.1-FP8");
+				expect(result.thinkingLevel).toBe(level);
+			}
+		});
+
+		test("invalid thinking suffix on custom model is treated as part of model id", () => {
+			const registry = {
+				getModels: () => modelsWithNeuralwatt,
+			} as unknown as Parameters<typeof resolveCliModel>[0]["modelRuntime"];
+
+			const result = resolveCliModel({
+				cliModel: "neuralwatt/zai-org/GLM-5.1-FP8:banana",
+				modelRuntime: registry,
+			});
+
+			expect(result.error).toBeUndefined();
+			expect(result.model?.provider).toBe("neuralwatt");
+			// Invalid suffix stays in the id (it's not a thinking level)
+			expect(result.model?.id).toBe("zai-org/GLM-5.1-FP8:banana");
+			expect(result.thinkingLevel).toBeUndefined();
+		});
+
+		test("explicit --provider with custom model:thinking strips suffix correctly", () => {
+			const registry = {
+				getModels: () => modelsWithNeuralwatt,
+			} as unknown as Parameters<typeof resolveCliModel>[0]["modelRuntime"];
+
+			const result = resolveCliModel({
+				cliProvider: "neuralwatt",
+				cliModel: "zai-org/GLM-5.1-FP8:high",
+				modelRuntime: registry,
+			});
+
+			expect(result.error).toBeUndefined();
+			expect(result.model?.provider).toBe("neuralwatt");
+			expect(result.model?.id).toBe("zai-org/GLM-5.1-FP8");
+			expect(result.thinkingLevel).toBe("high");
+		});
+
+		test("with explicit --thinking, :suffix is kept as part of model id", () => {
+			const registry = {
+				getModels: () => modelsWithNeuralwatt,
+			} as unknown as Parameters<typeof resolveCliModel>[0]["modelRuntime"];
+
+			const result = resolveCliModel({
+				cliModel: "neuralwatt/zai-org/GLM-5.1-FP8:high",
+				cliThinking: "medium",
+				modelRuntime: registry,
+			});
+
+			expect(result.error).toBeUndefined();
+			expect(result.model?.provider).toBe("neuralwatt");
+			// :high is kept as part of the model id since --thinking was explicit
+			expect(result.model?.id).toBe("zai-org/GLM-5.1-FP8:high");
+			expect(result.thinkingLevel).toBeUndefined();
+		});
 	});
 });
 
@@ -491,7 +794,6 @@ describe("default model selection", () => {
 			isContinuing: false,
 			defaultProvider: "deepseek",
 			defaultModelId: "deepseek-v4-flash",
-			strictModelSelection: false,
 			modelRuntime: registry,
 		});
 
@@ -584,6 +886,135 @@ describe("default model selection", () => {
 				`${sonnet.provider}/${sonnet.id}`,
 			]);
 			expect(settingsManager.getEnabledModels()).toEqual([`${sonnet.provider}/${sonnet.id}`]);
+		});
+	});
+});
+
+describe("partial match ranking", () => {
+	const catalog = [
+		referenceModel("openrouter", "anthropic/claude-sonnet-5"),
+		referenceModel("openrouter", "anthropic/claude-sonnet-5:batch"),
+		referenceModel("openrouter", "anthropic/claude-sonnet-5.5"),
+		referenceModel("openrouter", "anthropic/claude-sonnet-5.5:batch"),
+		referenceModel("openrouter", "google/gemini-2.5-pro"),
+		referenceModel("openrouter", "google/gemini-2.5-pro:batch"),
+		referenceModel("openrouter", "google/gemini-2.5-pro-preview"),
+		referenceModel("openrouter", "cohere/north-mini-code:free"),
+	];
+	const resolve = (text: string, models: readonly Model<Api>[] = catalog) =>
+		resolveModelReference({ text, thinkingSuffix: "strict", fuzzy: true }, models, () => true);
+
+	test.each([
+		// A base id beats its catalog variants
+		["gemini-2.5-pro", "google/gemini-2.5-pro"],
+		["sonnet-5.5", "anthropic/claude-sonnet-5.5"],
+		// An id ending in the text beats one continuing it
+		["sonnet-5", "anthropic/claude-sonnet-5"],
+		["openrouter/sonnet-5", "anthropic/claude-sonnet-5"],
+		// Without a closest match, the latest base id wins
+		["sonnet", "anthropic/claude-sonnet-5.5"],
+		// A variant without its base in the catalog still matches
+		["north-mini-code", "cohere/north-mini-code:free"],
+	])("%s resolves to %s", (text, id) => {
+		// Catalog order must never decide the result.
+		for (const models of [catalog, [...catalog].reverse()]) {
+			const result = resolve(text, models);
+			expect(result).toMatchObject({ status: "resolved", model: { id }, partial: true });
+		}
+	});
+
+	test("exact ids, including variants, resolve as themselves without the partial flag", () => {
+		for (const id of ["anthropic/claude-sonnet-5:batch", "anthropic/claude-sonnet-5"]) {
+			const result = resolve(id);
+			expect(result).toMatchObject({ status: "resolved", model: { id } });
+			expect(result.status === "resolved" && result.partial).toBeFalsy();
+		}
+	});
+
+	test("resolveCliModel warns about partial matches only", () => {
+		const modelRuntime = {
+			getModels: () => catalog,
+			hasConfiguredAuth: () => true,
+		} as unknown as Parameters<typeof resolveCliModel>[0]["modelRuntime"];
+
+		expect(resolveCliModel({ cliModel: "sonnet-5:high", modelRuntime })).toMatchObject({
+			model: { id: "anthropic/claude-sonnet-5" },
+			thinkingLevel: "high",
+			warning: 'No exact match for "sonnet-5:high". Using openrouter/anthropic/claude-sonnet-5.',
+		});
+		expect(
+			resolveCliModel({ cliModel: "openrouter/anthropic/claude-sonnet-5", modelRuntime }).warning,
+		).toBeUndefined();
+	});
+});
+
+describe("suffix variants", () => {
+	const base = referenceModel("openrouter", "vendor/base");
+	const free = referenceModel("openrouter", "vendor/base:free");
+	const modelRuntime = {
+		getModels: () => [base, free],
+		hasConfiguredAuth: () => true,
+	} as unknown as Parameters<typeof resolveCliModel>[0]["modelRuntime"];
+	const resolve = (cliModel: string, cliProvider?: string) => resolveCliModel({ cliProvider, cliModel, modelRuntime });
+
+	test("an unknown <catalog id>:<suffix> copies the catalog model under the full id", () => {
+		for (const result of [resolve("openrouter/vendor/base:nitro"), resolve("vendor/base:nitro", "openrouter")]) {
+			expect(result.error).toBeUndefined();
+			expect(result.model).toEqual({ ...base, id: "vendor/base:nitro", name: "vendor/base (nitro)" });
+			expect(result.warning).toContain("Using custom model id");
+		}
+		expect(resolve("openrouter/vendor/base:free:nitro").model).toEqual({
+			...free,
+			id: "vendor/base:free:nitro",
+			name: "vendor/base:free (nitro)",
+		});
+	});
+
+	test("a thinking suffix after a variant suffix is parsed", () => {
+		expect(resolve("openrouter/vendor/base:nitro:high")).toMatchObject({
+			model: { id: "vendor/base:nitro" },
+			thinkingLevel: "high",
+		});
+	});
+
+	test("a catalog variant resolves as itself", () => {
+		expect(resolve("openrouter/vendor/base:free").model).toBe(free);
+	});
+
+	describe("model runtime lookups", () => {
+		const builtinBase = getBuiltinModels("openrouter").find((model) => !model.id.includes(":"))!;
+		const builtinVariant = getBuiltinModels("openrouter").find((model) => model.id.includes(":"))!;
+
+		async function createRuntime() {
+			const authStorage = AuthStorage.inMemory({ openrouter: { type: "api_key", key: "test-key" } });
+			return getModelRuntime(await createInMemoryModelRegistry(authStorage));
+		}
+
+		test("getModel resolves suffix variants for saved defaults and restored sessions", async () => {
+			const runtime = await createRuntime();
+			const suffixedId = `${builtinBase.id}:floor`;
+			expect(runtime.getModel("openrouter", suffixedId)).toMatchObject({
+				provider: "openrouter",
+				id: suffixedId,
+				contextWindow: builtinBase.contextWindow,
+			});
+			expect(runtime.getModel("openrouter", builtinVariant.id)).toMatchObject({
+				id: builtinVariant.id,
+				name: builtinVariant.name,
+			});
+			expect(runtime.getModel("openrouter", "vendor/missing:floor")).toBeUndefined();
+
+			const initial = await findInitialModel({
+				scopedModels: [],
+				isContinuing: false,
+				defaultProvider: "openrouter",
+				defaultModelId: suffixedId,
+				modelRuntime: runtime,
+			});
+			expect(initial.model?.id).toBe(suffixedId);
+
+			const restored = await restoreModelFromSession("openrouter", suffixedId, undefined, false, runtime);
+			expect(restored).toEqual({ model: expect.objectContaining({ id: suffixedId }), fallbackMessage: undefined });
 		});
 	});
 });

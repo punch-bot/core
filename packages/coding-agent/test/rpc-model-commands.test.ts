@@ -99,7 +99,7 @@ async function startRpcMode(): Promise<{
 	};
 }
 
-describe("RPC model commands with OpenRouter routing suffixes", () => {
+describe("RPC model commands with suffix variants", () => {
 	afterEach(() => {
 		rpcIo.outputLines = [];
 		rpcIo.lineHandler = undefined;
@@ -123,7 +123,8 @@ describe("RPC model commands with OpenRouter routing suffixes", () => {
 	it("resolve_model fails with the same error as set_model", async () => {
 		const { send, cleanup } = await startRpcMode();
 		try {
-			for (const modelId of [`${base.id}:turbo`, "vendor/missing:floor", `${base.id}:floor:floor`]) {
+			// An unknown base, a thinking level, and an empty suffix are not suffix variants
+			for (const modelId of ["vendor/missing:floor", `${base.id}:high`, `${base.id}:`]) {
 				const error = `Model not found: openrouter/${modelId}`;
 				const command = { provider: "openrouter", modelId };
 				expect(await send({ type: "resolve_model", ...command })).toMatchObject({ success: false, error });

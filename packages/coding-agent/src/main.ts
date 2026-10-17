@@ -446,7 +446,7 @@ function buildSessionOptions(
 	const diagnostics: AgentSessionRuntimeDiagnostic[] = [];
 	let cliThinkingFromModel = false;
 
-	// Model from CLI (skipped when a restored session supplies its own model, so a stale --model cannot fail it)
+	// Model from CLI (skipped when a resumed session restores its own model)
 	// - supports --provider <name> --model <id>
 	// - supports --model <provider>/<id>
 	if (parsed.provider && parsed.model === undefined) {
@@ -459,6 +459,8 @@ function buildSessionOptions(
 		const resolved = resolveCliModel({
 			cliProvider: parsed.provider,
 			cliModel: parsed.model,
+			cliThinking: parsed.thinking,
+			inlineApiKey: Boolean(parsed.apiKey),
 			modelRuntime,
 		});
 		if (resolved.warning) {
@@ -774,14 +776,10 @@ export async function main(args: string[], options?: MainOptions) {
 						signal: AbortSignal.timeout(15_000),
 					})
 				: { scopedModels: [], diagnostics: [] };
-		// An explicit --models must resolve fully. Stale enabledModels settings only warn.
-		const scopeError = scope.diagnostics.find((diagnostic) => diagnostic.code === "no-match");
-		if (scopeError && !parsed.help && parsed.listModels === undefined && parsed.models !== undefined) {
-			throw new Error(scopeError.message);
-		}
 		diagnostics.push(...scope.diagnostics);
 		const scopedModels = scope.scopedModels;
 		const sessionContext = sessionManager.buildSessionContext();
+		// A session with a saved model restores it, even before its first message.
 		const hasSavedModel = sessionContext.model !== null;
 		// Startup --model applies to the first runtime and sessions with no saved model; others restore theirs.
 		const applyCliModel = isInitialRuntime || !hasSavedModel;
@@ -820,7 +818,6 @@ export async function main(args: string[], options?: MainOptions) {
 			sessionManager,
 			sessionStartEvent,
 			model: sessionOptions.model,
-			strictModelSelection: !parsed.help && parsed.listModels === undefined,
 			thinkingLevel: sessionOptions.thinkingLevel,
 			scopedModels: sessionOptions.scopedModels,
 			tools: sessionOptions.tools,
@@ -887,7 +884,11 @@ export async function main(args: string[], options?: MainOptions) {
 	recordInstallTelemetry(settingsManager, VERSION);
 
 	time("resolveModelScope");
-	const startupDiagnostics = deduplicateDiagnostics([...startupSettingsDiagnostics, ...runtime.diagnostics]);
+	const startupDiagnostics = deduplicateDiagnostics([
+		...startupSettingsDiagnostics,
+		...runtime.diagnostics,
+		...(runtime.modelFallbackMessage ? [{ type: "warning" as const, message: runtime.modelFallbackMessage }] : []),
+	]);
 	const hasRuntimeErrors = runtime.diagnostics.some((diagnostic) => diagnostic.type === "error");
 	reportDiagnostics(startupDiagnostics);
 	if (hasRuntimeErrors) {
