@@ -16,9 +16,9 @@ Audit changelog entries for all commits since the last release.
    ```
 
 3. **Read each package's [Unreleased] section:**
-   - packages/ai/CHANGELOG.md
-   - packages/tui/CHANGELOG.md
-   - packages/coding-agent/CHANGELOG.md
+   ```bash
+   ls packages/*/CHANGELOG.md
+   ```
 
 4. **For each commit, check:**
    - Skip: changelog updates, doc-only changes, release housekeeping
@@ -28,7 +28,7 @@ Audit changelog entries for all commits since the last release.
    - For external contributions (PRs), verify format: `Description ([#N](url) by [@user](url))`
 
 5. **Cross-package duplication rule:**
-   Changes in `ai`, `agent` or `tui` that affect end users should be duplicated to `coding-agent` changelog, since coding-agent is the user-facing package that depends on them.
+   Changes in other packages (for example `ai`, `agent`, `mcp`, `codemode`) that affect end users should be duplicated to `coding-agent` changelog, since coding-agent is the user-facing package that depends on them.
 
 6. **Add New Features section after changelog fixes:**
    - Insert a `### New Features` section at the start of `## [Unreleased]` in `packages/coding-agent/CHANGELOG.md`.
@@ -50,5 +50,5 @@ Sections (in order):
 - `### Removed` - Removed features
 
 Attribution:
-- Internal: `Fixed foo ([#123](https://github.com/earendil-works/pi/issues/123))`
-- External: `Added bar ([#456](https://github.com/earendil-works/pi/pull/456) by [@user](https://github.com/user))`
+- Internal: `Fixed foo ([#123](https://github.com/punch-bot/core/issues/123))`
+- External: `Added bar ([#456](https://github.com/punch-bot/core/pull/456) by [@user](https://github.com/user))`
