@@ -6,6 +6,10 @@
 
 - Changed a custom system prompt (`--system-prompt`, `SYSTEM.md`, SDK `systemPromptOverride` or `ResourceLoader.getSystemPrompt()`, `BuildSystemPromptOptions.customPrompt`) to replace only the opening of the default prompt. The `<tools>` and `<rules>` sections, including tool and extension guidelines, now follow it; the pi documentation pointers stay out. To send an exact prompt with no Pi sections, return `systemPrompt` from a `before_agent_start` handler ([#38](https://github.com/punch-bot/core/pull/38))
 
+### Changed
+
+- Changed the GitHub Copilot default model from `gpt-5.4`, which Copilot no longer lists, to `gpt-6.1-sol`
+
 ## [1.3.0] - 2026-10-17
 
 ### Breaking Changes
