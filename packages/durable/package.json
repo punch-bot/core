@@ -1,6 +1,6 @@
 {
 	"name": "@punch-bot/durable",
-	"version": "1.4.0",
+	"version": "1.4.1",
 	"description": "Durable conversation, task, and document runtime for Pi",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -150,10 +150,10 @@
 		"node": ">=22.19.0"
 	},
 	"dependencies": {
-		"@punch-bot/chord": "1.4.0",
-		"@punch-bot/ai": "1.4.0",
-		"@punch-bot/codemode": "1.4.0",
-		"@punch-bot/telemetry": "1.4.0",
+		"@punch-bot/chord": "1.4.1",
+		"@punch-bot/ai": "1.4.1",
+		"@punch-bot/codemode": "1.4.1",
+		"@punch-bot/telemetry": "1.4.1",
 		"@silvia-odwyer/photon": "0.3.3",
 		"diff": "8.0.4",
 		"typebox": "1.3.27"

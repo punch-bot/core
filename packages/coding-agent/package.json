@@ -1,6 +1,6 @@
 {
 	"name": "@punch-bot/cli",
-	"version": "1.4.0",
+	"version": "1.4.1",
 	"description": "Headless coding agent SDK, RPC, and print modes with read, bash, edit, write tools and session management",
 	"type": "module",
 	"imports": {
@@ -53,9 +53,9 @@
 		"prepublishOnly": "npm run clean && npm run build && npm run shrinkwrap"
 	},
 	"dependencies": {
-		"@punch-bot/a2a": "1.4.0",
-		"@punch-bot/agent": "1.4.0",
-		"@punch-bot/ai": "1.4.0",
+		"@punch-bot/a2a": "1.4.1",
+		"@punch-bot/agent": "1.4.1",
+		"@punch-bot/ai": "1.4.1",
 		"@silvia-odwyer/photon-node": "0.3.4",
 		"brace-expansion": "5.0.12",
 		"chalk": "6.0.0",
@@ -75,8 +75,8 @@
 		"typebox": "1.3.27",
 		"undici": "8.11.0",
 		"yaml": "2.9.0",
-		"@punch-bot/codemode": "1.4.0",
-		"@punch-bot/mcp": "1.4.0",
+		"@punch-bot/codemode": "1.4.1",
+		"@punch-bot/mcp": "1.4.1",
 		"quickjs-wasi": "3.6.2"
 	},
 	"overrides": {
@@ -91,7 +91,7 @@
 		"marked": "18.0.11",
 		"shx": "0.3.4",
 		"vitest": "5.0.0",
-		"@punch-bot/durable": "1.4.0"
+		"@punch-bot/durable": "1.4.1"
 	},
 	"keywords": [
 		"coding-agent",
