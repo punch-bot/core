@@ -1,5 +1,6 @@
 import * as bundledPiAgentCore from "@punch-bot/agent";
 import * as bundledPiAiCompat from "@punch-bot/ai/compat";
+import * as bundledPiAiModels from "@punch-bot/ai/models";
 import * as bundledPiAiOauth from "@punch-bot/ai/oauth";
 import * as bundledPiAiProviders from "@punch-bot/ai/providers/all";
 import * as bundledTypebox from "typebox";
@@ -23,12 +24,14 @@ export const VIRTUAL_MODULES: Record<string, unknown> = {
 	// global API keep working at runtime until compat is removed.
 	"@punch-bot/ai": bundledPiAiCompat,
 	"@punch-bot/ai/compat": bundledPiAiCompat,
+	"@punch-bot/ai/models": bundledPiAiModels,
 	"@punch-bot/ai/oauth": bundledPiAiOauth,
 	"@punch-bot/ai/providers/all": bundledPiAiProviders,
 	"@punch-bot/cli": bundledPiCodingAgent,
 	"@mariozechner/pi-agent-core": bundledPiAgentCore,
 	"@mariozechner/pi-ai": bundledPiAiCompat,
 	"@mariozechner/pi-ai/compat": bundledPiAiCompat,
+	"@mariozechner/pi-ai/models": bundledPiAiModels,
 	"@mariozechner/pi-ai/oauth": bundledPiAiOauth,
 	"@mariozechner/pi-ai/providers/all": bundledPiAiProviders,
 	"@mariozechner/pi-coding-agent": bundledPiCodingAgent,

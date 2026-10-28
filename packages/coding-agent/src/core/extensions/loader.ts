@@ -87,6 +87,7 @@ function getAliases(): Record<string, string> {
 	// superset of the core entrypoint): existing extensions using the old
 	// global API keep working at runtime until compat is removed.
 	const piAiCompatEntry = resolveWorkspaceOrImport("ai/dist/compat.js", "@punch-bot/ai/compat");
+	const piAiModelsEntry = resolveWorkspaceOrImport("ai/dist/models.js", "@punch-bot/ai/models");
 	const piAiOauthEntry = resolveWorkspaceOrImport("ai/dist/oauth.js", "@punch-bot/ai/oauth");
 	const piAiProvidersEntry = resolveWorkspaceOrImport("ai/dist/providers/all.js", "@punch-bot/ai/providers/all");
 
@@ -95,12 +96,14 @@ function getAliases(): Record<string, string> {
 		"@punch-bot/agent": piAgentCoreEntry,
 		"@punch-bot/ai/providers/all": piAiProvidersEntry,
 		"@punch-bot/ai/compat": piAiCompatEntry,
+		"@punch-bot/ai/models": piAiModelsEntry,
 		"@punch-bot/ai/oauth": piAiOauthEntry,
 		"@punch-bot/ai": piAiCompatEntry,
 		"@mariozechner/pi-coding-agent": piCodingAgentEntry,
 		"@mariozechner/pi-agent-core": piAgentCoreEntry,
 		"@mariozechner/pi-ai/providers/all": piAiProvidersEntry,
 		"@mariozechner/pi-ai/compat": piAiCompatEntry,
+		"@mariozechner/pi-ai/models": piAiModelsEntry,
 		"@mariozechner/pi-ai/oauth": piAiOauthEntry,
 		"@mariozechner/pi-ai": piAiCompatEntry,
 		typebox: typeboxEntry,

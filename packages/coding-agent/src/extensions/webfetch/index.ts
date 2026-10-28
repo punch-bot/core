@@ -148,7 +148,8 @@ async function fetchText(url: string, rawLimit: number): Promise<{ text: string;
 				method: "GET",
 				signal: AbortSignal.timeout(15_000),
 			});
-			const location = res.headers.location;
+			const locationHeader = res.headers.location;
+			const location = Array.isArray(locationHeader) ? locationHeader[0] : locationHeader;
 			if (res.statusCode >= 300 && res.statusCode < 400) {
 				res.body.destroy();
 				if (!location) throw new Error(`HTTP ${res.statusCode} with no redirect location`);

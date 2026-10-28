@@ -1,4 +1,6 @@
+import { formatUserAgent } from "@punch-bot/ai";
+
+/** pi's detailed `User-Agent` for its own network requests. Provider requests send the short `punch-agent` form. */
 export function getPiUserAgent(version: string): string {
-	const runtime = process.versions.bun ? `bun/${process.versions.bun}` : `node/${process.version}`;
-	return `pi/${version} (${process.platform}; ${runtime}; ${process.arch})`;
+	return formatUserAgent({ userAgent: "detailed", version });
 }

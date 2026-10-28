@@ -254,6 +254,7 @@ export function createModelTools(): ToolRegistration[] {
 			const model = resolveModel("models.classify", "classifier", args.model, api.models);
 			const checked = checkClassifierContext(args.context);
 			const result = await api.models.classify(model, checked, {
+				telemetry: context.telemetry,
 				...(context.abortSignal === undefined ? {} : { signal: context.abortSignal }),
 			});
 			return modelResult(`classify ${model.provider}/${model.id}`, result, result);
@@ -269,6 +270,7 @@ export function createModelTools(): ToolRegistration[] {
 			const model = resolveModel("models.generateImages", "image", args.model, api.models);
 			const checked = checkImagesContext(args.context);
 			const result = await api.models.generateImages(model, checked, {
+				telemetry: context.telemetry,
 				...(context.abortSignal === undefined ? {} : { signal: context.abortSignal }),
 			});
 			return modelResult(`generateImages ${model.provider}/${model.id}`, result, result);
