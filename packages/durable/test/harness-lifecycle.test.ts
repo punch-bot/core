@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createModels, fauxAssistantMessage, fauxText, fauxToolCall, Type } from "@punch-bot/ai";
 import type { Context, JsonValue } from "@punch-bot/chord";
+import { withAbortSignal } from "@punch-bot/chord/context";
 import {
 	type Conversation,
 	type ConversationId,
@@ -55,7 +56,7 @@ function unloadDocuments(harness: Harness): Promise<void> {
 }
 
 function withSignal(signal: AbortSignal): Context {
-	return { ...context, abortSignal: signal };
+	return withAbortSignal(signal, context);
 }
 
 /** Whether a raw Storage read still succeeds, as code of a joined invocation relies on. */
@@ -275,6 +276,7 @@ describe("Harness close", () => {
 
 	it("publishes no frame to states and watches from a commit that settles during close", async () => {
 		const Notes = defineDoc<{ text: string }>({
+			checkpointWhen: () => false,
 			kind: "test.close-frames",
 			version: 1,
 			scope: "session",
@@ -336,6 +338,7 @@ describe("Harness close", () => {
 
 	it("leaves no subscription behind a watch acquisition cancelled on the line", async () => {
 		const Notes = defineDoc<{ text: string }>({
+			checkpointWhen: () => false,
 			kind: "test.cancelled-watch",
 			version: 1,
 			scope: "session",
@@ -450,12 +453,14 @@ describe("Harness close", () => {
 
 	it("completes reads queued at the seal and rejects queued waits and acquisitions that would follow commits", async () => {
 		const Notes = defineDoc<{ text: string }>({
+			checkpointWhen: () => false,
 			kind: "test.queued-at-seal",
 			version: 1,
 			scope: "session",
 			initial: () => ({ text: "" }),
 		});
 		const Absent = defineDoc<{ text: string }>({
+			checkpointWhen: () => false,
 			kind: "test.queued-absent",
 			version: 1,
 			scope: "session",
@@ -534,6 +539,7 @@ describe("scheduling on a paused Harness", () => {
 	it("never schedules from a read-only viewer", async () => {
 		const { harness, root, id, submissionId, ran } = await paused();
 		const Notes = defineDoc<{ text: string }>({
+			checkpointWhen: () => false,
 			kind: "test.viewer-notes",
 			version: 1,
 			scope: "session",

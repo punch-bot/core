@@ -4,6 +4,7 @@ import { ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_OAUTH_TOKEN_ENV } from "../src/env-
 import { createModels } from "../src/models.ts";
 import { anthropicProvider } from "../src/providers/anthropic.ts";
 import type { Model } from "../src/types.ts";
+import { formatUserAgent } from "../src/utils/identity.ts";
 import { normalizeContext } from "../src/utils/transcript.ts";
 
 const mockState = vi.hoisted(() => ({
@@ -54,7 +55,7 @@ vi.mock("@anthropic-ai/sdk", () => {
 	return { default: FakeAnthropic };
 });
 
-const PI_USER_AGENT = "punch-agent";
+const PI_USER_AGENT = formatUserAgent();
 const neverAbortedSignal = new AbortController().signal;
 
 const context = normalizeContext({

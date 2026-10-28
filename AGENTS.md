@@ -30,6 +30,7 @@ Punch dropped several parts of pi. Upstream merges bring changes to them back as
   Theme tokens moved to `src/core/theme`.
 - [PR #9](https://github.com/punch-bot/core/pull/9) disabled GitHub Actions. Workflows live in `.github/workflows-disabled/`. Put new upstream workflows there, not in `.github/workflows/`.
 - Model selection uses pi's resolver (partial matching, lenient session restore) with Punch patches in `src/core/model-resolver.ts` and `src/core/model-suffix-variants.ts`: partial matches prefer a base ID over its `:variant` and an ID ending in the typed text over one continuing it, and warn with the selected model; `<catalog id>:<suffix>` IDs (OpenRouter routing variants such as `:nitro`) copy the catalog model; restore and saved-default fallbacks print a warning. Keep these patches when merging upstream resolver changes, and do not add provider-specific suffix lists.
+- Provider requests send the `User-Agent` `punch-agent`, without platform, runtime, or architecture. Since pi 1.4.0 it comes from client identity: `"short"` is the default mode in `packages/ai/src/utils/identity.ts` and Bedrock's `bedrockUserAgent()`, and `src/core/client-identity.ts` in `@punch-bot/cli` uses it too. pi's own requests to pi.dev and GitHub keep the detailed form (`src/utils/pi-user-agent.ts`). Keep this when merging upstream identity changes.
 - pi 1.0.1 removed `packages/coding-agent/npm-shrinkwrap.json` and its generator. Punch keeps both, along with `check:shrinkwrap` and the `shrinkwrap` step in `prepublishOnly` and `scripts/release.mjs`.
 - The pi 1.1 merge left out the Nix flake (`flake.nix`, `flake.lock`, `nix/`, `nix.yml`, `scripts/update-model-catalog-pin.mjs`). It packages `packages/tui` and pins pi.dev's model catalog.
 - Rename new upstream `@earendil-works/*` packages, imports, and docs references to `@punch-bot/*`, and add new packages to the table above.
@@ -67,7 +68,7 @@ How to resolve:
 - Always ask before removing functionality or code that appears intentional.
 - Do not preserve backward compatibility unless the user asks for it.
 - Never hardcode key checks.
-- Never modify `packages/ai/src/models.generated.ts` directly; update `packages/ai/scripts/generate-models.ts` instead, then regenerate. Including the resulting `models.generated.ts` diff is always OK, even if regeneration includes unrelated upstream model metadata changes.
+- Never modify `packages/ai/src/models.generated.ts` directly; update `packages/ai/scripts/generate-models.ts` instead, then regenerate. Including the resulting `models.generated.ts` diff is always OK, even if regeneration includes unrelated upstream model metadata changes. The generated model data in `packages/ai/src/providers/data/` is gitignored: never stage it, and don't look for it in git history.
 
 ## Commands
 

@@ -125,6 +125,7 @@ const Unregistered = defineTask<NodeInput, { phase: "run" }, string>({
 });
 
 const TaskNotes = defineDoc<{ text: string }>({
+	checkpointWhen: () => false,
 	kind: "test.task-notes",
 	version: 1,
 	scope: "task",

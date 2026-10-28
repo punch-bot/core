@@ -6,9 +6,10 @@ import { getSupportedThinkingLevels } from "../src/models.ts";
 import { XAI_MODELS } from "../src/providers/xai.models.ts";
 import { xaiProvider } from "../src/providers/xai.ts";
 import type { Context, Model } from "../src/types.ts";
+import { formatUserAgent } from "../src/utils/identity.ts";
 import { normalizeContext } from "../src/utils/transcript.ts";
 
-const PI_USER_AGENT = "punch-agent";
+const PI_USER_AGENT = formatUserAgent();
 
 type CapturedRequest = {
 	url: string;

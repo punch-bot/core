@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { stream as streamAzureOpenAIResponses } from "../src/api/azure-openai-responses.ts";
 import { getModel, normalizeContext } from "../src/compat.ts";
 import type { Api, Context, Model } from "../src/types.ts";
+import { formatUserAgent } from "../src/utils/identity.ts";
 
 interface CapturedAzureClientOptions {
 	apiKey: string;
@@ -51,7 +52,7 @@ vi.mock("openai", () => {
 	return { AzureOpenAI };
 });
 
-const PI_USER_AGENT = "punch-agent";
+const PI_USER_AGENT = formatUserAgent();
 
 const context: Context = {
 	messages: [{ role: "user", content: "hello", timestamp: Date.now() }],
