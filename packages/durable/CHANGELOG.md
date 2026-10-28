@@ -33,7 +33,7 @@
 - Generation retry backoffs, deferred-response polls, and compaction retry backoffs sleep instead of waiting in a running phase, so a process can stop or hibernate during them. A record an earlier version stored mid-backoff sleeps again when it resumes before its time. A deferred poll whose model is gone after a reopen now fails `no_model` once the poll is due, not at once.
 - Code mode measures script deadlines and wall time on the Harness clock (`HarnessOptions.now`) instead of `Date.now()`.
 - SQLite drivers, portable interfaces, and the generic migration runner now come from `@punch-bot/chord/sqlite`. Existing Durable SQLite entry points keep re-exporting their public names; storage helpers and Durable schema migrations stay here.
-- `ToolControl.terminate` is now typed `boolean` instead of `true`, matching `pi-agent-core` and `pi-coding-agent`; `false` does not end the run ([#10858](https://github.com/earendil-works/pi/issues/10858)).
+- `ToolControl.terminate` is now typed `boolean` instead of `true`, matching `@punch-bot/agent` and `@punch-bot/cli`; `false` does not end the run ([#10858](https://github.com/earendil-works/pi/issues/10858)).
 
 ### Fixed
 
