@@ -68,10 +68,10 @@ const PROVIDER_MODEL_PAIRS: ProviderModelPair[] = [
 	// OpenAI Codex
 	{ provider: "openai-codex", model: "gpt-6.1-sol", label: "openai-codex-gpt-6.1-sol" },
 	// GitHub Copilot
-	{ provider: "github-copilot", model: "claude-sonnet-4.5", label: "copilot-claude-sonnet-4.5" },
-	{ provider: "github-copilot", model: "gpt-5.1-codex", label: "copilot-gpt-5.1-codex" },
-	{ provider: "github-copilot", model: "gemini-3-flash-preview", label: "copilot-gemini-3-flash-preview" },
-	{ provider: "github-copilot", model: "grok-code-fast-1", label: "copilot-grok-code-fast-1" },
+	{ provider: "github-copilot", model: "claude-sonnet-4.6", label: "copilot-claude-sonnet-4.6" },
+	{ provider: "github-copilot", model: "gpt-5.3-codex", label: "copilot-gpt-5.3-codex" },
+	{ provider: "github-copilot", model: "gemini-3.8-flash", label: "copilot-gemini-3.8-flash" },
+	{ provider: "github-copilot", model: "kimi-k3", label: "copilot-kimi-k3" },
 	// Amazon Bedrock
 	{
 		provider: "amazon-bedrock",
@@ -81,7 +81,7 @@ const PROVIDER_MODEL_PAIRS: ProviderModelPair[] = [
 	// xAI
 	{ provider: "xai", model: "grok-4.3", label: "xai-grok-4.3" },
 	// Cerebras
-	{ provider: "cerebras", model: "zai-glm-4.7", label: "cerebras-zai-glm-4.7" },
+	{ provider: "cerebras", model: "qwen-3.8-27b", label: "cerebras-qwen-3.8-27b" },
 	// Cloudflare Workers AI
 	{ provider: "cloudflare-workers-ai", model: "@cf/moonshotai/kimi-k2.6", label: "cloudflare-kimi-k2.6" },
 	// Cloudflare AI Gateway
@@ -123,12 +123,12 @@ const PROVIDER_MODEL_PAIRS: ProviderModelPair[] = [
 	{ provider: "opencode", model: "big-pickle", label: "zen-big-pickle" },
 	{ provider: "opencode", model: "claude-sonnet-4-5", label: "zen-claude-sonnet-4-5" },
 	{ provider: "opencode", model: "gemini-3-flash", label: "zen-gemini-3-flash" },
-	{ provider: "opencode", model: "glm-4.7-free", label: "zen-glm-4.7-free" },
+	{ provider: "opencode", model: "glm-5.3-flash-free", label: "zen-glm-5.3-flash-free" },
 	{ provider: "opencode", model: "gpt-5.2-codex", label: "zen-gpt-5.2-codex" },
-	{ provider: "opencode", model: "minimax-m2.1-free", label: "zen-minimax-m2.1-free" },
+	{ provider: "opencode", model: "qwen3.8-flash", label: "zen-qwen3.8-flash" },
 	// OpenCode Go
-	{ provider: "opencode-go", model: "kimi-k2.5", label: "go-kimi-k2.5" },
-	{ provider: "opencode-go", model: "minimax-m2.5", label: "go-minimax-m2.5" },
+	{ provider: "opencode-go", model: "kimi-k3", label: "go-kimi-k3" },
+	{ provider: "opencode-go", model: "minimax-m3", label: "go-minimax-m3" },
 	// Xiaomi MiMo
 	{ provider: "xiaomi", model: "mimo-v2.6-pro", label: "xiaomi-mimo-v2.6-pro" },
 	{ provider: "xiaomi-token-plan-cn", model: "mimo-v2.6-pro", label: "xiaomi-token-plan-cn-mimo-v2.6-pro" },
