@@ -1,4 +1,3 @@
-import { arch, platform, release } from "node:os";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const googleGenAiMock = vi.hoisted(() => ({
@@ -99,7 +98,7 @@ beforeEach(() => {
 	googleGenAiMock.streamChunks = undefined;
 });
 
-const PI_USER_AGENT = `punch-bot (${platform()} ${release()}; ${arch()})`;
+const PI_USER_AGENT = "punch-agent";
 
 const context = normalizeContext({
 	messages: [{ role: "user", content: "hello", timestamp: Date.now() }],

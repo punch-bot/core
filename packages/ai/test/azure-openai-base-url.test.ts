@@ -1,4 +1,3 @@
-import { arch, platform, release } from "node:os";
 import type { ResponseStreamEvent } from "openai/resources/responses/responses.js";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -52,7 +51,7 @@ vi.mock("openai", () => {
 	return { AzureOpenAI };
 });
 
-const PI_USER_AGENT = `punch-bot (${platform()} ${release()}; ${arch()})`;
+const PI_USER_AGENT = "punch-agent";
 
 const context: Context = {
 	messages: [{ role: "user", content: "hello", timestamp: Date.now() }],

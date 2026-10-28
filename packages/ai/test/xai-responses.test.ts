@@ -1,4 +1,3 @@
-import { arch, platform, release } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { stream as streamOpenAICompletions } from "../src/api/openai-completions.ts";
 import type { OpenAIResponsesOptions } from "../src/api/openai-responses.ts";
@@ -9,7 +8,7 @@ import { xaiProvider } from "../src/providers/xai.ts";
 import type { Context, Model } from "../src/types.ts";
 import { normalizeContext } from "../src/utils/transcript.ts";
 
-const PI_USER_AGENT = `punch-bot (${platform()} ${release()}; ${arch()})`;
+const PI_USER_AGENT = "punch-agent";
 
 type CapturedRequest = {
 	url: string;

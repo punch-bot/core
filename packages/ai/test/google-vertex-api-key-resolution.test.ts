@@ -1,4 +1,3 @@
-import { arch, platform, release } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const googleGenAiMock = vi.hoisted(() => ({
@@ -50,7 +49,7 @@ import { stream as streamGoogleVertex } from "../src/api/google-vertex.ts";
 import { getModel, normalizeContext } from "../src/compat.ts";
 import type { Model } from "../src/types.ts";
 
-const PI_USER_AGENT = `punch-bot (${platform()} ${release()}; ${arch()})`;
+const PI_USER_AGENT = "punch-agent";
 const model = getModel("google-vertex", "gemini-3-flash-preview");
 const context = normalizeContext({
 	messages: [{ role: "user", content: "hello", timestamp: Date.now() }],

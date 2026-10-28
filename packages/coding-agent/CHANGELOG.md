@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added the `propose_plan` tool to the Punch extension: the model proposes a plan, the host decides, and pending/denied decisions end the turn via `AgentToolResult.terminate`. Also added `createDeferredApprovalHook`, a reference `tool_call` handler for "defer execution pending external decision" so hosts can enforce the gate policy-side.
+
 ## [1.4.0] - 2026-10-21
 
 ### Breaking Changes

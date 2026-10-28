@@ -1,4 +1,3 @@
-import { arch, platform, release } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { stream as streamAnthropic } from "../src/api/anthropic-messages.ts";
 import { ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_OAUTH_TOKEN_ENV } from "../src/env-api-keys.ts";
@@ -55,7 +54,7 @@ vi.mock("@anthropic-ai/sdk", () => {
 	return { default: FakeAnthropic };
 });
 
-const PI_USER_AGENT = `punch-bot (${platform()} ${release()}; ${arch()})`;
+const PI_USER_AGENT = "punch-agent";
 const neverAbortedSignal = new AbortController().signal;
 
 const context = normalizeContext({
