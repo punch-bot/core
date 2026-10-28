@@ -6,6 +6,8 @@
 
 - Added `AgentOptions.identity` and `Agent.identity` (a pi-ai `ClientIdentity`) to set the `User-Agent` and provider attribution of agent loop requests.
 
+## [1.4.0] - 2026-10-21
+
 ## [1.3.0] - 2026-10-17
 
 ## [1.2.0] - 2026-10-12

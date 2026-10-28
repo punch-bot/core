@@ -19,6 +19,8 @@
 - In-memory propagation across processes, link and measurement snapshots, and adapter conformance cases for propagation, links, and optional metrics.
 - `StoredSpan`, `StoredTrace`, and `TelemetryStore` define backend-independent trace discovery, trace retrieval, and metric queries. `@punch-bot/telemetry/render` exports `renderTrace()` for plain-text span trees with attributes, durations, errors, events, and cross-trace links; merged spans are deduplicated by ID and links are never followed.
 
+## [1.4.0] - 2026-10-21
+
 ## [1.3.0] - 2026-10-17
 
 ## [1.2.0] - 2026-10-12

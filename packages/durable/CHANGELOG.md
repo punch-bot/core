@@ -41,6 +41,8 @@
 - The README's Errors section now limits the `StorageRequestError` exemption to reads: a `StorageRequestError` thrown by `commit()` or `mintId()` fails the Harness like any other storage error ([#11014](https://github.com/earendil-works/pi/issues/11014)).
 - The Node environment now detects the legacy WSL `bash.exe` launcher from `%SystemRoot%` instead of assuming `C:\Windows` ([#9501](https://github.com/earendil-works/pi/pull/9501) by [@petrroll](https://github.com/petrroll)).
 
+## [1.4.0] - 2026-10-21
+
 ## [1.3.0] - 2026-10-17
 
 ## [1.2.0] - 2026-10-12

@@ -13,6 +13,8 @@
 - `@punch-bot/chord/sqlite`: portable SQLite interfaces, atomic migration runner, and schema-prefix validation, with Node (`/sqlite/node`) and Cloudflare Durable Object (`/sqlite/cloudflare`) drivers. Moved from Durable, which keeps its storage implementations and re-exports the moved public names.
 - `@punch-bot/chord/output`: `Progress` takes an optional `ProgressClock` (`now`, `setTimer`) to pace commits on, by default `Date.now` and `setTimeout`.
 
+## [1.4.0] - 2026-10-21
+
 ## [1.3.0] - 2026-10-17
 
 ## [1.2.0] - 2026-10-12

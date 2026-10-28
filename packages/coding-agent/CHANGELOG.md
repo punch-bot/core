@@ -2,10 +2,6 @@
 
 ## [Unreleased]
 
-### Breaking Changes
-
-- Changed a custom system prompt (`--system-prompt`, `SYSTEM.md`, SDK `systemPromptOverride` or `ResourceLoader.getSystemPrompt()`, `BuildSystemPromptOptions.customPrompt`) to replace only the opening of the default prompt. The `<tools>` and `<rules>` sections, including tool and extension guidelines, now follow it; the pi documentation pointers stay out. To send an exact prompt with no Pi sections, return `systemPrompt` from a `before_agent_start` handler ([#38](https://github.com/punch-bot/core/pull/38))
-
 ### New Features
 
 - **Image input for classifiers**: codemode `models.classify()` accepts `images` for TypeSafe's Jev and Cloudflare's Clef models on `typesafe`, `cloudflare-workers-ai`, and OpenRouter. See [Use classifier models](docs/models.md#use-classifier-models) and [Codemode](docs/codemode.md#models).
@@ -25,7 +21,6 @@
 
 - Provider attribution headers now come from pi-ai's client identity. Extensions' `before_provider_headers` handlers no longer see the OpenRouter, NVIDIA NIM, and OpenCode attribution headers; returning `null` for one still removes it. Cloudflare requests send the `punch-agent` `User-Agent` instead of `pi-coding-agent`, GitHub release checks for tool downloads send pi's detailed `User-Agent`, and OpenCode requests send `x-opencode-client` whenever attribution is enabled, not only with a session.
 - `generateSummary()` and `generateSummaryWithUsage()` now ignore their `reserveTokens` parameter. Summary requests use the model's output limit instead.
-- Changed the default GitHub Copilot model from `gpt-5.4`, which Copilot retired, to `gpt-6.1-sol`.
 - Changed the default NVIDIA model to `nvidia/nemotron-3.5-super-vl-120b-a12b` ([#10910](https://github.com/earendil-works/pi/pull/10910) by [@cv](https://github.com/cv))
 - Grok 4.3 and Grok 4.5 on the `xai` provider now offer the `xhigh` thinking level.
 - Sign in with ChatGPT: ChatGPT Business workspace usage-limit errors are not retried and tell the user to ask their workspace admin to increase the limit.
@@ -51,6 +46,16 @@
 - Fixed automatic retry not triggering for more gateway upstream failures, `stream disconnected before completion` errors relayed by Codex CLI proxies, and transient Google Vertex OAuth token refresh failures, and retrying errors because of digits inside request ids or byte counts ([#10920](https://github.com/earendil-works/pi/issues/10920), [#11057](https://github.com/earendil-works/pi/issues/11057), [#10996](https://github.com/earendil-works/pi/issues/10996))
 - Fixed OpenAI Responses models losing the prompt cache on every deferred tool load after a tool was removed ([#10940](https://github.com/earendil-works/pi/issues/10940))
 - Fixed Cloudflare Workers AI classifier pricing: Clef Flash costs $0.038 and Jev $0.042 per million input tokens instead of Jev being listed as free.
+
+## [1.4.0] - 2026-10-21
+
+### Breaking Changes
+
+- Changed a custom system prompt (`--system-prompt`, `SYSTEM.md`, SDK `systemPromptOverride` or `ResourceLoader.getSystemPrompt()`, `BuildSystemPromptOptions.customPrompt`) to replace only the opening of the default prompt. The `<tools>` and `<rules>` sections, including tool and extension guidelines, now follow it; the pi documentation pointers stay out. To send an exact prompt with no Pi sections, return `systemPrompt` from a `before_agent_start` handler ([#38](https://github.com/punch-bot/core/pull/38))
+
+### Changed
+
+- Changed the GitHub Copilot default model from `gpt-5.4`, which Copilot no longer lists, to `gpt-6.1-sol`
 
 ## [1.3.0] - 2026-10-17
 

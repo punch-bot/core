@@ -38,6 +38,8 @@
 - Fixed GitHub Copilot requests whose body exceeds Copilot's size limit (HTTP 413 `failed to parse request`, for example sessions with many large images) failing instead of being detected as context overflow. Any HTTP 413 now counts as context overflow, so callers can compact and retry ([#11016](https://github.com/earendil-works/pi/pull/11016) by [@petrroll](https://github.com/petrroll))
 - Fixed the `openai-codex` provider listing `gpt-5.5` and `gpt-5.3-codex-spark`, which the Codex backend rejects for ChatGPT accounts. Both models are removed ([#11173](https://github.com/earendil-works/pi/pull/11173) by [@lucasmeijer](https://github.com/lucasmeijer))
 
+## [1.4.0] - 2026-10-21
+
 ## [1.3.0] - 2026-10-17
 
 ### Changed
