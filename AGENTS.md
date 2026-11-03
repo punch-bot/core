@@ -17,6 +17,34 @@ Directory names did not change with the npm rename. `@punch-bot/cli` lives in `p
 | `@punch-bot/a2a` | `packages/a2a` |
 | `@punch-bot/env` | `packages/env` |
 
+## Project facts
+
+Verified from root `package.json`, `test.sh`, `.github/workflows-disabled/ci.yml`, and `.cursor/install.sh`.
+
+- **Repo**: Punch ([`punch-bot/core`](https://github.com/punch-bot/core)) — headless pi agent harness; npm packages `@punch-bot/*`, CLI in `packages/coding-agent`.
+- **Stack**: Node.js `>=22.19.0`, npm workspaces, TypeScript 7 (`tsc --noEmit`), Biome via `scripts/biome-check.mjs`.
+- **Layout**: `packages/*` (libraries + CLI), `scripts/` (check/release), `packages/coding-agent/test/suite/` (harness + regressions).
+- **Setup**: `npm install --ignore-scripts`; then `npm run hydrate:model-data` (gitignored provider data; needs network).
+- **Lint + typecheck**: `npm run check` (Biome, dep/shrinkwrap/install-lock checks, `tsc --noEmit`, browser smoke). Does not run unit tests.
+- **Build**: `npm run build`.
+- **Tests**: `./test.sh` at repo root (isolated env, runs `npm test`). Prefer this over bare `npm test` (vitest e2e can activate with endpoint/auth env vars). Single file: `node "$(git rev-parse --show-toplevel)/node_modules/vitest/dist/cli.js" --run test/path.test.ts`. MCP conformance: `npm run test:mcp-conformance`.
+- **CI**: Primary workflow is `.github/workflows-disabled/ci.yml` (disabled on purpose; see Merging upstream pi). When enabled it runs: `npm ci --ignore-scripts`, `npm run build`, `npm run check`, `npm run build:daemon --workspace packages/env`, `npm test`.
+
+## Autonomous engineer workflow
+
+Cursor agents (IDE and cloud) should behave like an autonomous engineer: take the task to done, not halfway.
+
+1. **End-to-end ownership**: Understand, plan briefly, implement, verify, ship. Do not stop at a plan or partial diff.
+2. **Keep iterating**: Long runs are fine. Do not pause for reversible decisions; make reasonable assumptions and record them in the PR.
+3. **Verify for real**: Install deps if needed. After code changes run `npm run check`. Run `./test.sh` before claiming done (or targeted vitest for tests you touched). Run `npm run build` when build output or CI parity matters. Fix failures and re-run until green. If you change UI, run it and inspect.
+4. **Tests**: Add or update tests for behavior you change where this repo already tests (`packages/coding-agent/test/suite/`, package `test/` trees).
+5. **Ship**: Push a branch, open a PR (what changed, why, how verified, assumptions, follow-ups). Watch CI on the PR and fix failures until checks pass.
+6. **When to ask**: Secrets/credentials, destructive or irreversible actions (deleting data, force-pushing shared branches, production deploys, spending money), or a genuinely ambiguous product decision. Otherwise decide and proceed.
+7. **Clean codebase**: No debug leftovers or commented-out code; follow conventions in this file.
+8. **Final report**: Concise summary, verification evidence, anything still open.
+
+**Vs. Development Rules below**: Advisory or question-only tasks answer without committing. Delivery tasks (issues, cloud agent runs, explicit ship requests) commit with explicit `git add <paths>`, respect multi-agent Git rules, and use the commit message format in the Git section. `./test.sh` and targeted vitest rules in Commands still apply.
+
 ## Merging upstream pi
 
 Punch dropped several parts of pi. Upstream merges bring changes to them back as modify/delete conflicts, new files, or edits to files that survived. Before resolving, check whether the code belongs to something Punch dropped, and do not restore it.
