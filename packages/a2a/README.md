@@ -32,7 +32,7 @@ Every route, including the agent card, requires `Authorization: Bearer <token>`.
 
 ## Same-machine discovery
 
-Punch sandboxes on one machine advertise a JSON lease into a shared directory (`PUNCH_A2A_DISCOVERY_DIR`, else `$XDG_RUNTIME_DIR/punch/a2a`, else a per-user temp dir). Peers that can see that directory can list live advertisements and connect over A2A without a preconfigured URL.
+Punch sandboxes on one machine advertise a JSON lease into a shared directory (`PUNCH_A2A_DISCOVERY_DIR`, else `$XDG_RUNTIME_DIR/punch/a2a`, else a per-user temp dir). Peers that can see that directory can list live advertisements and connect over A2A without a preconfigured URL. On POSIX systems the directory must be owned by the current user with mode `0700` (no group or other access), or `list()` and `advertise()` throw; advertisement files owned by another user, and entries that are not regular files, are ignored.
 
 ```ts
 import { LocalA2aDiscovery, defaultA2aDiscoveryDir } from "@punch-bot/a2a";
@@ -50,7 +50,7 @@ discovery.advertise({
 const bob = discovery.find("bob");
 ```
 
-Stale leases (past TTL without a heartbeat) are dropped on list. Docker sandboxes that do not share loopback should set `PUNCH_A2A_DISCOVERY_DIR` to a shared volume and advertise a reachable URL.
+Stale leases (past TTL without a heartbeat) are dropped on list. Docker sandboxes that do not share loopback should set `PUNCH_A2A_DISCOVERY_DIR` to a shared volume that meets the same owner and mode requirement (all sandboxes running as one uid) and advertise a reachable URL.
 
 ## Client
 
