@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-11-04
+
 ### Fixed
 
 - Updated `undici` to 8.12.3 and `minimatch` to 11.0.4 for upstream security fixes (TLS certificate validation bypass, cross-origin redirect cache poisoning, and several denial-of-service issues in undici; glob pattern amplification in minimatch). The npm shrinkwrap and install lock also pick up `body-parser` 2.4.0 and `qs` 6.17.1.
