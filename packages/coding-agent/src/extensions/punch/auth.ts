@@ -12,6 +12,7 @@ interface TokenRecord {
 interface UserRecord {
 	name: string;
 	password: string;
+	workspace?: string;
 }
 
 const DEFAULT_USER = "opencode";
@@ -62,7 +63,9 @@ function loadUsers(): UserRecord[] {
 						user.password.length > 0
 					) {
 						if (user.name.includes(":")) continue;
-						users.push({ name: user.name, password: user.password });
+						const workspace =
+							typeof user.workspace === "string" && path.isAbsolute(user.workspace) ? user.workspace : undefined;
+						users.push({ name: user.name, password: user.password, workspace });
 					}
 				}
 			}
@@ -92,6 +95,22 @@ function getAuthHeader(): string | null {
 function isSandboxOwner(actor: string): boolean {
 	const owner = loadUsers()[0];
 	return owner !== undefined && owner.name.toLowerCase() === actor.toLowerCase();
+}
+
+function configuredUserName(name: string): string | null {
+	const lowered = name.toLowerCase();
+	return loadUsers().find((u) => u.name.toLowerCase() === lowered)?.name ?? null;
+}
+
+/** Directory a user may share through collabs: the sandbox owner gets the workspace root, other users only their `workspace` from users.json. */
+function userWorkspaceRoot(actor: string): string | null {
+	const users = loadUsers();
+	const owner = users[0];
+	if (owner && owner.name.toLowerCase() === actor.toLowerCase()) {
+		return path.resolve(process.env.PI_WORKSPACE_ROOT || process.cwd());
+	}
+	const user = users.find((u) => u.name.toLowerCase() === actor.toLowerCase());
+	return user?.workspace ? path.resolve(user.workspace) : null;
 }
 
 function verifyBasic(header: string | undefined): string | null {
@@ -154,4 +173,14 @@ function authenticate(req: IncomingMessage): string {
 	return userId;
 }
 
-export { authenticate, authenticateBasic, getAuthHeader, isAuthConfigured, isSandboxOwner, issueToken, verifyToken };
+export {
+	authenticate,
+	authenticateBasic,
+	configuredUserName,
+	getAuthHeader,
+	isAuthConfigured,
+	isSandboxOwner,
+	issueToken,
+	userWorkspaceRoot,
+	verifyToken,
+};

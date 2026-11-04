@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed Punch `/collabs/create` letting any configured punch user git-commit and export the sandbox owner's directories, including `.pi/users.json`. Only the sandbox owner may share paths under `PI_WORKSPACE_ROOT`; other users need their own absolute `workspace` directory in `.pi/users.json`. Workspaces that contain or sit inside the server's `.pi` directory, `PI_COLLAB_DIR`, or the agent directory are rejected, and `reviewer` must be a configured punch user.
+
 ## [1.4.1] - 2026-10-28
 
 ### New Features

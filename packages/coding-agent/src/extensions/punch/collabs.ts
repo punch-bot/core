@@ -3,6 +3,9 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import * as path from "node:path";
 
+import { getAgentDir } from "../../config.ts";
+import { configuredUserName, userWorkspaceRoot } from "./auth.ts";
+
 export interface CollabProposal {
 	branch: string;
 	author: string;
@@ -95,43 +98,46 @@ function workspaceRoot(): string {
 	return process.env.PI_WORKSPACE_ROOT || process.cwd();
 }
 
-function safeWorkspace(p: unknown): string {
-	if (typeof p !== "string") throw new Error("Workspace must be an absolute path under the workspace root.");
-	if (p.includes("\0")) throw new Error("Workspace must be an absolute path under the workspace root.");
-	if (!path.isAbsolute(p)) throw new Error("Workspace must be an absolute path under the workspace root.");
-	const resolved = path.resolve(p).replace(/\/+$/, "");
-	const root = path.resolve(workspaceRoot()).replace(/\/+$/, "");
-	if (!resolved.startsWith(root + path.sep) || resolved === root) {
-		throw new Error("Workspace must be an absolute path under the workspace root.");
-	}
-	let realRoot: string;
-	try {
-		realRoot = realpathSync(root);
-	} catch {
-		return resolved;
-	}
-	let existing = resolved;
+const INVALID_WORKSPACE = "Workspace must be an absolute path under the workspace root.";
+
+function isInside(child: string, parent: string): boolean {
+	return child.startsWith(parent.endsWith(path.sep) ? parent : parent + path.sep);
+}
+
+function overlaps(a: string, b: string): boolean {
+	return a === b || isInside(a, b) || isInside(b, a);
+}
+
+/** Resolves symlinks through the nearest existing ancestor, keeping the missing suffix. */
+function realPathOf(p: string): string {
+	let existing = p;
 	while (true) {
-		let realExisting: string | null = null;
 		try {
-			realExisting = realpathSync(existing);
+			return realpathSync(existing) + p.slice(existing.length);
 		} catch {}
-		if (realExisting !== null) {
-			if (realExisting !== realRoot && !realExisting.startsWith(realRoot + path.sep)) {
-				throw new Error("Workspace must be an absolute path under the workspace root.");
-			}
-			const suffix = resolved.slice(existing.length);
-			const fullReal = `${realExisting}${suffix}`;
-			if (!fullReal.startsWith(realRoot + path.sep)) {
-				throw new Error("Workspace must be an absolute path under the workspace root.");
-			}
-			return resolved;
-		}
 		const parent = path.dirname(existing);
-		if (parent === existing) {
-			return resolved;
-		}
+		if (parent === existing) return p;
 		existing = parent;
+	}
+}
+
+function safeWorkspace(p: unknown, rootDir: string = workspaceRoot()): string {
+	if (typeof p !== "string" || p.includes("\0") || !path.isAbsolute(p)) throw new Error(INVALID_WORKSPACE);
+	const resolved = path.resolve(p);
+	const root = path.resolve(rootDir);
+	if (!isInside(resolved, root) || !isInside(realPathOf(resolved), realPathOf(root))) {
+		throw new Error(INVALID_WORKSPACE);
+	}
+	return resolved;
+}
+
+function assertNotServerState(workspace: string): void {
+	const real = realPathOf(workspace);
+	for (const dir of [path.join(process.cwd(), ".pi"), collabDir(), getAgentDir()]) {
+		const resolved = path.resolve(dir);
+		if (overlaps(workspace, resolved) || overlaps(real, realPathOf(resolved))) {
+			throw new Error("Workspace must not contain or be inside punch server state.");
+		}
 	}
 }
 
@@ -167,12 +173,17 @@ export function getFor(id: string, actor: string): Collab {
 }
 
 export function create(opts: { owner: string; reviewer: string; workspace: string }): Collab {
-	const owner = opts.owner;
-	const reviewer = opts.reviewer;
-	if (!reviewer || reviewer.toLowerCase() === owner.toLowerCase()) {
+	const owner = configuredUserName(opts.owner);
+	if (!owner) throw new Error("Collaboration owner must be a configured punch user.");
+	const reviewer = configuredUserName(opts.reviewer);
+	if (!reviewer) throw new Error("reviewer must be a configured punch user");
+	if (reviewer.toLowerCase() === owner.toLowerCase()) {
 		throw new Error("reviewer must be a different sandbox");
 	}
-	const source = safeWorkspace(opts.workspace);
+	const allowedRoot = userWorkspaceRoot(owner);
+	if (!allowedRoot) throw new Error("No collaboration workspace is configured for this user.");
+	const source = safeWorkspace(opts.workspace, allowedRoot);
+	assertNotServerState(source);
 	const id = `col_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
 	const repo = path.join(collabDir(), `${id}.git`);
 	const clonePath = path.join(collabDir(), id);
