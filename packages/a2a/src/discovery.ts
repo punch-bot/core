@@ -1,4 +1,13 @@
-import { mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+	lstatSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	renameSync,
+	type Stats,
+	unlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 
@@ -68,8 +77,25 @@ function parseRecord(raw: unknown): A2aPeerRecord | undefined {
 	};
 }
 
+function ownedByCurrentUser(stats: Stats): boolean {
+	return typeof process.getuid !== "function" || stats.uid === process.getuid();
+}
+
+// The default dir can be a predictable shared-temp path, and mkdirSync leaves an
+// existing directory's owner and mode untouched, so verify both before trusting it.
+function ensurePrivateDir(dir: string): void {
+	mkdirSync(dir, { recursive: true, mode: 0o700 });
+	const stats = lstatSync(dir);
+	if (!stats.isDirectory()) throw new Error(`A2A discovery path is not a directory: ${dir}`);
+	if (typeof process.getuid !== "function") return;
+	if (!ownedByCurrentUser(stats)) throw new Error(`A2A discovery directory is not owned by the current user: ${dir}`);
+	if ((stats.mode & 0o077) !== 0) {
+		throw new Error(`A2A discovery directory must not be accessible to group or others (chmod 700): ${dir}`);
+	}
+}
+
 function atomicWrite(file: string, value: unknown): void {
-	mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+	ensurePrivateDir(path.dirname(file));
 	const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
 	writeFileSync(tmp, JSON.stringify(value, null, 2), { mode: 0o600, flag: "wx" });
 	renameSync(tmp, file);
@@ -119,7 +145,7 @@ export class LocalA2aDiscovery {
 	}
 
 	list(options?: { excludeId?: string }): A2aPeerRecord[] {
-		mkdirSync(this.dir, { recursive: true, mode: 0o700 });
+		ensurePrivateDir(this.dir);
 		let entries: string[];
 		try {
 			entries = readdirSync(this.dir);
@@ -136,6 +162,8 @@ export class LocalA2aDiscovery {
 			if (path.dirname(file) !== this.dir) continue;
 			let parsed: unknown;
 			try {
+				const stats = lstatSync(file);
+				if (!stats.isFile() || !ownedByCurrentUser(stats)) continue;
 				parsed = JSON.parse(readFileSync(file, "utf8"));
 			} catch {
 				continue;
