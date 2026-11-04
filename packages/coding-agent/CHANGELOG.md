@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-04
+
 ### Fixed
 
 - Punch sandbox A2A listener no longer accepts unauthenticated callers: it requires a per-listener bearer token, stored in the `0600` discovery record and sent by the `a2a` tool, and rejects requests with a foreign `Host` header. Tool results no longer include peer tokens.
