@@ -99,7 +99,7 @@ jobs:
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
 
-      - name: Upgrade npm for trusted publishing
+      - name: Upgrade npm
         run: npm install -g npm@11.16.0 --ignore-scripts
 
       - name: Install system dependencies
@@ -156,4 +156,13 @@ jobs:
 
       - name: Publish npm packages with provenance
         if: ${{ !inputs.dry_run }}
-        run: node scripts/publish.mjs
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$NODE_AUTH_TOKEN" ]]; then
+            echo "::error::NPM_TOKEN is not set in the npm-publish environment"
+            exit 1
+          fi
+          node scripts/publish.mjs
