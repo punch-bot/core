@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed `LocalA2aDiscovery` trusting a pre-existing discovery directory created by another local user (for example the shared-temp fallback `/tmp/punch-a2a-<uid>`): the directory must now be a real directory owned by the current user with no group or other permissions, and advertisement files not owned by the current user are ignored.
+
 ## [1.4.1] - 2026-10-28
 
 ## [1.4.0] - 2026-10-21

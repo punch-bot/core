@@ -1,7 +1,7 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { delegateToA2aAgent } from "../src/client.ts";
 import { defaultA2aDiscoveryDir, LocalA2aDiscovery } from "../src/discovery.ts";
 import { createA2aServer } from "../src/server.ts";
@@ -15,6 +15,7 @@ function tempDir(): string {
 }
 
 afterEach(() => {
+	vi.restoreAllMocks();
 	for (const dir of dirs.splice(0)) {
 		rmSync(dir, { recursive: true, force: true });
 	}
@@ -150,6 +151,53 @@ describe("LocalA2aDiscovery", () => {
 			bob.close();
 			await server.close();
 		}
+	});
+
+	const posixOnly = test.skipIf(typeof process.getuid !== "function");
+
+	posixOnly("refuses a discovery directory accessible to group or others", () => {
+		const dir = tempDir();
+		chmodSync(dir, 0o777);
+		const alice = new LocalA2aDiscovery({ dir, now: () => 1 });
+		expect(() => alice.list()).toThrow("must not be accessible to group or others");
+		expect(() =>
+			alice.advertise({ id: "alice-id", name: "alice", url: "http://127.0.0.1:1/", pid: 11, startedAt: 1 }),
+		).toThrow("must not be accessible to group or others");
+	});
+
+	posixOnly("refuses a discovery directory owned by another user", () => {
+		const dir = tempDir();
+		const uid = process.getuid!();
+		vi.spyOn(process, "getuid").mockReturnValue(uid + 1);
+		const alice = new LocalA2aDiscovery({ dir, now: () => 1 });
+		expect(() => alice.list()).toThrow("not owned by the current user");
+	});
+
+	posixOnly("refuses a discovery directory that is a symlink", () => {
+		const target = tempDir();
+		const link = path.join(tempDir(), "a2a");
+		symlinkSync(target, link);
+		const alice = new LocalA2aDiscovery({ dir: link, now: () => 1 });
+		expect(() => alice.list()).toThrow("is not a directory");
+	});
+
+	posixOnly("skips advertisements that are not regular files", () => {
+		const dir = tempDir();
+		const outside = tempDir();
+		const record = {
+			id: "mallory-id",
+			name: "reviewer",
+			url: "http://127.0.0.1:9999/",
+			pid: 1,
+			startedAt: 1,
+			updatedAt: 1,
+		};
+		writeFileSync(path.join(outside, "mallory-id.json"), JSON.stringify(record));
+		symlinkSync(path.join(outside, "mallory-id.json"), path.join(dir, "mallory-id.json"));
+		mkdirSync(path.join(dir, "dir-id.json"));
+		const alice = new LocalA2aDiscovery({ dir, now: () => 1 });
+		expect(alice.list()).toEqual([]);
+		expect(alice.find("reviewer")).toBeUndefined();
 	});
 
 	test("close removes the local advertisement", () => {
