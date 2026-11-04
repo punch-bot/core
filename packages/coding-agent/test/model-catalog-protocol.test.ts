@@ -116,7 +116,20 @@ describe("model catalog protocol with the current client", () => {
 			refreshOnCreate: false,
 		});
 		await runtime.setRuntimeApiKey("openrouter", "test-key");
-		const refresh = await runtime.refresh({ allowNetwork: true, force: true, providers: ["openrouter"] });
+		const catalogFetch = globalThis.fetch;
+		vi.stubGlobal("fetch", async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+			const request = new Request(input, init);
+			if (new URL(request.url).origin === catalogBaseUrl) return catalogFetch(request);
+			// The refresh also asks OpenRouter's `GET /models/user` for the key's models. Reject the
+			// fake key, so the catalog stays unchanged, without depending on the live API.
+			return new Response(null, { status: 401 });
+		});
+		let refresh: Awaited<ReturnType<typeof runtime.refresh>>;
+		try {
+			refresh = await runtime.refresh({ allowNetwork: true, force: true, providers: ["openrouter"] });
+		} finally {
+			vi.unstubAllGlobals();
+		}
 		expect([...refresh.errors]).toEqual([]);
 
 		const catalogUrl = "/api/models/providers/openrouter?types=chat%2Cimage%2Cclassifier";
