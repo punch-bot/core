@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- `createA2aServer` now requires `Authorization: Bearer <token>` on every request and rejects foreign `Host` headers (DNS rebinding). The token comes from the new `authToken` option or is generated and exposed as `server.authToken`; clients pass it as `token` to `delegateToA2aAgent*`. `A2aPeerRecord` gained `token`.
+
 ### Fixed
 
 - Fixed `LocalA2aDiscovery` trusting a pre-existing discovery directory created by another local user (for example the shared-temp fallback `/tmp/punch-a2a-<uid>`): the directory must now be a real directory owned by the current user with no group or other permissions, and advertisement files not owned by the current user are ignored.

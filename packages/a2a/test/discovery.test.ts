@@ -139,12 +139,14 @@ describe("LocalA2aDiscovery", () => {
 				id: "bob-id",
 				name: "bob",
 				url: bound.url,
+				token: server.authToken,
 				pid: 22,
 				startedAt: Date.now(),
 			});
 			const peer = alice.find("bob");
 			expect(peer?.url).toBe(bound.url);
-			const result = await delegateToA2aAgent({ url: peer!.url, task: "hi" });
+			expect(peer?.token).toBe(server.authToken);
+			const result = await delegateToA2aAgent({ url: peer!.url, task: "hi", token: peer!.token });
 			expect(result.text).toBe("bob:hi");
 		} finally {
 			alice.close();

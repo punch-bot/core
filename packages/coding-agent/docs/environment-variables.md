@@ -104,6 +104,8 @@ Provider credentials such as `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and cloud-pr
 
 When `SANDBOX_NAME` is set, or `PUNCH_A2A=1`, a punch sandbox starts a loopback A2A server and advertises it so other sandboxes on the same machine can connect. Set `PUNCH_A2A=0` to disable.
 
+Each listener generates a random bearer token and writes it only into its advertisement file (mode `0600`). Requests without `Authorization: Bearer <token>` get `401`. Requests whose `Host` header is not the bound address, a loopback name on the bound port, or the advertised host get `403`. When binding a non-loopback `PUNCH_A2A_HOST`, set `PUNCH_A2A_ADVERTISE_HOST` or `PUNCH_A2A_ADVERTISE_URL` to the host callers use.
+
 | Variable | Description |
 |----------|-------------|
 | `SANDBOX_NAME` | Sandbox identity used in A2A advertisements and collab |

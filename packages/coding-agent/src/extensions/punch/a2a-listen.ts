@@ -53,6 +53,7 @@ export async function startPunchA2aListener(
 				id: randomUUID(),
 				name,
 				url,
+				token: server.authToken,
 				pid: process.pid,
 				cwd: process.cwd(),
 				startedAt: Date.now(),
