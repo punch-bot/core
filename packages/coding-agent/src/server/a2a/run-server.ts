@@ -9,9 +9,12 @@ export interface RunA2aServerOptions {
 	agentDir?: string;
 	name?: string;
 	description?: string;
+	authToken?: string;
 }
 
-export async function runA2aServer(options: RunA2aServerOptions): Promise<{ close: () => Promise<void> }> {
+export async function runA2aServer(
+	options: RunA2aServerOptions,
+): Promise<{ authToken: string; close: () => Promise<void> }> {
 	const runnerFactory = await createCodingAgentHarnessRunnerFactory({
 		cwd: options.cwd,
 		agentDir: options.agentDir,
@@ -21,9 +24,11 @@ export async function runA2aServer(options: RunA2aServerOptions): Promise<{ clos
 		runnerFactory,
 		name: options.name,
 		description: options.description,
+		authToken: options.authToken,
 	});
 	await server.listen(options.port, options.host ?? "127.0.0.1");
 	return {
+		authToken: server.authToken,
 		close: () => server.close(),
 	};
 }

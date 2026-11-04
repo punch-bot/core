@@ -8,6 +8,8 @@ export interface A2aPeerRecord {
 	url: string;
 	pid: number;
 	cwd?: string;
+	/** Bearer token for the peer's A2A listener. Only stored in the 0600 record file. */
+	token?: string;
 	startedAt: number;
 	updatedAt: number;
 }
@@ -53,12 +55,14 @@ function parseRecord(raw: unknown): A2aPeerRecord | undefined {
 	if (typeof value.startedAt !== "number" || !Number.isFinite(value.startedAt)) return undefined;
 	if (typeof value.updatedAt !== "number" || !Number.isFinite(value.updatedAt)) return undefined;
 	const cwd = typeof value.cwd === "string" && value.cwd.length > 0 ? value.cwd : undefined;
+	const token = typeof value.token === "string" && value.token.length > 0 ? value.token : undefined;
 	return {
 		id: value.id,
 		name: value.name.trim(),
 		url: value.url,
 		pid: value.pid,
 		...(cwd ? { cwd } : {}),
+		...(token ? { token } : {}),
 		startedAt: value.startedAt,
 		updatedAt: value.updatedAt,
 	};
@@ -67,7 +71,7 @@ function parseRecord(raw: unknown): A2aPeerRecord | undefined {
 function atomicWrite(file: string, value: unknown): void {
 	mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
 	const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
-	writeFileSync(tmp, JSON.stringify(value, null, 2), { mode: 0o600 });
+	writeFileSync(tmp, JSON.stringify(value, null, 2), { mode: 0o600, flag: "wx" });
 	renameSync(tmp, file);
 }
 

@@ -28,6 +28,8 @@ await server.listen(41241);
 
 `listen()` can take port `0` to bind an ephemeral port. The returned address includes the bound `host`, `port`, and card `url`.
 
+Every route, including the agent card, requires `Authorization: Bearer <token>`. Pass `authToken` or read the generated `server.authToken` and give it to clients. Requests whose `Host` header is not the bound address, a loopback name on the bound port, or the `baseUrl`/`publicHost` host are rejected with `403`, which blocks DNS rebinding.
+
 ## Same-machine discovery
 
 Punch sandboxes on one machine advertise a JSON lease into a shared directory (`PUNCH_A2A_DISCOVERY_DIR`, else `$XDG_RUNTIME_DIR/punch/a2a`, else a per-user temp dir). Peers that can see that directory can list live advertisements and connect over A2A without a preconfigured URL.
@@ -40,6 +42,7 @@ discovery.advertise({
   id: "alice",
   name: "alice",
   url: "http://127.0.0.1:41241/",
+  token: server.authToken,
   pid: process.pid,
   startedAt: Date.now(),
 });
@@ -57,6 +60,7 @@ import { delegateToA2aAgent } from "@punch-bot/a2a";
 const result = await delegateToA2aAgent({
   url: "http://localhost:41241",
   task: "Summarize the repository structure",
+  token: server.authToken,
 });
 
 console.log(result.text);
