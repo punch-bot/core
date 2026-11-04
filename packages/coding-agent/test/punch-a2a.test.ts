@@ -93,6 +93,7 @@ describe("installA2a", () => {
 				id: "bob-id",
 				name: "bob",
 				url: bound.url,
+				token: server.authToken,
 				pid: process.pid + 1,
 				startedAt: Date.now(),
 			});
@@ -102,6 +103,7 @@ describe("installA2a", () => {
 			const listed = await a2aTool!.execute!("call", { action: "list" }, undefined, undefined, {});
 			expect(listed.content[0]?.text).toContain("bob");
 			expect(listed.content[0]?.text).toContain(bound.url);
+			expect(JSON.stringify(listed.details)).not.toContain(server.authToken);
 
 			const context = contextHandler?.({ type: "context", messages: [] }, {} as never) as
 				| ContextEventResult
@@ -118,6 +120,7 @@ describe("installA2a", () => {
 				{},
 			);
 			expect(sent.content[0]?.text).toBe("from-bob:ping");
+			expect(JSON.stringify(sent.details)).not.toContain(server.authToken);
 		} finally {
 			aliceDiscovery.close();
 			bobDiscovery.close();

@@ -48,6 +48,11 @@ export function formatA2aPeers(peers: readonly A2aPeerRecord[]): string {
 		.join("\n");
 }
 
+function publicPeer(peer: A2aPeerRecord): Omit<A2aPeerRecord, "token"> {
+	const { token: _token, ...rest } = peer;
+	return rest;
+}
+
 let sharedDiscovery: LocalA2aDiscovery | undefined;
 
 export function punchA2aDiscovery(env: NodeJS.ProcessEnv = process.env): LocalA2aDiscovery {
@@ -92,27 +97,33 @@ export function installA2a(pi: ExtensionAPI, options: InstallPunchA2aOptions = {
 		async execute(_toolCallId, args, signal, onUpdate) {
 			if (args.action === "list") {
 				const peers = discovery.list();
-				return { content: [{ type: "text", text: formatA2aPeers(peers) }], details: { peers } };
+				return {
+					content: [{ type: "text", text: formatA2aPeers(peers) }],
+					details: { peers: peers.map(publicPeer) },
+				};
 			}
 			if (!args.name?.trim()) throw new Error("name is required to send");
 			if (!args.task?.trim()) throw new Error("task is required to send");
 			const peer = discovery.find(args.name);
 			if (!peer) throw new Error(`No local punch sandbox named "${args.name.trim()}"`);
-			const result = await delegateToA2aAgentPreferStream({ url: peer.url, task: args.task, signal }, (text) => {
-				onUpdate?.({
-					content: [{ type: "text", text }],
-					details: { peer },
-				});
-			});
+			const result = await delegateToA2aAgentPreferStream(
+				{ url: peer.url, task: args.task, signal, token: peer.token },
+				(text) => {
+					onUpdate?.({
+						content: [{ type: "text", text }],
+						details: { peer: publicPeer(peer) },
+					});
+				},
+			);
 			if (result.failed) {
 				return {
 					content: [{ type: "text", text: result.error ?? "A2A send failed" }],
-					details: { peer, failed: true, error: result.error },
+					details: { peer: publicPeer(peer), failed: true, error: result.error },
 				};
 			}
 			return {
 				content: [{ type: "text", text: result.text || "(empty response)" }],
-				details: { peer },
+				details: { peer: publicPeer(peer) },
 			};
 		},
 	});
