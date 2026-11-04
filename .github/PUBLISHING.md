@@ -1,23 +1,18 @@
 # Publishing npm packages
 
 `Publish npm` is a manually triggered workflow. It publishes all ten public
-`@punch-bot/*` packages through npm trusted publishing with provenance. It does
-not create tags, GitHub Releases, CLI binaries, or pi.dev announcements.
+`@punch-bot/*` packages with provenance, authenticating with an npm token. It
+does not create tags, GitHub Releases, CLI binaries, or pi.dev announcements.
 
-Before publishing, configure a GitHub Actions trusted publisher in the npm
-settings of every public workspace package:
-
-- Organization: `punch-bot`
-- Repository: `core`
-- Workflow filename: `publish-npm.yml`
-- Environment: `npm-publish`
-- Allow direct publishing with `npm publish`
+Before publishing, create an npm granular access token with read and write
+access to the `@punch-bot` packages and save it as the `NPM_TOKEN` secret of the
+GitHub `npm-publish` environment. Configure that environment with any required
+deployment approvals. The publish step fails early if the secret is missing.
+Provenance is still signed through GitHub Actions OIDC, so the job keeps
+`id-token: write`.
 
 The packages are `a2a`, `agent`, `ai`, `chord`, `codemode`, `cli`, `durable`,
-`env`, `mcp`, and `telemetry`, all under `@punch-bot`. Configure the GitHub
-`npm-publish` environment with any required deployment approvals before running
-the workflow. No npm token is needed. See the
-[npm trusted publishing documentation](https://docs.npmjs.com/trusted-publishers/).
+`env`, `mcp`, and `telemetry`, all under `@punch-bot`.
 
 Merge the release PR first. Create and push a tag pointing to the reviewed
 release commit on `main`, whose package versions and changelogs match the tag.
