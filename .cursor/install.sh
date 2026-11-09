@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Install runs from the workspace root. This checkout lives at repos/core when
+# the workspace holds more than one repository.
+if [ -f package-lock.json ]; then
+	:
+elif [ -f repos/core/package-lock.json ]; then
+	cd repos/core
+else
+	echo "error: cannot find the punch-bot/core checkout (package-lock.json)." >&2
+	exit 1
+fi
+
 # Cloud Agent install for the punch (pi) monorepo.
 #
 # The repo requires Node >= 22.19.0 (see the root package.json "engines").
