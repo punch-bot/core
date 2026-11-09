@@ -52,12 +52,50 @@ fi
 export PATH="$(dirname "${selected_node}"):${PATH}"
 echo "Using node $(node --version) ($(command -v node))"
 
-# Install workspace dependencies. --ignore-scripts is repo policy: the packages
-# do not need dependency lifecycle scripts for a normal install.
-npm install --ignore-scripts
+# The find tool shells out to fd. Coding-agent tests set PI_OFFLINE=1, which
+# skips the runtime download, so a system binary has to already be on PATH.
+# Ubuntu's package is fd-find and installs the fdfind name, which the tool accepts.
+if ! command -v fd >/dev/null 2>&1 && ! command -v fdfind >/dev/null 2>&1; then
+	sudo DEBIAN_FRONTEND=noninteractive apt-get update
+	sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends fd-find
+fi
+
+# packages/env/daemon uses Rust edition 2024, which needs rustc >= 1.85.
+# The default image's rustup toolchain is 1.83.
+rust_meets_min() {
+	local version major rest minor
+	version="$("$1" --version 2>/dev/null)" || return 1
+	version="${version#rustc }"
+	version="${version%% *}"
+	major="${version%%.*}"
+	rest="${version#*.}"
+	minor="${rest%%.*}"
+	case "${major}" in "" | *[!0-9]*) return 1 ;; esac
+	case "${minor}" in "" | *[!0-9]*) return 1 ;; esac
+	[ "${major}" -gt 1 ] || { [ "${major}" -eq 1 ] && [ "${minor}" -ge 85 ]; }
+}
+
+if ! command -v rustup >/dev/null 2>&1; then
+	curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+	export PATH="${HOME}/.cargo/bin:${PATH}"
+fi
+if ! command -v rustc >/dev/null 2>&1 || ! rust_meets_min rustc; then
+	rustup toolchain install stable --profile minimal
+	rustup default stable
+fi
+echo "Using rustc $(rustc --version)"
+
+# Install workspace dependencies from the lockfile. npm ci keeps package-lock.json
+# intact; npm install on npm 10 rewrites optional libc metadata and dirties the tree.
+# --ignore-scripts is repo policy: the packages do not need dependency lifecycle
+# scripts for a normal install.
+npm ci --ignore-scripts
 
 # Generate the provider model data the CLI needs at runtime. This directory
 # (packages/ai/src/providers/data) is gitignored and produced from live
 # provider catalogs, so it must be regenerated after checkout. Requires network
 # egress to the provider catalog endpoints.
 npm run hydrate:model-data
+
+# The env package tests require the debug daemon binary.
+npm --prefix packages/env run build:daemon
