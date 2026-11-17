@@ -227,7 +227,7 @@ pi --tools read,grep,find,ls -p "Review the code"
 pi --exclude-tools ask_question
 ```
 
-Terminal support for mouse input, keyboard shortcuts, and inline images varies. See [Terminal Setup](terminal-setup.md) for platform-specific configuration and [Keybindings](keybindings.md) for every configurable shortcut. Run `/hotkeys` to inspect the shortcuts active in your current session.
+Terminal support for mouse input, keyboard shortcuts, and inline images varies. See [Terminal Setup](terminal-setup.md) for platform-specific configuration.
 
 ## Collect diagnostic information
 

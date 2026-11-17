@@ -95,7 +95,6 @@ Start with the least powerful mechanism that meets your need:
 | Reuse a prompt from the `/` menu | [Prompt template](prompt-templates.md) |
 | Add task-specific instructions and supporting files | [Skill](skills.md) |
 | Add executable tools, commands, or event handlers | [Extension](extensions.md) |
-| Build a custom terminal component | [Terminal UI](tui.md) |
 | Connect an unsupported model service | [Custom provider](custom-provider.md) |
 | Install or distribute several resources | [Pi package](packages.md) |
 

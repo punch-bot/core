@@ -216,14 +216,14 @@ export interface CompactOptions {
 /**
  * Context passed to extension event handlers.
  */
-export type ExtensionMode = "tui" | "rpc" | "json" | "print";
+export type ExtensionMode = "rpc" | "json" | "print";
 
 export interface ExtensionContext {
 	/** UI methods for user interaction */
 	ui: ExtensionUIContext;
-	/** Current run mode. Use "tui" to guard terminal-only UI such as custom components. */
+	/** Current run mode. */
 	mode: ExtensionMode;
-	/** Whether dialog-capable UI is available (true in TUI and RPC modes) */
+	/** Whether dialog-capable UI is available (true when a UI context is bound, as in RPC mode) */
 	hasUI: boolean;
 	/** Current working directory */
 	cwd: string;
@@ -865,7 +865,7 @@ export interface AgentSettledEvent {
 	aborted: boolean;
 }
 
-export type UIPromptKind = "select" | "confirm" | "input" | "editor" | "custom";
+export type UIPromptKind = "select" | "confirm" | "input" | "editor";
 
 /** Fired when Pi starts waiting on a blocking user-facing extension UI prompt. */
 export interface UIPromptStartEvent {

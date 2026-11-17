@@ -1787,8 +1787,7 @@ Each entry has this shape:
 
 Use `sourceInfo` as the canonical provenance field. Do not infer ownership from command names or from ad hoc path parsing.
 
-Built-in interactive commands (like `/model` and `/settings`) are not included here. They are handled only in interactive
-mode and would not execute if sent via `prompt`.
+Pi has no other slash commands. A prompt such as `/model` that matches no extension command, prompt template, or skill is sent to the model as plain text. Use extension APIs such as `pi.setModel()` instead.
 
 ### pi.registerFlag(name, options)
 
