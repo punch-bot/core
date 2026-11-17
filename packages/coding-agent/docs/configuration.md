@@ -11,7 +11,6 @@ The agent directory is shown as `<agent-dir>` below. Set its location with the `
 | Path | Responsibility |
 |---|---|
 | `<agent-dir>/settings.json` | User-level [settings](settings.md), including preferences, defaults, resource paths, and Pi package declarations. |
-| `<agent-dir>/keybindings.json` | Custom terminal UI and application [keybindings](keybindings.md). |
 | `<agent-dir>/mcp.json` | [MCP servers](mcp.md) available in every project. |
 | `<agent-dir>/models.json` | [Compatible endpoints, models, and model overrides](models.md#configure-a-compatible-endpoint). |
 | `<agent-dir>/auth.json` | Saved API keys and OAuth credentials. |

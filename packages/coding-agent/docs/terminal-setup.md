@@ -10,8 +10,6 @@ Pi auto-detects truecolor support for themed output. If detection fails behind a
 |------------|----------------------|--------------|
 | Truecolor | `PI_TRUE_COLOR=1\|0\|auto` | `terminal.trueColor: true\|false\|"auto"` |
 
-Use `/hotkeys` to inspect Pi's active shortcuts. See [Keybindings](keybindings.md) to change them.
-
 ## Terminal emulators
 
 Pi's headless modes do not capture keyboard or mouse input and do not use an alternate screen. Terminal-specific key mappings, fullscreen scrolling workarounds, and hardware-cursor settings are not required. An RPC client owns its own input and display behavior.

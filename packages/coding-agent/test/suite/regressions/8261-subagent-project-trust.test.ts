@@ -37,7 +37,7 @@ async function runProjectAgent(options: RunOptions): Promise<{ confirmCalls: num
 
 		await harness.session.bindExtensions({
 			uiContext: { confirm } as unknown as ExtensionUIContext,
-			mode: "tui",
+			mode: "rpc",
 		});
 
 		harness.setResponses([
