@@ -86,7 +86,6 @@ export type {
 	ExtensionMode,
 	// Runtime
 	ExtensionRuntime,
-	ExtensionShortcut,
 	ExtensionToolContext,
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,

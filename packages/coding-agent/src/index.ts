@@ -103,7 +103,6 @@ export type {
 	ExtensionFlag,
 	ExtensionHandler,
 	ExtensionRuntime,
-	ExtensionShortcut,
 	ExtensionToolContext,
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,

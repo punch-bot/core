@@ -26,7 +26,6 @@ import type {
 	ExtensionFactory,
 	ExtensionRuntime,
 	ExtensionVirtualModel,
-	KeyId,
 	LoadExtensionsResult,
 	ProviderConfig,
 	RegisteredCommand,
@@ -312,17 +311,6 @@ function createExtensionAPI(
 			});
 		},
 
-		registerShortcut(
-			shortcut: KeyId,
-			options: {
-				description?: string;
-				handler: (ctx: import("./types.ts").ExtensionContext) => Promise<void> | void;
-			},
-		): void {
-			assertActive();
-			extension.shortcuts.set(shortcut, { shortcut, extensionPath: extension.path, ...options });
-		},
-
 		registerFlag(
 			name: string,
 			options: { description?: string; type: "boolean" | "string"; default?: boolean | string },
@@ -577,7 +565,6 @@ function createExtension(extensionPath: string, resolvedPath: string): Extension
 		tools: new Map(),
 		commands: new Map(),
 		flags: new Map(),
-		shortcuts: new Map(),
 	};
 }
 

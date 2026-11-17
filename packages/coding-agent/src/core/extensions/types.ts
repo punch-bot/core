@@ -4,7 +4,7 @@
  * Extensions are TypeScript modules that can:
  * - Subscribe to agent lifecycle events
  * - Register LLM-callable tools
- * - Register commands, keyboard shortcuts, and CLI flags
+ * - Register commands and CLI flags
  * - Interact with the user via UI primitives
  */
 
@@ -90,8 +90,6 @@ import type { ModelRoute, ModelRouteRequest, VirtualModelDefinition } from "../v
 export type { ExecOptions, ExecResult } from "../exec.ts";
 export type { BuildSystemPromptOptions, NormalizedBuildSystemPromptOptions } from "../system-prompt.ts";
 export type { AgentToolResult, AgentToolUpdateCallback, ToolExecutionMode };
-
-export type KeyId = string;
 
 export interface AutocompleteItem {
 	value: string;
@@ -1470,20 +1468,11 @@ export interface ExtensionAPI {
 	): void;
 
 	// =========================================================================
-	// Command, Shortcut, Flag Registration
+	// Command and Flag Registration
 	// =========================================================================
 
 	/** Register a custom command. */
 	registerCommand(name: string, options: Omit<RegisteredCommand, "name" | "sourceInfo">): void;
-
-	/** Register a keyboard shortcut. */
-	registerShortcut(
-		shortcut: KeyId,
-		options: {
-			description?: string;
-			handler: (ctx: ExtensionContext) => Promise<void> | void;
-		},
-	): void;
 
 	/** Register a CLI flag. */
 	registerFlag(
@@ -1872,13 +1861,6 @@ export interface ExtensionFlag {
 	extensionPath: string;
 }
 
-export interface ExtensionShortcut {
-	shortcut: KeyId;
-	description?: string;
-	handler: (ctx: ExtensionContext) => Promise<void> | void;
-	extensionPath: string;
-}
-
 type HandlerFn = (...args: unknown[]) => Promise<unknown>;
 
 export type SendMessageHandler = <T = unknown>(
@@ -2057,7 +2039,6 @@ export interface Extension {
 	tools: Map<string, RegisteredTool>;
 	commands: Map<string, RegisteredCommand>;
 	flags: Map<string, ExtensionFlag>;
-	shortcuts: Map<KeyId, ExtensionShortcut>;
 }
 
 /** Result of loading extensions. */
