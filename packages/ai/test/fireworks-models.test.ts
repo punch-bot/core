@@ -159,26 +159,6 @@ describe("Fireworks models", () => {
 		expect(getSupportedThinkingLevels(getModel("fireworks", modelId))).toEqual(levels);
 	});
 
-	it("keeps toggle-only Messages models without a verified fallback on budget-based thinking", async () => {
-		const model = getModel("fireworks", "accounts/fireworks/models/nemotron-3-ultra-nvfp4");
-		expect(model.compat?.forceAdaptiveThinking).toBeUndefined();
-		let payload: Record<string, unknown> | undefined;
-		await streamSimple(
-			model,
-			{ messages: [{ role: "user", content: "test", timestamp: 0 }] },
-			{
-				apiKey: "test-fireworks-key",
-				reasoning: "high",
-				onPayload: (value) => {
-					payload = value as Record<string, unknown>;
-					throw new Error("payload captured");
-				},
-			},
-		).result();
-		expect(payload?.thinking).toEqual({ type: "enabled", budget_tokens: 16384, display: "summarized" });
-		expect(payload?.output_config).toBeUndefined();
-	});
-
 	it("resolves FIREWORKS_API_KEY from the environment", () => {
 		process.env.FIREWORKS_API_KEY = "test-fireworks-key";
 
@@ -187,7 +167,7 @@ describe("Fireworks models", () => {
 	});
 
 	it("sets Fireworks-specific compat for session affinity and unsupported tool fields", () => {
-		const model = getModel("fireworks", "accounts/fireworks/models/nemotron-3-ultra-nvfp4");
+		const model = getModel("fireworks", "accounts/fireworks/models/deepseek-v4p1-flash");
 
 		expect(model.compat).toBeDefined();
 		expect(model.compat?.sendSessionAffinityHeaders).toBe(true);
