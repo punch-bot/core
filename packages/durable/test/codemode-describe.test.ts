@@ -1,7 +1,8 @@
-import { type AssistantMessage, fauxAssistantMessage, fauxText, Type } from "@punch-bot/ai";
+import { type AssistantMessage, fauxAssistantMessage, fauxText } from "@punch-bot/ai";
 import { CodemodeSandbox } from "@punch-bot/codemode";
 import { CODEMODE_SOURCE_GRAMMAR } from "@punch-bot/codemode/source";
 import { defineTool, MemoryStorage, type ToolRegistration } from "@punch-bot/durable";
+import { obj, str } from "@punch-bot/schema";
 import { describe, expect, it } from "vitest";
 import { createCodemodeExtension } from "../src/codemode/codemode.ts";
 import { type CodemodeNamespace, codemodeDescription, codemodeSection } from "../src/codemode/describe.ts";
@@ -12,7 +13,7 @@ function tool(name: string, description: string, extra: Partial<ToolRegistration
 	return defineTool({
 		name,
 		description,
-		parameters: Type.Object({ path: Type.String({ description: "File path" }) }),
+		parameters: obj({ path: str({ description: "File path" }) }),
 		execute: async () => ({ output: [] }),
 		...extra,
 	});

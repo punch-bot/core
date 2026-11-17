@@ -4,6 +4,14 @@
 		"outDir": "./dist",
 		"paths": {
 			"@punch-bot/chord": ["../chord/dist/index.d.ts"],
+			"@punch-bot/chord/context": ["../chord/dist/context/index.d.ts"],
+			"@punch-bot/chord/delta": ["../chord/dist/delta/index.d.ts"],
+			"@punch-bot/chord/json": ["../chord/dist/json.d.ts"],
+			"@punch-bot/chord/watch": ["../chord/dist/watch.d.ts"],
+			"@punch-bot/chord/output": ["../chord/dist/output.d.ts"],
+			"@punch-bot/chord/sqlite": ["../chord/dist/sqlite/index.d.ts"],
+			"@punch-bot/chord/sqlite/node": ["../chord/dist/sqlite/node.d.ts"],
+			"@punch-bot/chord/sqlite/cloudflare": ["../chord/dist/sqlite/cloudflare.d.ts"],
 			"@punch-bot/ai": ["../ai/dist/index.d.ts"]
 		},
 		"rootDir": "./src"

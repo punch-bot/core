@@ -1,4 +1,4 @@
-import { type SystemMessage, type Tool, Type } from "@punch-bot/ai";
+import type { SystemMessage, Tool } from "@punch-bot/ai";
 import { getCurrentTools, toToolDeclaration } from "@punch-bot/ai/utils/transcript";
 import {
 	type Conversation,
@@ -12,6 +12,7 @@ import {
 	type ToolRegistration,
 	wrapSection,
 } from "@punch-bot/durable";
+import { obj } from "@punch-bot/schema";
 import { describe, expect, it } from "vitest";
 import { resolveAgent, resolveSettings } from "../src/harness/agent.ts";
 import { planSystemEntries, renderSections, replaySections } from "../src/harness/prompt.ts";
@@ -207,7 +208,7 @@ describe("tool loadout preparation", () => {
 	const declaration = (name: string, description = name): Tool => ({
 		name,
 		description,
-		parameters: Type.Object({}),
+		parameters: obj({}),
 	});
 
 	/** Plan tools only, append the plan, check that replay offers `tools` in order, and return each message's changes. */

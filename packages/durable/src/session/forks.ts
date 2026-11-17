@@ -1,4 +1,4 @@
-import type { Context } from "@punch-bot/chord";
+import type { Context } from "@punch-bot/chord/context";
 import { addressId } from "../documents.ts";
 import type {
 	ConversationId,

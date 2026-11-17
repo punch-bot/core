@@ -49,7 +49,7 @@ export function recordInstallTelemetry(settingsManager: SettingsManager, version
 	const lastVersion = settingsManager.getLastChangelogVersion();
 	if (lastVersion) {
 		const entries = parseChangelog(getChangelogPath());
-		if (getNewEntries(entries, lastVersion).length === 0) return;
+		if (!getNewEntries(entries, lastVersion)?.length) return;
 	}
 
 	if (isTruthyEnvFlag(process.env.PI_OFFLINE)) return;

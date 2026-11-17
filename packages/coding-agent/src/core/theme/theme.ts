@@ -937,7 +937,7 @@ export function highlightCode(code: string, lang?: string): string[] {
 	try {
 		return highlight(code, opts).split("\n");
 	} catch {
-		return code.split("\n");
+		return code.split("\n").map((line) => theme.fg("mdCodeBlock", line));
 	}
 }
 
@@ -962,6 +962,10 @@ export function getLanguageFromPath(filePath: string): string | undefined {
 		java: "java",
 		kt: "kotlin",
 		swift: "swift",
+		dart: "dart",
+		groovy: "groovy",
+		gradle: "groovy",
+		nix: "nix",
 		c: "c",
 		h: "c",
 		cpp: "cpp",

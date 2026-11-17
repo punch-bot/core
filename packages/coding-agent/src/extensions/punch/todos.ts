@@ -2,8 +2,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import type { AgentMessage } from "@punch-bot/agent";
-import { StringEnum } from "@punch-bot/ai";
 import { Type } from "typebox";
+import { StringEnum } from "../../core/extensions/pi-ai-extension-view.ts";
 
 import type { ExtensionAPI, ExtensionContext } from "../../core/extensions/types.ts";
 import type { TodoStore } from "./todo-store.ts";

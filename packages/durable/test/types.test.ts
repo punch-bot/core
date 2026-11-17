@@ -1,4 +1,4 @@
-import type { Context } from "@punch-bot/chord";
+import type { Context } from "@punch-bot/chord/context";
 import { expect, expectTypeOf, it } from "vitest";
 import { idFromNumber, seqFromNumber } from "../src/ids.ts";
 import type {

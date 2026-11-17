@@ -1,5 +1,5 @@
 import { uuidv7 } from "@punch-bot/ai/utils/uuid";
-import type { Context } from "@punch-bot/chord";
+import type { Context } from "@punch-bot/chord/context";
 import { defineDoc } from "../documents.ts";
 import type { TaskRuntime } from "../types.ts";
 

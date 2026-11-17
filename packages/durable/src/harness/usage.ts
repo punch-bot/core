@@ -1,5 +1,6 @@
 import type { Usage } from "@punch-bot/ai";
-import { copyJson, type Draft, type JsonRepresentation } from "@punch-bot/chord";
+import type { Draft } from "@punch-bot/chord/delta";
+import { copyJson, type JsonRepresentation } from "@punch-bot/chord/json";
 import { defineDoc } from "../documents.ts";
 import type { ConversationId, Tx } from "../types.ts";
 

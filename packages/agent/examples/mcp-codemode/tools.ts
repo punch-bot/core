@@ -13,7 +13,7 @@ import {
 import type { ImageContent, JsonObject, JsonValue, TextContent } from "@punch-bot/ai";
 import { type CodemodeJsonSchema, CodemodeSandbox, type CodemodeTool, renderDeclarations } from "@punch-bot/codemode";
 import { type McpClient, toLlmContent } from "@punch-bot/mcp";
-import { Type } from "typebox";
+import { obj, str } from "@punch-bot/schema";
 
 /** Provider tool names are limited to 64 characters of `[A-Za-z0-9_-]`. */
 function toToolName(prefix: string, name: string): string {
@@ -40,12 +40,12 @@ export async function createMcpTools(client: McpClient, prefix: string): Promise
 			label: tool.title ?? tool.name,
 			description: tool.description ?? tool.title ?? `MCP tool ${tool.name}`,
 			// Providers require an object schema, and some reject one without `properties`.
-			parameters: Type.Unsafe({
+			parameters: {
 				...tool.inputSchema,
 				type: "object",
 				properties: tool.inputSchema.properties ?? {},
-			}),
-			outputSchema: tool.outputSchema ? Type.Unsafe<Record<string, unknown>>(tool.outputSchema) : undefined,
+			},
+			outputSchema: tool.outputSchema,
 			execute: async (_toolCallId, params, signal, onUpdate) => {
 				const result = await client.callTool(tool.name, params as Record<string, unknown>, {
 					signal,
@@ -99,9 +99,11 @@ export function createNestedToolRunner(
 
 export const CODEMODE_TOOL_NAME = "codemode";
 
-const codemodeParameters = Type.Object({
-	code: Type.String({ description: "JavaScript source. Top-level await and return work." }),
-});
+const codemodeParameters = obj(
+	{ code: str({ description: "JavaScript source. Top-level await and return work." }) },
+	// Open, as the tool accepted extra arguments before it moved from TypeBox.
+	{ open: true },
+);
 
 /**
  * A tool that runs model-written JavaScript in the codemode sandbox, where `tools.<name>(args)`
@@ -116,7 +118,6 @@ export function createCodemodeTool(
 	const sandboxTools: CodemodeTool[] = callable.map((tool) => ({
 		name: tool.name,
 		description: tool.description,
-		// TypeBox schemas are JSON Schema.
 		inputSchema: tool.parameters as CodemodeJsonSchema,
 		// What the script receives: the structured result if the tool declares one, else its text.
 		outputSchema: (tool.outputSchema as CodemodeJsonSchema | undefined) ?? { type: "string" },

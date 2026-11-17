@@ -36,17 +36,19 @@
  */
 
 import type { TextContent } from "@punch-bot/ai";
-import { type Context, copyJson, type JsonValue } from "@punch-bot/chord";
-import {
-	type CodemodeHostCall,
-	type CodemodeOutcome,
-	type CodemodeResult,
-	type CodemodeRun,
-	type CodemodeSandboxBase,
-	toCodemodeIdentifier,
+import type { Context } from "@punch-bot/chord/context";
+import { ownedSlice } from "@punch-bot/chord/delta";
+import { copyJson, type JsonValue } from "@punch-bot/chord/json";
+import { toCodemodeIdentifier } from "@punch-bot/codemode/declarations";
+import type {
+	CodemodeHostCall,
+	CodemodeOutcome,
+	CodemodeResult,
+	CodemodeRun,
+	CodemodeSandboxBase,
 } from "@punch-bot/codemode/portable";
 import { CODEMODE_SOURCE_GRAMMAR, parseCodemodeSource } from "@punch-bot/codemode/source";
-import { type Static, Type } from "typebox";
+import { obj, type Static, str } from "@punch-bot/schema";
 import { defineDoc } from "../documents.ts";
 import type { ExecutionEnv } from "../env/index.ts";
 import { errorMessage } from "../errors.ts";
@@ -199,7 +201,8 @@ const ARGS_PREVIEW_CHARS = 200;
 const ERROR_PREVIEW_CHARS = 500;
 
 function cut(text: string, max: number): string {
-	return text.length > max ? `${text.slice(0, max - 3)}...` : text;
+	// A copy: the row outlives the arguments or error text it previews.
+	return text.length > max ? `${ownedSlice(text, 0, max - 3)}...` : text;
 }
 
 /** A function scripts call as a top-level global; its result is journaled. */
@@ -209,7 +212,7 @@ export type CodemodeGlobal = {
 	execute(args: unknown, api: ToolExecutionApi, context: Context): Promise<JsonValue | undefined>;
 };
 
-const codemodeSchema = Type.Object({ code: Type.String({ description: "Raw JavaScript source." }) });
+const codemodeSchema = obj({ code: str({ description: "Raw JavaScript source." }) }, { open: true });
 
 export type CodemodeToolInput = Static<typeof codemodeSchema>;
 
@@ -945,14 +948,10 @@ class CodemodeCall {
 		const documents = tools.flatMap((tool) => {
 			const own = namespaceOfTool(tool.name);
 			if (typeof namespace === "string" && (own === undefined || !matchesNamespace(own, namespace))) return [];
-			const text = [
-				tool.name,
-				tool.name.replaceAll("_", " "),
-				tool.description,
-				own?.name ?? "",
-				own?.description ?? "",
-			];
-			return [{ name: tool.name, text: text.join(" ") }];
+			const namespaceText =
+				own === undefined ? "" : [own.name, own.description ?? "", own.instructions ?? ""].join(" ");
+			// `description` is the tool's sample: its description and declaration, with the parameters' names and descriptions.
+			return [{ name: tool.name, text: tool.description, namespaceText }];
 		});
 		return rankDocuments(query, documents, limit).map((name) => {
 			const tool = tools.find((candidate) => candidate.name === name)!;
