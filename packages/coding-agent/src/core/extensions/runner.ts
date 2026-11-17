@@ -52,13 +52,11 @@ import type {
 	ExtensionFlag,
 	ExtensionMode,
 	ExtensionRuntime,
-	ExtensionShortcut,
 	ExtensionToolContext,
 	ExtensionUIContext,
 	InputEvent,
 	InputEventResult,
 	InputSource,
-	KeyId,
 	LoadExtensionsResult,
 	MessageEndEvent,
 	MessageEndEventResult,
@@ -335,7 +333,6 @@ export class ExtensionRunner {
 	private switchSessionHandler: SwitchSessionHandler = async () => ({ cancelled: false });
 	private reloadHandler: ReloadHandler = async () => {};
 	private shutdownHandler: ShutdownHandler = () => {};
-	private shortcutDiagnostics: ResourceDiagnostic[] = [];
 	private commandDiagnostics: ResourceDiagnostic[] = [];
 	private staleMessage: string | undefined;
 	private uiPromptDepth = 0;
@@ -616,21 +613,6 @@ export class ExtensionRunner {
 
 	getFlagValues(): Map<string, boolean | string> {
 		return new Map(this.runtime.flagValues);
-	}
-
-	getShortcuts(): Map<KeyId, ExtensionShortcut> {
-		this.shortcutDiagnostics = [];
-		const extensionShortcuts = new Map<KeyId, ExtensionShortcut>();
-		for (const ext of this.extensions) {
-			for (const [key, shortcut] of ext.shortcuts) {
-				extensionShortcuts.set(key.toLowerCase() as KeyId, shortcut);
-			}
-		}
-		return extensionShortcuts;
-	}
-
-	getShortcutDiagnostics(): ResourceDiagnostic[] {
-		return this.shortcutDiagnostics;
 	}
 
 	invalidate(

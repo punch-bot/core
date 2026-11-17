@@ -6,13 +6,7 @@ For native Windows setup, read [Windows Setup](windows.md). For Android, read [T
 
 ## 1. Install Pi
 
-On macOS or Linux, you can use the installer:
-
-```bash
-curl -fsSL https://pi.dev/install.sh | sh
-```
-
-The installer pins all dependencies and updates Pi with `pi update`. Alternatively, install Pi from npm with the fork's generated shrinkwrap. This requires Node.js 22.19 or newer:
+Install Pi from npm with the fork's generated shrinkwrap. This requires Node.js 22.19 or newer:
 
 ```bash
 npm install -g --ignore-scripts @punch-bot/cli
@@ -107,16 +101,10 @@ Start with the least powerful mechanism that meets your need:
 
 ## Uninstall Pi
 
-If you installed Pi with npm, run:
+Run:
 
 ```bash
 npm uninstall -g @punch-bot/cli
 ```
 
-If you used the installer, run it again and choose **Uninstall Pi**:
-
-```bash
-curl -fsSL https://pi.dev/install.sh | sh
-```
-
-Neither method removes configuration, credentials, sessions, or installed Pi packages from `~/.pi/agent/`.
+This does not remove configuration, credentials, sessions, or installed Pi packages from `~/.pi/agent/`.

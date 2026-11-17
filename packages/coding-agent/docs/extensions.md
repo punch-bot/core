@@ -12,10 +12,8 @@ An extension runs inside the pi process with the same operating-system permissio
 - **Custom tools** - Register tools the LLM can call via `pi.registerTool()`
 - **Event interception** - Block or modify tool calls, inject context, customize compaction
 - **User interaction** - Prompt users via `ctx.ui` (select, confirm, input, notify)
-- **Custom UI components** - Full TUI components with keyboard input via `ctx.ui.custom()` for complex interactions
 - **Custom commands** - Register commands like `/mycommand` via `pi.registerCommand()`
 - **Session persistence** - Store state that survives restarts via `pi.appendEntry()`
-- **Custom rendering** - Control how tool calls/results and messages appear in TUI
 - **Providers and MCP servers** - Register model providers, virtual models, and MCP servers
 
 **Example use cases:**
@@ -23,11 +21,9 @@ An extension runs inside the pi process with the same operating-system permissio
 - Git checkpointing (stash at each turn, restore on branch)
 - Path protection (block writes to `.env`, `node_modules/`)
 - Custom compaction (summarize conversation your way)
-- Conversation summaries (see `summarize.ts` example)
-- Interactive tools (questions, wizards, custom dialogs)
+- Interactive tools (questions, confirmations, text input)
 - Stateful tools (todo lists, connection pools)
 - External integrations (file watchers, webhooks, CI triggers)
-- Games while you wait (see `snake.ts` example)
 
 See [examples/extensions/](../examples/extensions/) for working implementations.
 
@@ -199,10 +195,9 @@ export default function (pi: ExtensionAPI) {
     ctx.ui.setWidget("my-ext", ["Line 1", "Line 2"]);  // Widget above editor (default)
   });
 
-  // Register tools, commands, shortcuts, flags
+  // Register tools, commands, flags
   pi.registerTool({ ... });
   pi.registerCommand("name", { ... });
-  pi.registerShortcut("ctrl+x", { ... });
   pi.registerFlag("my-flag", { ... });
 }
 ```
@@ -695,14 +690,14 @@ If the run is aborted while `agent_before_settle` handlers are running, valid re
 
 #### ui_prompt_start / ui_prompt_end
 
-Notification-only lifecycle events for blocking user-facing extension UI prompts. They fire around `ctx.ui.select()`, `ctx.ui.confirm()`, `ctx.ui.input()`, `ctx.ui.editor()`, and `ctx.ui.custom()` so host/status integrations can report "waiting for user" instead of just "running".
+Notification-only lifecycle events for blocking user-facing extension UI prompts. They fire around `ctx.ui.select()`, `ctx.ui.confirm()`, `ctx.ui.input()`, and `ctx.ui.editor()` so host/status integrations can report "waiting for user" instead of just "running".
 
 Nested or overlapping prompts are coalesced into one outer waiting span. Handlers are invoked best-effort and are not awaited before showing or closing the prompt.
 
 ```typescript
 pi.on("ui_prompt_start", async (event, ctx) => {
   // event.reason === "ui_prompt"
-  // event.kind: "select" | "confirm" | "input" | "editor" | "custom"
+  // event.kind: "select" | "confirm" | "input" | "editor"
   // event.title: prompt title when available
 });
 
@@ -1169,11 +1164,11 @@ UI methods for user interaction. See [Custom UI](#custom-ui) for full details.
 
 ### ctx.mode
 
-Current run mode: `"tui"`, `"rpc"`, `"json"`, or `"print"`. Use `ctx.mode === "tui"` to guard terminal-only features such as `custom()`, component factories, terminal input, and direct TUI rendering.
+Current run mode: `"rpc"`, `"json"`, or `"print"`. See [Mode Behavior](#mode-behavior).
 
 ### ctx.hasUI
 
-`true` in TUI and RPC modes. `false` in print mode (`-p`) and JSON mode. Use this to guard dialog methods (`select`, `confirm`, `input`, `editor`) and fire-and-forget methods (`notify`, `setStatus`, `setWidget`, `setTitle`, `setEditorText`) that work in both TUI and RPC modes. In RPC mode, some TUI-specific methods are no-ops or return defaults (see [RPC Extension UI](rpc-extension-ui.md)).
+`true` in RPC mode. `false` in print mode (`-p`) and JSON mode. Use this to guard dialog methods (`select`, `confirm`, `input`, `editor`) and fire-and-forget methods (`notify`, `setStatus`, `setWidget`, `setTitle`, `setEditorText`). In RPC mode, some methods are no-ops or return defaults (see [RPC Extension UI](rpc-extension-ui.md)).
 
 ### ctx.cwd
 
@@ -1236,7 +1231,7 @@ Use this for abort-aware nested work started by extension handlers, for example:
 - file or process helpers that accept `AbortSignal`
 
 `ctx.signal` is typically defined during active turn events such as `tool_call`, `tool_result`, `message_update`, and `turn_end`.
-It is usually `undefined` in idle or non-turn contexts such as session events, extension commands, and shortcuts fired while pi is idle.
+It is usually `undefined` in idle or non-turn contexts such as session events and extension commands run while pi is idle.
 
 ```typescript
 pi.on("tool_result", async (event, ctx) => {
@@ -1259,11 +1254,10 @@ Control flow helpers. `ctx.isIdle()` is false while Pi is processing an agent ru
 
 Request a graceful shutdown of pi.
 
-- **Interactive mode:** Deferred until the agent becomes idle (after processing all queued steering and follow-up messages).
 - **RPC mode:** Runs right away when the session is idle and no command is being handled. Otherwise deferred until the current command finishes (including its response) or the active run settles. (A request made while an extension-started compaction is running waits for the next command or run to finish.)
 - **Print mode:** No-op. The process exits automatically when all prompts are processed.
 
-Emits `session_shutdown` event to all extensions before exiting. Available in all contexts (event handlers, tools, commands, shortcuts).
+Emits `session_shutdown` event to all extensions before exiting. Available in all contexts (event handlers, tools, commands).
 
 ```typescript
 pi.on("tool_call", (event, ctx) => {
@@ -1621,7 +1615,7 @@ pi.registerTool({
 
 ### pi.sendMessage(message, options?)
 
-Inject a custom message into the session. Custom messages participate in LLM context. For durable TUI-only content that should not be sent to the LLM, use [`pi.appendEntry()`](#piappendentrycustomtype-data) with [`pi.registerEntryRenderer()`](#piregisterentryrenderercustomtype-renderer).
+Inject a custom message into the session. Custom messages participate in LLM context. For durable data that should not be sent to the LLM, use [`pi.appendEntry()`](#piappendentrycustomtype-data).
 
 ```typescript
 pi.sendMessage({
@@ -1677,11 +1671,10 @@ See [send-user-message.ts](../examples/extensions/send-user-message.ts) for a co
 
 ### pi.appendEntry(customType, data?)
 
-Persist extension data. Custom entries do NOT participate in LLM context. In interactive mode, they can also render inside the chat transcript when paired with `pi.registerEntryRenderer()`.
+Persist extension data. Custom entries do NOT participate in LLM context.
 
 ```typescript
 pi.appendEntry("my-state", { count: 42 });
-pi.appendEntry("status-card", { title: "Indexed files", count: 17 });
 
 // Restore on reload
 pi.on("session_start", async (_event, ctx) => {
@@ -1796,43 +1789,6 @@ Use `sourceInfo` as the canonical provenance field. Do not infer ownership from 
 
 Built-in interactive commands (like `/model` and `/settings`) are not included here. They are handled only in interactive
 mode and would not execute if sent via `prompt`.
-
-### pi.registerMessageRenderer(customType, renderer)
-
-Register a custom TUI renderer for custom messages with your `customType`. Custom messages are created with `pi.sendMessage()` and participate in LLM context. See [Custom UI](#custom-ui).
-
-### pi.registerEntryRenderer(customType, renderer)
-
-Register a custom TUI renderer for custom entries with your `customType`. Custom entries are created with `pi.appendEntry()` and do not participate in LLM context.
-
-```typescript
-import { Box, Text } from "@punch-bot/tui";
-
-pi.registerEntryRenderer("status-card", (entry, { expanded }, theme) => {
-  const data = entry.data as { title: string; count: number };
-  const box = new Box(1, 1, (text) => theme.bg("customMessageBg", text));
-  box.addChild(new Text(`${theme.bold(data.title)}: ${data.count}`));
-  if (expanded) {
-    box.addChild(new Text(theme.fg("dim", JSON.stringify(data, null, 2))));
-  }
-  return box;
-});
-
-pi.appendEntry("status-card", { title: "Indexed files", count: 17 });
-```
-
-### pi.registerShortcut(shortcut, options)
-
-Register a keyboard shortcut. See [keybindings.md](keybindings.md) for the shortcut format and built-in keybindings.
-
-```typescript
-pi.registerShortcut("ctrl+shift+p", {
-  description: "Toggle plan mode",
-  handler: async (ctx) => {
-    ctx.ui.notify("Toggled!");
-  },
-});
-```
 
 ### pi.registerFlag(name, options)
 
@@ -2127,7 +2083,7 @@ Rebuild from `getBranch()`, not from every entry: abandoned branches represent a
 
 ## Custom Tools
 
-Register tools the LLM can call via `pi.registerTool()`. Tools appear in the system prompt and can have custom rendering.
+Register tools the LLM can call via `pi.registerTool()`. Tools appear in the system prompt.
 
 Use `promptSnippet` for a short one-line entry in the `<tools>` section of the default system prompt. If omitted, custom tools are left out of that section.
 
@@ -2230,7 +2186,7 @@ pi.registerTool({
 
 **Signaling errors:** To mark a tool execution as failed, throw an error from `execute`, or return a result with `isError: true`. Both report an error result to the LLM; a returned result also keeps `details` and `structuredContent` for rendering and scripts. Other returned values never set the error flag.
 
-**Early termination:** Return `terminate: true` from `execute()` to hint that the automatic follow-up LLM call should be skipped after the current tool batch. This only takes effect when every finalized tool result in that batch is terminating. See [examples/extensions/structured-output.ts](../examples/extensions/structured-output.ts) for a minimal example where the agent ends on a final structured-output tool call.
+**Early termination:** Return `terminate: true` from `execute()` to hint that the automatic follow-up LLM call should be skipped after the current tool batch. This only takes effect when every finalized tool result in that batch is terminating.
 
 ```typescript
 // Correct: throw to signal an error
@@ -2314,8 +2270,6 @@ pi --no-builtin-tools -e ./my-extension.ts
 ```
 
 See [examples/extensions/tool-override.ts](../examples/extensions/tool-override.ts) for a complete example that overrides `read` with logging and access control.
-
-**Rendering:** Built-in renderer inheritance is resolved per slot. Execution override and rendering override are independent. If your override omits `renderCall`, the built-in `renderCall` is used. If your override omits `renderResult`, the built-in `renderResult` is used. If your override omits both, the built-in renderer is used automatically (syntax highlighting, diffs, etc.). This lets you wrap built-in tools for logging or access control without reimplementing the UI.
 
 **Prompt metadata:** `promptSnippet` and `promptGuidelines` are not inherited from the built-in tool. If your override should keep those prompt instructions, define them on the override explicitly.
 
@@ -2441,8 +2395,6 @@ async execute(toolCallId, params, signal, onUpdate, ctx) {
 - Always inform the LLM when output is truncated and where to find the full version
 - Document the truncation limits in your tool's description
 
-See [examples/extensions/truncated-tool.ts](../examples/extensions/truncated-tool.ts) for a complete example wrapping `rg` (ripgrep) with proper truncation.
-
 ### Multiple Tools
 
 One extension can register multiple tools with shared state:
@@ -2460,133 +2412,6 @@ export default function (pi: ExtensionAPI) {
   });
 }
 ```
-
-<a id="tool-rendering"></a>
-
-### Custom Rendering
-
-Tools can provide `renderCall` and `renderResult` for custom TUI display. See [tui.md](tui.md) for the full component API and [tool-execution.ts](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/modes/interactive/components/tool-execution.ts) for how tool rows are composed.
-
-By default, tool output is wrapped in a `Box` that handles padding and background. A defined `renderCall` or `renderResult` must return a `Component`. If a slot renderer is not defined, `tool-execution.ts` uses fallback rendering for that slot.
-
-Set `renderShell: "self"` when the tool should render its own shell instead of using the default `Box`. This is useful for tools that need complete control over framing or background behavior, for example large previews that must stay visually stable after the tool settles.
-
-```typescript
-pi.registerTool({
-  name: "my_tool",
-  label: "My Tool",
-  description: "Custom shell example",
-  parameters: Type.Object({}),
-  renderShell: "self",
-  async execute() {
-    return { content: [{ type: "text", text: "ok" }], details: undefined };
-  },
-  renderCall(args, theme, context) {
-    return new Text(theme.fg("accent", "my custom shell"), 0, 0);
-  },
-});
-```
-
-`renderCall` and `renderResult` each receive a `context` object with:
-- `args` - the current tool call arguments
-- `state` - shared row-local state across `renderCall` and `renderResult`
-- `lastComponent` - the previously returned component for that slot, if any
-- `invalidate()` - request a rerender of this tool row
-- `toolCallId`, `cwd`, `executionStarted`, `argsComplete`, `isPartial`, `expanded`, `showImages`, `isError`
-
-Use `context.state` for cross-slot shared state. Keep slot-local caches on the returned component instance when you want to reuse and mutate the same component across renders.
-
-#### renderCall
-
-Renders the tool call or header:
-
-```typescript
-import { Text } from "@punch-bot/tui";
-
-renderCall(args, theme, context) {
-  const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
-  let content = theme.fg("toolTitle", theme.bold("my_tool "));
-  content += theme.fg("muted", args.action);
-  if (args.text) {
-    content += " " + theme.fg("dim", `"${args.text}"`);
-  }
-  text.setText(content);
-  return text;
-}
-```
-
-#### renderResult
-
-Renders the tool result or output:
-
-```typescript
-renderResult(result, { expanded, isPartial }, theme, context) {
-  if (isPartial) {
-    return new Text(theme.fg("warning", "Processing..."), 0, 0);
-  }
-
-  if (result.details?.error) {
-    return new Text(theme.fg("error", `Error: ${result.details.error}`), 0, 0);
-  }
-
-  let text = theme.fg("success", "✓ Done");
-  if (expanded && result.details?.items) {
-    for (const item of result.details.items) {
-      text += "\n  " + theme.fg("dim", item);
-    }
-  }
-  return new Text(text, 0, 0);
-}
-```
-
-If a slot intentionally has no visible content, return an empty `Component` such as an empty `Container`.
-
-#### Keybinding Hints
-
-Use `keyHint()` to display keybinding hints that respect the active keybinding configuration:
-
-```typescript
-import { keyHint } from "@punch-bot/cli";
-
-renderResult(result, { expanded }, theme, context) {
-  let text = theme.fg("success", "✓ Done");
-  if (!expanded) {
-    text += ` (${keyHint("app.tools.expand", "to expand")})`;
-  }
-  return new Text(text, 0, 0);
-}
-```
-
-Available functions:
-- `keyHint(keybinding, description)` - Formats a configured keybinding id such as `"app.tools.expand"` or `"tui.select.confirm"`
-- `keyText(keybinding)` - Returns the raw configured key text for a keybinding id
-- `rawKeyHint(key, description)` - Format a raw key string
-
-Use namespaced keybinding ids:
-- Coding-agent ids use the `app.*` namespace, for example `app.tools.expand`, `app.editor.external`, `app.session.rename`
-- Shared TUI ids use the `tui.*` namespace, for example `tui.select.confirm`, `tui.select.cancel`, `tui.input.tab`
-
-For the exhaustive list of keybinding ids and defaults, see [keybindings.md](keybindings.md). `keybindings.json` uses those same namespaced ids.
-
-Custom editors and `ctx.ui.custom()` components receive `keybindings: KeybindingsManager` as an injected argument. They should use that injected manager directly instead of calling `getKeybindings()` or `setKeybindings()`.
-
-#### Best Practices
-
-- Use `Text` with padding `(0, 0)`. The default Box handles padding.
-- Use `\n` for multi-line content.
-- Handle `isPartial` for streaming progress.
-- Support `expanded` for detail on demand.
-- Keep default view compact.
-- Read `context.args` in `renderResult` instead of copying args into `context.state`.
-- Use `context.state` only for data that must be shared across call and result slots.
-- Reuse `context.lastComponent` when the same component instance can be updated in place.
-- Use `renderShell: "self"` only when the default boxed shell gets in the way. In self-shell mode the tool is responsible for its own framing, padding, and background.
-
-#### Fallback
-
-If a slot renderer is not defined or throws:
-- `renderCall`: Shows the tool name
-- `renderResult`: Shows raw text from `content`
 
 ### Dynamic Tool Loading
 

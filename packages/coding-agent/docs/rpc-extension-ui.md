@@ -11,18 +11,16 @@ If a dialog method includes a `timeout` field, the agent-side will auto-resolve 
 
 ## Limitations
 
-Some `ExtensionUIContext` methods are not supported or degraded in RPC mode because they require direct terminal UI access:
+Some `ExtensionUIContext` methods are not supported or degraded in RPC mode:
 
-- `custom()` returns `undefined`.
-- `onTerminalInput()` returns a no-op unsubscribe function.
-- `setWorkingMessage()`, `setWorkingVisible()`, `setWorkingIndicator()`, `setHiddenThinkingLabel()`, `setFooter()`, `setHeader()`, `addAutocompleteProvider()`, `setEditorComponent()`, and `setToolsExpanded()` are no-ops.
-- `getEditorText()` returns `""` and `getEditorComponent()` returns `undefined`.
+- `setWorkingMessage()`, `setWorkingVisible()`, `setWorkingIndicator()`, `setHiddenThinkingLabel()`, and `setToolsExpanded()` are no-ops.
+- `getEditorText()` returns `""`.
 - `getToolsExpanded()` returns `false`.
 - `pasteToEditor()` delegates to `setEditorText()` without terminal paste handling.
 - `getAllThemes()` returns `[]`, and `getTheme()` returns `undefined`.
 - `setTheme()` returns `{ success: false, error: "Theme switching not supported in RPC mode" }`.
 
-Note: `ctx.mode` is `"rpc"` and `ctx.hasUI` is `true` in RPC mode because the dialog and fire-and-forget methods are functional via the extension UI sub-protocol. Use `ctx.mode === "tui"` to guard TUI-specific features like `custom()` that require a real terminal.
+Note: `ctx.mode` is `"rpc"` and `ctx.hasUI` is `true` in RPC mode because the dialog and fire-and-forget methods are functional via the extension UI sub-protocol.
 
 ## Requests from Pi
 

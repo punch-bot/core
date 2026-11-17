@@ -84,7 +84,6 @@ export {
 	type ExtensionFlag,
 	type ExtensionHandler,
 	ExtensionRunner,
-	type ExtensionShortcut,
 	type ExtensionUIContext,
 	type InlineExtension,
 	type LoadExtensionsResult,

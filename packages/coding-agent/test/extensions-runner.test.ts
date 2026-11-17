@@ -164,24 +164,6 @@ describe("ExtensionRunner", () => {
 		});
 	});
 
-	describe("shortcuts", () => {
-		it("collects registered shortcuts", async () => {
-			const extCode = `
-				export default function(pi) {
-					pi.registerShortcut("ctrl+shift+x", {
-						description: "Custom shortcut",
-						handler: async () => {},
-					});
-				}
-			`;
-			fs.writeFileSync(path.join(extensionsDir, "shortcut.ts"), extCode);
-			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
-			const shortcuts = runner.getShortcuts();
-			expect(shortcuts.has("ctrl+shift+x")).toBe(true);
-		});
-	});
-
 	describe("tool collection", () => {
 		it("collects tools from multiple extensions", async () => {
 			const toolCode = (name: string) => `
