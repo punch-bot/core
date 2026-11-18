@@ -8,8 +8,8 @@ Follow the main [Quickstart](quickstart.md) to install and authenticate Pi. Use 
 
 | Environment | Command environment | Use it when |
 |---|---|---|
-| Native Windows with Git Bash | Git Bash for the built-in `bash` tool and `!` commands | Your files and development tools primarily live on Windows |
-| Native Windows with the `powershell` tool | PowerShell for model tool calls; Bash remains available for `!` commands | The task depends on PowerShell modules or Windows-native commands |
+| Native Windows with Git Bash | Git Bash for the built-in `bash` tool and the RPC `bash` command | Your files and development tools primarily live on Windows |
+| Native Windows with the `powershell` tool | PowerShell for model tool calls; Bash remains available for the RPC `bash` command | The task depends on PowerShell modules or Windows-native commands |
 | WSL | Linux Bash and tools inside the selected WSL distribution | Your files and toolchain already live in Linux or WSL |
 
 ## Use Git Bash on native Windows
@@ -23,10 +23,10 @@ Pi resolves Bash in this order:
 3. Git Bash at `%ProgramFiles(x86)%\Git\bin\bash.exe`
 4. `bash.exe` on `PATH`, including Cygwin, MSYS2, or legacy WSL Bash
 
-Start Pi and enter this command to verify the shell:
+Ask Pi to run a command to verify the shell:
 
-```text
-!printf 'Bash is working\n'
+```bash
+pi --tools bash -p "Run: printf 'Bash is working'"
 ```
 
 If Pi cannot find Bash, it reports the locations it checked. Install Git for Windows, put another Bash executable on `PATH`, or configure `shellPath`.
@@ -52,13 +52,13 @@ To replace the model-facing `bash` tool with `powershell`, add this to `~/.pi/ag
 
 `["-bash", "+powershell"]` does the same while keeping any other default tools you configured.
 
-Restart Pi, then ask it to run a harmless PowerShell command. The `!` and `!!` editor commands continue to use Bash. The `powershell` tool is available only when Pi runs as a native Windows process.
+Then ask Pi to run a harmless PowerShell command. The RPC `bash` command continues to use Bash. The `powershell` tool is available only when Pi runs as a native Windows process.
 
 See [Settings](settings.md#tools) for other tool combinations.
 
 ## WSL
 
-WSL path conversion on Windows and extra Git branch polling in WSL recognize `/mnt/<drive>`, not custom mount roots.
+WSL path conversion on Windows recognizes `/mnt/<drive>`, not custom mount roots.
 
 When using the legacy WSL `bash.exe` launcher from Windows, Pi sends commands over stdin to avoid command-line quoting problems.
 
@@ -76,33 +76,4 @@ JSON uses backslashes for escape sequences. When you write a Windows path with b
 
 See [Configure shell commands](shell-aliases.md) for command prefixes, aliases, and the complete shell-resolution behavior.
 
-## Choose a terminal
-
-Windows terminals run Pi through a console host (conhost). Some bundle an up-to-date copy; others use the older one built into Windows, which has bugs that affect Pi.
-
-We recommend [Windows Terminal](https://aka.ms/terminal). It always ships an up-to-date conhost, and Pi is best tested with it.
-
-Last updated: October 2026.
-
-| Terminal | Conhost | Status |
-|---|---|---|
-| [Windows Terminal](https://aka.ms/terminal) | Bundled, current | Recommended |
-| [VS Code](https://code.visualstudio.com), [Tabby](https://tabby.sh), [WezTerm](https://wezterm.org) nightly | Bundled, current | Works |
-| [Alacritty](https://alacritty.org) | Built-in, unless `conpty.dll` and `OpenConsole.exe` from Windows Terminal are next to `alacritty.exe` | Works only with those files |
-| WezTerm 20240203 and older | Bundled, old | [Known issues](#known-issues) |
-| Classic console (`cmd.exe` or PowerShell without Windows Terminal), mintty (Git Bash), ConEmu, Cmder, [Hyper](https://hyper.is), Windows OpenSSH | Built-in | [Known issues](#known-issues) |
-
-## Configure Windows Terminal
-
-Windows Terminal reserves or rewrites some modified keys. See [Windows Terminal](terminal-setup.md#windows-terminal) to configure `Shift+Enter` and `Alt+Enter`.
-
-## Known issues
-
-These issues come from conhost. Microsoft has fixed them in its source, but has not said when the built-in conhost will get the fixes.
-
-| Issue | Affects | Remedy |
-|---|---|---|
-| Switching from fullscreen to regular mode, or `Ctrl+G` from fullscreen, crashes the session ([#9186](https://github.com/earendil-works/pi/issues/9186), [microsoft/terminal#17515](https://github.com/microsoft/terminal/issues/17515)) | Built-in conhost | Use a terminal with a current conhost, or start Pi with `--tui-mode regular` |
-| Text such as `;0;rgb:0000/0000/0000` appears in the prompt, and BEL opens the external editor ([#10256](https://github.com/earendil-works/pi/issues/10256)) | Built-in conhost behind another terminal: mintty, Windows OpenSSH | Use a terminal with a current conhost |
-| Fragments such as `79` or `55` appear in the prompt ([#10717](https://github.com/earendil-works/pi/issues/10717)) | WezTerm 20240203 | Use WezTerm nightly |
-| In regular mode, each keystroke redraws the input line on a new row ([#6300](https://github.com/earendil-works/pi/issues/6300)) | Built-in conhost, classic console | Use fullscreen mode (the default), or a terminal with a current conhost |
+Pi's headless modes do not depend on terminal features, so any Windows terminal or console host works.

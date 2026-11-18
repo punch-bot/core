@@ -11,7 +11,7 @@ Provider extensions run inside Pi and can inspect credentials, prompts, tool def
 | Add models behind a supported API | [`models.json`](models.md#configure-a-compatible-endpoint) |
 | Change an existing provider endpoint or headers | `models.json` or a small provider extension |
 | Discover models dynamically | A provider with `refreshModels` |
-| Add a `/login` flow | A provider with native or legacy OAuth configuration |
+| Add an OAuth login flow | A provider with native or legacy OAuth configuration |
 | Implement an unsupported wire protocol | A provider with `stream` or `streamSimple` |
 
 A provider extension is an [extension](extensions.md), so it follows the same loading, trust, reload, and error behavior.
@@ -134,11 +134,11 @@ Static providers can resolve an API key from a literal, environment interpolatio
 
 Use native provider authentication when the integration needs stored credentials, custom resolution, provider-scoped environment, or multiple login methods.
 
-An OAuth provider supplies a display name, login flow, token refresh, and access-token resolution. After registration it appears in `/login`, and Pi stores returned credentials in `~/.pi/agent/auth.json`.
+An OAuth provider supplies a display name, login flow, token refresh, and access-token resolution. Pi stores returned credentials in `~/.pi/agent/auth.json`. `pi auth login` does not load extensions and the headless modes have no login command, so only SDK applications can start this flow, through `session.modelRuntime.login()`.
 
 OAuth callbacks are UI-neutral. They can open an authorization URL, show a device code, report progress, request input, or ask the user to choose a login method. Honor cancellation and the supplied abort signal during network requests.
 
-Press Enter (`tui.select.confirm`) to open the device-login URL and copy the code, or log in manually. Providers can disable either action with `openBrowserOnConfirm: false` or `copyCodeOnConfirm: false` in `onDeviceCode` or native `AuthEvent` notifications.
+A device-code notification can ask the client to open the login URL and copy the code. Providers can disable either action with `openBrowserOnConfirm: false` or `copyCodeOnConfirm: false` in `onDeviceCode` or native `AuthEvent` notifications.
 
 Never write access tokens, refresh tokens, authorization headers, or complete provider responses to ordinary logs.
 
@@ -224,4 +224,4 @@ Test at least:
 
 The provider tests under [`packages/ai/test`](https://github.com/earendil-works/pi/tree/main/packages/ai/test) define the behavior expected from built-in providers. Adapt the relevant suites rather than relying only on manual prompts.
 
-Run the extension directly while developing, then move it to a discovered extension location or distribute it through a [Pi package](packages.md). Use `/reload` after changing a discovered provider extension in an active session.
+Run the extension directly while developing, then move it to a discovered extension location or distribute it through a [Pi package](packages.md). Restart Pi after changing a discovered provider extension, or reload a running session from an extension command with `ctx.reload()`.

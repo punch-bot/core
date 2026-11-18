@@ -24,7 +24,7 @@
           "title": "Run Pi",
           "items": [
             {
-              "title": "Use Pi in the Terminal",
+              "title": "Use Pi from the Command Line",
               "path": "usage.md"
             },
             {
@@ -56,16 +56,8 @@
               "path": "nvidia-rtx-llama-cpp.md"
             },
             {
-              "title": "Configure Your Terminal",
-              "path": "terminal-setup.md"
-            },
-            {
               "title": "Configure Shell Commands",
               "path": "shell-aliases.md"
-            },
-            {
-              "title": "Run Pi in tmux",
-              "path": "tmux.md"
             },
             {
               "title": "Run Pi on Windows",
@@ -215,6 +207,14 @@
     {
       "from": "process-integration.md",
       "to": "cli-integration.md"
+    },
+    {
+      "from": "terminal-setup.md",
+      "to": "themes.md"
+    },
+    {
+      "from": "tmux.md",
+      "to": "usage.md"
     }
   ]
 }

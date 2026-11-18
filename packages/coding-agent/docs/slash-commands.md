@@ -1,61 +1,52 @@
 # Slash commands
 
-Type `/` in Pi's terminal editor to search the commands available in the current session. This page lists the built-in commands in the current Pi release.
+Pi has no built-in slash commands. A prompt that starts with `/` runs a command only when its name matches a command added by a loaded resource:
 
-Extensions, prompt templates, and skills can add commands. The command menu in Pi is therefore the exact reference for the resources loaded in your session.
+| Resource | Command | Reference |
+|---|---|---|
+| Extension | `/name`, registered with `pi.registerCommand()` | [Extensions](extensions.md) |
+| Prompt template | `/name`, from the template's filename | [Prompt Templates](prompt-templates.md) |
+| Skill | `/skill:name` | [Skills](skills.md) |
 
-## Models and settings
+Pi checks extension commands first, then skills, then prompt templates. A prompt such as `/model` that matches none of them is sent to the model as plain text.
 
-| Command | Description |
-|---|---|
-| `/settings` | Open settings |
-| `/model [provider/model]` | Select a model |
-| `/thinking [level]` | Set the thinking level |
-| `/scoped-models` | Configure the models used by interactive cycling |
-| `/login [provider]` | Add provider authentication |
-| `/logout` | Remove provider authentication |
-| `/llama` | Manage models on the configured llama.cpp router |
+Send commands as prompts in any mode:
 
-## Sessions and context
+```bash
+pi -p "/review concurrency"
+pi -p "/skill:pdf-tools extract report.pdf"
+```
 
-| Command | Description |
-|---|---|
-| `/new` | Start a new session |
-| `/resume` | Resume another session |
-| `/name [name]` | Set the session display name, or show the current name when omitted |
-| `/session` | Show current session information and statistics |
-| `/tree` | Navigate the session tree |
-| `/fork` | Create a new session from an earlier user message |
-| `/clone` | Duplicate the current session at its current position |
-| `/compact [instructions]` | Compact the current context, optionally with custom instructions |
-| `/import <path>` | Import a JSONL session, preserving its ID and working directory |
+In RPC mode, send them through the [`prompt`](rpc-commands.md#prompt) command. [`get_commands`](rpc-commands.md#get_commands) lists the commands loaded in the current session.
 
-## Export and share
+## Commands from built-in extensions
 
-| Command | Description |
-|---|---|
-| `/copy` | Copy the last assistant message |
-| `/export [path]` | Export the session as HTML or JSONL |
-| `/share` | Upload the session and return a viewer link |
-| `/bug [description]` | Prepare a private bug report for the Pi developers |
+| Command | Extension | Description |
+|---|---|---|
+| `/mcp` | `builtin:mcp` | Show MCP server status. `/mcp login <server>`, `/mcp logout <server>`, and `/mcp reconnect <server>` perform those actions. See [MCP Servers](mcp.md). |
+| `/llama` | `builtin:llama.cpp` | Load, unload, and download models on the configured llama.cpp router through extension dialogs. Use it over RPC, whose client shows the dialogs. See [Run Local Models](llama-cpp.md). |
 
-Review a session before exporting or sharing it. Sessions can contain prompts, tool arguments, command output, file contents, and credentials exposed during the conversation.
+## Replacements for upstream pi commands
 
-## Runtime and project
+Upstream pi's terminal UI provides built-in commands such as `/model` and `/tree`. In Pi, use these options, RPC commands, or extension APIs instead:
 
-| Command | Description |
-|---|---|
-| `/trust` | Save a project trust decision for future Pi processes |
-| `/mcp` | Manage MCP servers: sign in, reconnect, enable or disable, and change exposure |
-| `/reload` | Reload keybindings, extensions, skills, templates, themes, and context files |
-| `/hotkeys` | Show active keyboard shortcuts |
-| `/changelog` | Show changelog entries |
-| `/quit` | Quit Pi |
+| Upstream command | CLI | RPC command | Extension API |
+|---|---|---|---|
+| `/model` | `--model` | `set_model`, `cycle_model` | `pi.setModel()` |
+| `/thinking` | `--thinking` | `set_thinking_level`, `cycle_thinking_level` | `pi.setThinkingLevel()` |
+| `/scoped-models` | `--models`, `enabledModels` setting | | `ctx.scopedModels` |
+| `/login`, `/logout` | `pi auth login`, `pi auth logout` | | |
+| `/settings` | Edit [`settings.json`](settings.md) | | |
+| `/new` | | `new_session` | `ctx.newSession()` |
+| `/resume` | `--continue`, `--session` | `switch_session` | `ctx.switchSession()` |
+| `/name` | `--name` | `set_session_name` | `pi.setSessionName()` |
+| `/session` | | `get_state`, `get_session_stats` | |
+| `/tree` | | `get_tree` | `ctx.navigateTree()` |
+| `/fork` | `--fork` | `fork` | `ctx.fork()` |
+| `/clone` | | `clone` | `ctx.fork(entryId, { position: "at" })` |
+| `/compact` | | `compact` | `ctx.compact()` |
+| `/copy` | | `get_last_assistant_text` | |
+| `/export` | `--export` | `export_html` | |
+| `/reload` | Restart Pi | | `ctx.reload()` |
 
-## Commands added by resources
-
-- Extensions can register commands with their own arguments and completion behavior.
-- Each prompt template is available under its template name.
-- Skills are available as `/skill:name` when skill commands are enabled.
-
-Use `/reload` after adding or changing a discovered command resource. See [Extensions](extensions.md), [Prompt Templates](prompt-templates.md), and [Skills](skills.md) for their loading and naming rules.
+See [RPC Commands](rpc-commands.md) for each command's fields.

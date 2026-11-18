@@ -1,33 +1,16 @@
 # Customize Pi with themes
 
-Themes control the colors Pi uses in interactive mode and HTML exports. Pi includes the `system`, `dark`, and `light` themes. You can select one theme, follow your terminal's light or dark appearance, or create your own palette.
+Themes control the colors of HTML session exports written by the RPC [`export_html`](rpc-commands.md#export_html) command or the SDK, and the `ctx.ui.theme` colors that extensions use. Pi includes the `system`, `dark`, and `light` themes, and you can create your own palette.
 
-## Use your terminal's colors
+## Use the default theme
 
-The `system` theme is the default. It builds Pi's colors from your terminal's theme, so Pi matches the terminal instead of bringing its own palette:
-
-- Pi queries the terminal's default foreground and background colors and its 16 ANSI colors.
-- Each Pi color takes its hue from one ANSI color, for example errors from red and links from blue.
-- Pi sets each color's lightness so that it stands out from the background by a minimum contrast. Body text keeps at least a 4.5:1 WCAG contrast ratio on the background and every panel.
-- When the terminal switches between light and dark, Pi queries the colors again and rebuilds the theme.
-
-The theme adapts to what the terminal reports:
-
-| Terminal reports | Result |
-|---|---|
-| Background and ANSI colors | Colors from the terminal palette, placed for the actual background. |
-| Background only | Pi's own hues, placed for the actual background. |
-| Nothing | ANSI color indices and the terminal's default colors, which the terminal renders itself. Secondary text is faint, and panels have no background color. |
-
-Pi asks the terminal for its colors when it starts. Terminals usually answer within a few milliseconds, and Pi waits at most 100 ms before showing the startup header. If the terminal does not answer in time, Pi uses the ANSI color fallback, and it still applies the colors if they arrive later, for example over a slow SSH connection. `system` is a reserved name: a custom theme with that name is ignored.
+The `system` theme is the default. Upstream pi derives it from the colors a terminal reports. Pi's headless modes do not query the terminal, so `system` uses Pi's own hues and picks a dark or light appearance from the `COLORFGBG` environment variable, falling back to dark. `system` is a reserved name: a custom theme with that name is ignored.
 
 <a id="selecting-a-theme"></a>
 
 ## Choose a theme
 
-Open `/settings` and select **Theme**. You can use one theme for every terminal appearance or choose separate themes for light and dark terminals.
-
-The selection is saved as the `theme` [setting](settings.md#terminal-and-display):
+Set the `theme` [setting](settings.md#terminal-and-display):
 
 ```json
 {
@@ -37,24 +20,21 @@ The selection is saved as the `theme` [setting](settings.md#terminal-and-display
 
 Without a `theme` setting, Pi uses `system`.
 
-Automatic mode stores the light theme first and the dark theme second:
+Upstream pi also accepts a `light/dark` pair that follows the terminal's appearance. Pi cannot detect the appearance, so it uses `system` for a pair. Theme names cannot contain `/` because the pair format reserves it.
 
-```json
-{
-  "theme": "light/dark"
-}
-```
-
-Pi decides whether the terminal is light or dark from its reported background and foreground colors. If the terminal does not report its background, Pi uses the terminal's light/dark notification, then the `COLORFGBG` environment variable, then dark. The same decision picks the theme of a light/dark pair and the appearance of `system`. When automatic mode is active, Pi changes themes when the terminal reports an appearance change. Theme names cannot contain `/` because Pi reserves it for this setting format.
-
-Use `--use-theme` to choose the initial theme for one invocation without changing the saved setting:
+Use `--use-theme` to choose the theme for one invocation without changing the saved setting:
 
 ```bash
-pi --use-theme light
-pi --use-theme light/dark
+pi --use-theme light --mode rpc
 ```
 
 See [CLI resources](cli.md#resources) for the command-line option.
+
+<a id="override-detected-capabilities"></a>
+
+### Override truecolor detection
+
+Pi detects truecolor support for the ANSI colors that `ctx.ui.theme` produces. If detection fails behind a terminal proxy or multiplexer, override it with `PI_TRUE_COLOR=1|0|auto` or the JSON-only `terminal.trueColor` setting (`true`, `false`, or `"auto"`). Without truecolor, Pi approximates colors with the 256-color palette.
 
 ## Create a custom theme
 
@@ -63,19 +43,19 @@ Copy one of the [built-in themes](https://github.com/punch-bot/core/tree/main/pa
 1. Save the file as `<agent-dir>/themes/my-theme.json`. The agent directory defaults to `~/.pi/agent`.
 2. Set its `name` to `my-theme`.
 3. Change values in `vars` and `colors`.
-4. Select `my-theme` through `/settings`.
+4. Set `"theme": "my-theme"` in `settings.json`.
 
-Use the theme name as the filename. Pi hot-reloads the active user theme only from `<agent-dir>/themes/<name>.json`. Run `/reload` after adding or changing a theme from any other source.
+Use the theme name as the filename. Pi loads themes at startup, so restart Pi after adding or changing one. An extension command can reload a running session with `ctx.reload()`.
 
 ## Understand the theme file
 
 | Property | Required | Responsibility |
 |---|---|---|
 | `$schema` | No | Enables editor validation and completion against Pi's published schema. |
-| `name` | Yes | Identifies the theme in selectors and settings. It must be unique, cannot contain `/`, and cannot be `system`. |
+| `name` | Yes | Identifies the theme in settings and `--use-theme`. It must be unique, cannot contain `/`, and cannot be `system`. |
 | `appearance` | No | `"dark"` or `"light"`: the background the theme is designed for. Pi detects it from the theme colors when omitted. |
 | `vars` | No | Defines reusable color values. Variables can reference other variables. |
-| `colors` | Yes | Assigns colors to terminal UI roles. The schema identifies required and optional roles. |
+| `colors` | Yes | Assigns colors to interface roles. The schema identifies required and optional roles. |
 | `export` | No | Overrides page and panel backgrounds in HTML exports. |
 
 Theme objects are strict: only documented top-level fields and color tokens are accepted. Define reusable custom colors under `vars`; custom keys under `colors` or `export` and additional top-level metadata are rejected.
@@ -91,17 +71,17 @@ A color can be written in six forms:
 | Variable reference | `"primary"` | The value of an entry in `vars`. |
 | Terminal default | `""` | The terminal's default foreground or background color. |
 
-Terminal default colors render as the terminal's own colors. Where Pi needs a concrete value, such as HTML export or extension color math, it uses the default colors the terminal reports, or a black or white guess based on the theme's appearance.
+Terminal default colors render as the terminal's own colors in ANSI output. Where Pi needs a concrete value, such as HTML export or extension color math, it uses a black or white guess based on the theme's appearance.
 
-Pi resolves chained variable references. A missing variable or circular reference makes the theme invalid. Pi uses truecolor when available, gamut-maps OKLCH to sRGB, and approximates colors for 256-color terminals. HTML exports convert OKHSL values to hexadecimal because CSS does not support them. If colors differ from their source values, check your terminal's truecolor detection and contrast settings. See [Configure Your Terminal](terminal-setup.md#override-detected-capabilities).
+Pi resolves chained variable references. A missing variable or circular reference makes the theme invalid. Pi gamut-maps OKLCH to sRGB. HTML exports convert OKHSL values to hexadecimal because CSS does not support them. For ANSI output, see [Override truecolor detection](#override-detected-capabilities).
 
 Use the [theme JSON schema](https://raw.githubusercontent.com/punch-bot/core/main/packages/coding-agent/schemas/theme.schema.json) for the exact properties, required colors, and accepted value types.
 
-Pi reports invalid theme files during startup and `/reload`.
+Pi reports invalid theme files during startup and reload.
 
 ## Find the color to change
 
-Theme colors describe interface roles rather than individual components. Use these groups to find the relevant part of the schema:
+Theme colors describe roles of upstream pi's terminal interface; HTML exports reuse them for messages, tool output, Markdown, diffs, and syntax highlighting. Use these groups to find the relevant part of the schema:
 
 | Area | Color names |
 |---|---|

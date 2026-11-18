@@ -25,7 +25,7 @@ These commands add user-level servers by default. Add `--local` or `-l` to write
 pi mcp add -l tools --env API_KEY='${TOOLS_KEY}' -- uvx tools-mcp
 ```
 
-Use `/mcp` inside an interactive session to inspect connections, sign in, reconnect, change exposure, or enable and disable servers. Run `/reload` after adding, removing, or changing a server outside the session.
+Send `/mcp` as a prompt to print server status, or `/mcp login <server>`, `/mcp logout <server>`, and `/mcp reconnect <server>` to run those actions in a session. Restart Pi after adding, removing, or changing a server outside the session, or reload it from an extension command with `ctx.reload()`.
 
 ## Configure servers
 
@@ -85,9 +85,9 @@ Keep personal servers and servers with credentials in the user-level file. Use t
 
 ### Inspect or change a server
 
-`/mcp` lists configured servers with their state, tool count, exposure, and configuration source. Servers that need attention appear first. Select a server to inspect its tools and connection details, reconnect, sign in or out, change exposure, or enable and disable it.
+`/mcp` prints configured servers with their state, exposure, tool count, and errors. `/mcp login <server>`, `/mcp logout <server>`, and `/mcp reconnect <server>` perform those actions directly. Without a server name, they use the only eligible server, or over RPC ask the client to pick one through the [extension UI protocol](rpc-extension-ui.md). The output reaches the client as an extension notification; in print mode it is not shown, so use `pi mcp list` from a shell instead.
 
-Exposure and enabled-state changes are saved to the file that defines the server without replacing unrelated content. In a trusted project, "Enable in this project" and "Disable in this project" add a project override for a user-level server; later changes to that server are saved to the override. Disabled servers remain listed. Outside the interactive TUI, `/mcp` prints server status; `/mcp login <server>`, `/mcp logout <server>`, and `/mcp reconnect <server>` perform those actions directly.
+To change exposure or enable and disable a server, edit `enabled`, `exposure`, or `toolExposure` in the file that defines it. In a trusted project, a project entry with only those fields overrides a user-level server (see [Configure servers](#configure-servers)). Disabled servers remain listed.
 
 Shell commands work without a session: `pi mcp add`, `pi mcp remove`, `pi mcp list`, `pi mcp login`, and `pi mcp logout`. Shell commands do not load extensions.
 
@@ -223,9 +223,9 @@ Pi activates `codemode` when a server with `codemode` exposure connects. It acti
 }
 ```
 
-`pi mcp list` marks tools whose exposure differs from their server. The Tools view in `/mcp` also shows the effective exposure.
+`pi mcp list` marks tools whose exposure differs from their server. `/mcp` also shows each server's exposure.
 
-Tools with `codemode` or `deferred` exposure can be reached through either indirect mechanism: codemode scripts can call them, and `tool_search` can load them. Codemode calls do not depend on the active tool set, so they remain available after `/tree`, resume, and fork. Tools loaded by `tool_search` are recorded in the transcript and remain declared on that branch.
+Tools with `codemode` or `deferred` exposure can be reached through either indirect mechanism: codemode scripts can call them, and `tool_search` can load them. Codemode calls do not depend on the active tool set, so they remain available after tree navigation, session switches, and forks. Tools loaded by `tool_search` are recorded in the transcript and remain declared on that branch.
 
 `--tools` does not remove MCP tools unless one of its entries starts with `mcp__`; `pi --tools read,codemode,'mcp__radius__*'` keeps only the tools of `radius`. `--exclude-tools` accepts the same patterns, and `--no-mcp` disables MCP for one run (see [Tools](cli.md#mcp-tools)).
 
@@ -265,7 +265,7 @@ Changes to enabled state or exposure apply only to the current session. A file-c
 
 ### Replace the built-in MCP support
 
-An installed extension that registers `/mcp`, such as `pi-mcp-adapter`, replaces the built-in MCP support for sessions. Pi then does not read `mcp.json` or connect its servers in a session, and `/mcp` belongs to the extension. Remove the extension to restore the built-in behavior. To disable built-in MCP support without a replacement, disable `mcp` under Built-in in `pi config`, or set `"extensions": ["-builtin:mcp"]` in [settings](settings.md#resources). `--no-mcp` disables it for one run.
+An installed extension that registers `/mcp`, such as `pi-mcp-adapter`, replaces the built-in MCP support for sessions. Pi then does not read `mcp.json` or connect its servers in a session, and `/mcp` belongs to the extension. Remove the extension to restore the built-in behavior. To disable built-in MCP support without a replacement, set `"extensions": ["-builtin:mcp"]` in [settings](settings.md#resources). `--no-mcp` disables it for one run.
 
 An extension that registers `codemode` or `tool_search` similarly replaces the built-in tool with that name. Pi activates the replacement for MCP servers and waits for the servers its calls need only when it declares [`reachesTools`](extensions.md#tool-exposure). Shell-level `pi mcp` commands always use the built-in implementation.
 

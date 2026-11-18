@@ -46,11 +46,11 @@ When a task matches, the model reads `SKILL.md` and follows its instructions. Th
 
 Arguments after `/skill:name` are appended to the loaded instructions as a user request:
 
-```text
-/skill:pdf-tools extract report.pdf
+```bash
+pi -p "/skill:pdf-tools extract report.pdf"
 ```
 
-Set `disable-model-invocation: true` in frontmatter when a skill should be available only through its explicit command. The `enableSkillCommands` [setting](settings.md) controls whether skill commands appear in interactive command discovery; manually entered `/skill:name` commands still work.
+Set `disable-model-invocation: true` in frontmatter when a skill should be available only through its explicit command.
 
 <a id="choose-where-it-loads"></a>
 
@@ -86,7 +86,7 @@ Malformed `SKILL.md` files and declared skills without descriptions are not load
 
 ## Validate and share a skill
 
-Run Pi from a location where the skill is discoverable, then inspect the startup diagnostics and `/skill:name` command. Run `/reload` after editing a skill during an active session.
+Run Pi from a location where the skill is discoverable, then inspect the startup diagnostics and run `/skill:name`. RPC [`get_commands`](rpc-commands.md#get_commands) lists loaded skills. Restart Pi after editing a skill, or reload a running session from an extension command with `ctx.reload()`.
 
 Use a [Pi package](packages.md) to distribute one or more skills through npm or git. Keep environment setup inside the skill and declare any required runtime dependencies in the package.
 

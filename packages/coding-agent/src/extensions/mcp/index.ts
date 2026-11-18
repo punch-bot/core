@@ -879,7 +879,7 @@ export function createMcpExtension(options: McpExtensionOptions = {}): Extension
 		});
 
 		pi.registerCommand("mcp", {
-			description: "Manage MCP servers: sign in, reconnect, enable or disable, and change exposure",
+			description: "Show MCP server status, sign in or out, or reconnect",
 			getArgumentCompletions: (prefix) => {
 				const [action, server, ...rest] = prefix.trimStart().split(/\s+/);
 				if (rest.length > 0) return null;

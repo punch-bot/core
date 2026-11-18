@@ -1,13 +1,13 @@
 # Choose a Model
 
-For a built-in provider, start with `/login`, then choose a model with `/model`. Use custom model configuration only when Pi does not already include the provider or endpoint you need.
+For a built-in provider, start with `pi auth login <provider>`, then choose a model with `--model`. Use custom model configuration only when Pi does not already include the provider or endpoint you need.
 
 ## Choose a connection
 
 | What you have | Recommended setup |
 |---|---|
-| A supported subscription | Sign in through `/login` |
-| A provider API key | Store it through `/login` or set its environment variable |
+| A supported subscription | Sign in with `pi auth login <provider>` |
+| A provider API key | Store it with `pi auth login <provider> --api-key` or set its environment variable |
 | A local GGUF model | Connect Pi to the llama.cpp router |
 | An OpenAI-, Anthropic-, or Google-compatible endpoint | Add it to `models.json` |
 | A provider with a custom protocol or authentication flow | Build or install a provider extension |
@@ -16,7 +16,7 @@ Browse the [model catalog](https://pi.dev/models) for current providers, model I
 
 ## Authenticate
 
-Run `/login` and select a provider. Pi stores credentials in [`auth.json`](configuration.md#agent-directory). Run `/logout` to remove stored credentials for a provider.
+Run `pi auth login <provider>`. Pi stores credentials in [`auth.json`](configuration.md#agent-directory). Run `pi auth logout <provider>` to remove stored credentials for a provider. See [Credential commands](cli.md#credential-commands).
 
 You can instead provide an API key through the provider's environment variable. This is useful in CI and other environments where Pi should not write credentials. [Providers](providers.md) lists the variables and provider-specific setup.
 
@@ -26,17 +26,15 @@ Keep `auth.json` and any credential commands private. Project settings and exten
 
 ## Select a model
 
-Run `/model` to search available models. The picker shows models whose providers have usable authentication. Press `Ctrl+S` on a model to save it as the default for new sessions.
+Run `pi --list-models [search]` to list models whose providers have usable authentication. Select one for a run with `--model`, optionally with a thinking-level suffix such as `--model sonnet:high`, or with `--thinking`. Save defaults for new sessions with the `defaultModel`, `defaultProvider`, and `defaultThinkingLevel` [settings](settings.md#model-and-thinking). Pi limits the thinking level to levels supported by the selected model.
 
-Run `/thinking` to select the thinking level for the current model. Press `Ctrl+S` there to save the startup level. Pi limits the choices to levels supported by the selected model.
-
-`Ctrl+P` cycles through available models. Use `/scoped-models` to control that cycle and save the selection, or configure model patterns through [Settings](settings.md#model-cycling).
+RPC clients list models with [`get_available_models`](rpc-commands.md#get_available_models) and switch with [`set_model`](rpc-commands.md#set_model) and [`set_thinking_level`](rpc-commands.md#set_thinking_level). [`cycle_model`](rpc-commands.md#cycle_model) cycles through the models scoped with `--models` or the `enabledModels` [setting](settings.md#model-cycling). Extensions use `pi.setModel()` and `pi.setThinkingLevel()`.
 
 A session records model and thinking-level changes. Resuming the session restores them without changing defaults for new sessions.
 
 ## Connect local models
 
-Pi integrates directly with the llama.cpp router. The router discovers GGUF files and loads models on demand. Pi's `/llama` command manages the router, while `/model` selects one of its loaded models.
+Pi integrates directly with the llama.cpp router. The router discovers GGUF files and loads models on demand. Pi's `/llama` extension command manages the router, while `--model` or RPC `set_model` selects one of its loaded models.
 
 Follow [Local Models with llama.cpp](llama-cpp.md) for server startup, model layout, downloads, and connection troubleshooting.
 
@@ -64,7 +62,7 @@ Use [`models.json`](configuration.md#agent-directory) when an endpoint speaks an
 
 The dummy key makes the model available to Pi; Ollama ignores it. For an authenticated endpoint, `apiKey` and header values can use `$NAME` or `${NAME}` environment interpolation, a literal value, or a leading `!command`. `$$` and `$!` produce a literal `$` and `!`. Commands in `models.json` run at request time and are not cached by Pi.
 
-Opening `/model` reloads the file. A `models` entry adds or replaces a model with the same ID on that provider. Use `modelOverrides` to change metadata for an existing built-in or extension-provided model without replacing the provider's model list. Unknown override IDs are ignored.
+Pi reads the file at startup; restart Pi after editing it. A `models` entry adds or replaces a model with the same ID on that provider. Use `modelOverrides` to change metadata for an existing built-in or extension-provided model without replacing the provider's model list. Unknown override IDs are ignored.
 
 To route a built-in provider through a proxy, set only its `baseUrl`. Its models and authentication stay unchanged:
 
@@ -146,18 +144,18 @@ Classifier models do not chat. They answer typed questions about JSON state: pic
 | Provider | Model IDs | Authentication |
 |---|---|---|
 | `typesafe` | `jev-latest` | `TYPESAFE_API_KEY` |
-| `openrouter` | `typesafe/jev-1.13`, `typesafe/jev-1.14`, `~typesafe/jev-latest`, `cloudflare/clef`, `cloudflare/clef-flash`, `cloudflare/clef-omni` | `OPENROUTER_API_KEY` or `/login` |
+| `openrouter` | `typesafe/jev-1.13`, `typesafe/jev-1.14`, `~typesafe/jev-latest`, `cloudflare/clef`, `cloudflare/clef-flash`, `cloudflare/clef-omni` | `OPENROUTER_API_KEY` or `pi auth login openrouter` |
 | `cloudflare-workers-ai` | `typesafe/jev`, `typesafe/jev-1.14.0`, `@cf/cloudflare/clef`, `@cf/cloudflare/clef-flash`, `@cf/cloudflare/clef-omni` | `CLOUDFLARE_API_KEY` and `CLOUDFLARE_ACCOUNT_ID` |
 | `vercel-ai-gateway` | `typesafe-ai/jev` | `AI_GATEWAY_API_KEY` |
 | `opencode` | `jev-1.13`, `jev-1.13-free` | `OPENCODE_API_KEY` |
 | `openai` | `gpt-6-luna` | `OPENAI_API_KEY` |
-| `github-copilot` | `microsoft-decision-1` | `COPILOT_GITHUB_TOKEN` or `/login` |
+| `github-copilot` | `microsoft-decision-1` | `COPILOT_GITHUB_TOKEN` or `pi auth login github-copilot` |
 
 Chat models on a [llama.cpp router](llama-cpp.md#classification) are also listed as classifier models.
 
-OpenAI's Decisions API needs an API key. Sign in with ChatGPT credentials do not work with it, so `gpt-6-luna` is not listed as available while `openai` is logged in through `/login`, even when `OPENAI_API_KEY` is set; log out of `openai` to use the key. The API rejects inputs above 922K tokens, but requests that run longer than about five seconds, currently above roughly 600K input tokens, fail with a gateway timeout.
+OpenAI's Decisions API needs an API key. Sign in with ChatGPT credentials do not work with it, so `gpt-6-luna` is not listed as available while `openai` is logged in through `pi auth login`, even when `OPENAI_API_KEY` is set; log out of `openai` to use the key. The API rejects inputs above 922K tokens, but requests that run longer than about five seconds, currently above roughly 600K input tokens, fail with a gateway timeout.
 
-Classifier models do not appear in `/model`. The model reaches them through the [`codemode`](cli.md#enable-codemode) tool, which is off unless an MCP server turned it on. Enable it with `"defaultTools": ["+codemode"]` in [settings](settings.md#tools). Scripts then list classifier models with `models.getAvailableOfType("classifier")` and call `models.classify(model, { state, questions })`:
+Classifier models do not appear in `--list-models` or RPC `get_available_models`. The model reaches them through the [`codemode`](cli.md#enable-codemode) tool, which is off unless an MCP server turned it on. Enable it with `"defaultTools": ["+codemode"]` in [settings](settings.md#tools). Scripts then list classifier models with `models.getAvailableOfType("classifier")` and call `models.classify(model, { state, questions })`:
 
 ```js
 const jev = await models.getModelOfType("classifier", "typesafe", "jev-latest");
@@ -180,15 +178,15 @@ Classifier models whose `input` includes `"image"` also judge images passed in `
 
 Each System One service takes images in its own request format, set by the model's `compat.imageInput`. Built-in models set it, so overriding a provider's `baseUrl` keeps it. A custom provider that proxies another service's classifiers sets it in its provider-level `compat` in `models.json` (see [System One compatibility](models-configuration.md#typesafe-system-one)). OpenRouter in particular answers requests in TypeSafe's format without an error but drops the images.
 
-When the service reports token counts, as all System One services do, `result.usage` carries them with their cost. Pi adds the usage of a script's classifier calls to the `codemode` tool result, so it counts toward the session cost in the footer and `/session`. The cost uses the model's catalog price; models without one, such as TypeSafe's direct `jev-latest`, report tokens at no cost.
+When the service reports token counts, as all System One services do, `result.usage` carries them with their cost. Pi adds the usage of a script's classifier calls to the `codemode` tool result, so it counts toward the session cost in RPC `get_session_stats`. The cost uses the model's catalog price; models without one, such as TypeSafe's direct `jev-latest`, report tokens at no cost.
 
 Extensions call classifiers through `ctx.modelRegistry.classify()`, without codemode. [Virtual models](virtual-models.md#route-requests) can use them to route requests; see the `jev-router.ts` example.
 
 ## Use image models
 
-Image models generate images from a prompt and optional input images. Pi lists OpenRouter's image models, such as `google/gemini-2.5-flash-image` and `black-forest-labs/flux.2-pro`, under the `openrouter` provider; they use the same `OPENROUTER_API_KEY` or `/login` credential as its chat models.
+Image models generate images from a prompt and optional input images. Pi lists OpenRouter's image models, such as `google/gemini-2.5-flash-image` and `black-forest-labs/flux.2-pro`, under the `openrouter` provider; they use the same `OPENROUTER_API_KEY` or stored credential as its chat models.
 
-Like classifier models, image models do not appear in `/model`; the model reaches them through the [`codemode`](cli.md#enable-codemode) tool. Scripts list them with `models.getAvailableOfType("image")` and call `models.generateImages(model, { input })`. The result's `output` holds base64 image blocks, which `image()` attaches to the `codemode` result so the model sees them:
+Like classifier models, image models do not appear in `--list-models`; the model reaches them through the [`codemode`](cli.md#enable-codemode) tool. Scripts list them with `models.getAvailableOfType("image")` and call `models.generateImages(model, { input })`. The result's `output` holds base64 image blocks, which `image()` attaches to the `codemode` result so the model sees them:
 
 ```js
 const painter = await models.getModelOfType("image", "openrouter", "google/gemini-2.5-flash-image");
@@ -211,7 +209,7 @@ Use an extension when the provider needs custom streaming, model discovery, or a
 
 ### A model does not appear
 
-Confirm that its provider has usable authentication. Custom models can load from `models.json` but remain unavailable in `/model` until Pi can resolve credentials. For llama.cpp, only models currently loaded by the router appear.
+Confirm that its provider has usable authentication. Custom models can load from `models.json` but remain unavailable to `--model` until Pi can resolve credentials. For llama.cpp, only models currently loaded by the router appear.
 
 ### Authentication works in one shell only
 
@@ -219,7 +217,7 @@ Check whether the key came from an environment variable rather than `auth.json`.
 
 ### Sign-in opens a browser on a remote machine
 
-Complete the provider's headless authentication flow when available. Some providers let you paste the final redirect URL or authorization code back into Pi. See [Authenticate interactively](providers.md#authenticate-interactively).
+Complete the provider's headless authentication flow when available. `pi auth login <provider> --no-browser` uses another sign-in method, such as a device code, and some providers let you paste the final redirect URL or authorization code back into Pi. See [Authenticate interactively](providers.md#authenticate-interactively).
 
 ### A compatible endpoint rejects requests
 

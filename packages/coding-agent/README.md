@@ -82,7 +82,7 @@ To embed pi in your own app, use the SDK (`createAgentSession`). See [Programmat
 
 By default, pi gives the model four tools: `read`, `write`, `edit`, and `bash`. The model uses these to fulfill your requests. Add capabilities via [skills](#skills), [prompt templates](#prompt-templates), [extensions](#extensions), or [pi packages](#pi-packages).
 
-**Platform notes:** [Windows](docs/windows.md) | [Termux (Android)](docs/termux.md) | [tmux](docs/tmux.md) | [Terminal setup](docs/terminal-setup.md) | [Shell aliases](docs/shell-aliases.md)
+**Platform notes:** [Windows](docs/windows.md) | [Termux (Android)](docs/termux.md) | [Shell aliases](docs/shell-aliases.md)
 
 ---
 
@@ -216,7 +216,7 @@ Non-interactive modes (`-p`, `--mode json`, and `--mode rpc`) do not show a trus
 
 If no extension or saved decision applies, `defaultProjectTrust` controls the fallback behavior. Set it to `"ask"`, `"always"`, or `"never"` in `~/.pi/agent/settings.json`.
 
-`pi config` and package commands use the same project trust flow, except `pi update` never prompts. Pass `--approve` to trust project-local settings for one command or `--no-approve` to ignore them.
+`pi config` and package commands use the same project trust flow. Pass `--approve` to trust project-local settings for one command or `--no-approve` to ignore them.
 
 ### Telemetry and update checks
 
@@ -443,10 +443,10 @@ pi update --self             # Update pi only
 pi update --self --force     # Reinstall pi even if current
 pi update --extension <src>  # Update one package
 pi list                      # List installed packages
-pi config                    # Enable/disable package resources
+pi config                    # Print resolved package resources as JSON
 ```
 
-`pi config` and project package commands accept `--approve`/`--no-approve` to trust or ignore project-local settings for one command. `pi update` never prompts for project trust.
+`pi config` and project package commands accept `--approve`/`--no-approve` to trust or ignore project-local settings for one command.
 
 ### Modes
 
@@ -519,8 +519,7 @@ Combine `--no-*` with explicit flags to load exactly what you need, ignoring set
 |--------|-------------|
 | `--system-prompt <text>` | Replace the default prompt's opening (tools, rules, context files, and skills still appended) |
 | `--append-system-prompt <text>` | Append to system prompt |
-| `--use-theme <name[/name]>` | Set the theme for this run without changing settings |
-| `--verbose` | Force verbose startup |
+| `--use-theme <name>` | Set the theme for this run without changing settings |
 | `-a`, `--approve` | Trust project-local files for this run |
 | `-na`, `--no-approve` | Ignore project-local files for this run |
 | `--` | Stop option parsing; remaining arguments are prompts or `@file` inputs |
@@ -590,7 +589,6 @@ pi --thinking high "Solve this complex problem"
 | `PI_SKIP_VERSION_CHECK` | Skip the Pi version update check at startup. This prevents the `pi.dev` latest-version request |
 | `PI_TELEMETRY` | Override install/update telemetry and provider attribution headers. Use `1`/`true`/`yes` to enable or `0`/`false`/`no` to disable. This does not disable update checks |
 | `PI_CACHE_RETENTION` | Set to `long` for extended prompt cache (Anthropic: 1h, OpenAI: 24h) |
-| `VISUAL`, `EDITOR` | Fallback external editor for Ctrl+G when `externalEditor` is unset; defaults to Notepad on Windows and `nano` elsewhere |
 
 Commands run by the LLM-callable `bash` and `powershell` tools also receive current session metadata:
 
