@@ -152,10 +152,10 @@ Settings also accept built-in extensions as `builtin:<name>` entries; see [Setti
 
 | Package | Purpose |
 |---------|---------|
-| `@punch-bot/cli` | Extension types (`ExtensionAPI`, `ExtensionContext`, events) and helpers |
+| `@punch-bot/cli` | Extension types (`ExtensionAPI`, `ExtensionContext`, events) and helpers, including `StringEnum` for string enums |
 | `@punch-bot/agent` | Agent message and tool types |
 | `typebox`, `typebox/compile`, `typebox/value` | Schema definitions for tool parameters |
-| `@punch-bot/ai` | AI utilities (`StringEnum` for string enums, transcript helpers, model types). Inside pi it also exports TypeBox's `Type`, `Static` and `TSchema`, which the published package no longer re-exports; import them from `typebox` in new code |
+| `@punch-bot/ai` | AI utilities (transcript helpers, model types). Inside pi it also exports TypeBox's `Type`, `Static` and `TSchema`, which the published package no longer re-exports; import them from `typebox` in new code |
 | `@punch-bot/ai/compat`, `/models`, `/oauth`, `/providers/all` | Provider construction, built-in APIs, and OAuth helpers |
 
 pi maps these imports to its own copies, so extensions share pi's classes and registries. The legacy `@mariozechner/*` and `@sinclair/typebox` names map to the same modules.
@@ -1587,8 +1587,8 @@ Use `promptSnippet` to opt a custom tool into a one-line entry in the `<tools>` 
 See [dynamic-tools.ts](../examples/extensions/dynamic-tools.ts) for a full example.
 
 ```typescript
+import { StringEnum } from "@punch-bot/cli";
 import { Type } from "typebox";
-import { StringEnum } from "@punch-bot/ai";
 
 pi.registerTool({
   name: "my_tool",
@@ -2125,8 +2125,8 @@ async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 ### Tool Definition
 
 ```typescript
+import { StringEnum } from "@punch-bot/cli";
 import { type Static, Type } from "typebox";
-import { StringEnum } from "@punch-bot/ai";
 
 const myToolSchema = Type.Object({
   action: StringEnum(["list", "add"] as const),
@@ -2197,7 +2197,7 @@ async execute(toolCallId, params) {
 }
 ```
 
-**String enums:** Prefer `StringEnum` from `@punch-bot/ai`. It produces a plain `enum` schema that every provider accepts.
+**String enums:** Prefer `StringEnum` from `@punch-bot/cli`. It produces a plain `enum` schema that every provider accepts, typed for TypeBox so `Type.Object` infers the literal union. `@punch-bot/ai` also exports a `StringEnum`, but it is typed for `@punch-bot/schema`, and inside `Type.Object` its field infers as `unknown`.
 
 **Structured output:** Declare `outputSchema` and return a matching `structuredContent` when the result is data. The model still receives `content`; programmatic callers such as codemode scripts receive `structuredContent` instead of the text. Tools without `outputSchema` are passed to scripts as their text content. To report a failure that still carries data, return the result with `isError: true` instead of throwing: the model sees an error, and scripts still receive `structuredContent`.
 
