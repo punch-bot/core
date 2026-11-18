@@ -3,6 +3,7 @@ import { basename, dirname, join, resolve, sep } from "node:path";
 import chalk from "chalk";
 import { APP_NAME, CONFIG_DIR_NAME } from "../config.ts";
 import type { TerminalColorMode } from "../utils/colors.ts";
+import { findGitPaths } from "../utils/git.ts";
 import type { ResourceDiagnostic } from "./diagnostics.ts";
 import { detectColorMode, loadThemeFromPath, type Theme } from "./theme/theme.ts";
 
@@ -24,7 +25,6 @@ import type {
 	InlineExtension,
 	LoadExtensionsResult,
 } from "./extensions/types.ts";
-import { findGitPaths } from "./footer-data-provider.ts";
 import {
 	DefaultPackageManager,
 	type PackageInstallFailure,

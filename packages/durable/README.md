@@ -24,7 +24,6 @@ Built on [`@punch-bot/ai`](../ai/README.md) for model access and `@punch-bot/cho
 - [Busy Conversations](#busy-conversations)
 - [Reset and Handoff](#reset-and-handoff)
 - [Compaction](#compaction)
-- [Agent Events (Experimental)](#agent-events-experimental)
 - [Hooks](#hooks)
 - [More Conversations and Forks](#more-conversations-and-forks)
 - [Abort and Subagents](#abort-and-subagents)

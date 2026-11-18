@@ -37,24 +37,6 @@ export function formatMissingSessionCwdError(issue: SessionCwdIssue): string {
 	return `Stored session working directory does not exist: ${issue.sessionCwd}${sessionFile}\nCurrent working directory: ${issue.fallbackCwd}`;
 }
 
-export function formatMissingSessionCwdPrompt(issue: SessionCwdIssue): string {
-	return `Session cwd does not exist: ${issue.sessionCwd}`;
-}
-
-/** How to open a session whose stored cwd is missing: run it in the current cwd once, or fork it there. */
-export type MissingSessionCwdChoice = "continue" | "fork";
-
-/** Prompt options for a missing session cwd, naming the current cwd; `undefined` cancels. */
-export function getMissingSessionCwdOptions(
-	issue: SessionCwdIssue,
-): Array<{ label: string; value: MissingSessionCwdChoice | undefined }> {
-	return [
-		{ label: `Continue in ${issue.fallbackCwd} (asks again next time)`, value: "continue" },
-		{ label: `Fork into ${issue.fallbackCwd} (new session ID, original kept)`, value: "fork" },
-		{ label: "Cancel", value: undefined },
-	];
-}
-
 export class MissingSessionCwdError extends Error {
 	readonly issue: SessionCwdIssue;
 
