@@ -23,13 +23,13 @@ pi mcp <add|remove|list|login|logout> [options]
 ## Invocation and output
 
 ```sh
-pi
+pi "Summarize this repository"
 pi --print "Summarize this repository"
 git diff | pi --print "Review this change"
 pi --mode json "Inspect this repository" > events.jsonl
 ```
 
-With terminal stdin and stdout, Pi opens the terminal UI unless `--print`, `--mode json`, or `--mode rpc` selects another interface. When either stream is redirected and neither JSON nor RPC mode is selected, Pi uses print mode. See [CLI Integration](cli-integration.md) for choosing between interactive, print, JSON, RPC, and SDK integration.
+Pi runs in print mode unless `--mode json` or `--mode rpc` selects another interface. See [CLI Integration](cli-integration.md) for choosing between print, JSON, RPC, and SDK integration.
 
 | Input | Behavior |
 |---|---|
@@ -40,12 +40,12 @@ With terminal stdin and stdout, Pi opens the terminal UI unless `--print`, `--mo
 
 Pi resolves `@path` from the current working directory. The working directory also controls project configuration, resource discovery, and session grouping.
 
-`--print` controls whether Pi runs once and exits. `--mode` selects the output interface. `--mode text` does not force one-shot execution when stdin and stdout are terminals; use `--print` for that behavior.
+`--mode` selects the output interface. `--mode text` is the default and is the same as `--print`.
 
 | Option | Behavior |
 |---|---|
 | `-p`, `--print` | Run the supplied prompts, write the final assistant text to stdout, then exit |
-| `--mode text` | Select text output; still open the terminal UI when stdin and stdout are terminals |
+| `--mode text` | Same as `--print` |
 | `--mode json` | Run the supplied prompts, write JSONL events to stdout, then exit |
 | `--mode rpc` | Read JSONL commands from stdin and write responses and events to stdout until shutdown |
 | `--export <input> [output]` | Export a session file to HTML and exit; derive the destination when `output` is omitted |
@@ -71,7 +71,7 @@ See [Choose a Model](models.md) for model selection and [Providers](providers.md
 - `--thinking <level>`<br>
   Sets `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. It overrides a `--model` suffix and is clamped to the model's capabilities.
 - `--models <patterns>`<br>
-  Sets a comma-separated scope for startup and cycling. It accepts exact IDs, partial matches (with a warning), case-insensitive globs, and optional `:<thinking>` suffixes. A model offered by several providers is added for each, with a warning. An entry that matches nothing is skipped with a warning.
+  Sets a comma-separated scope for startup and RPC `cycle_model`. It accepts exact IDs, partial matches (with a warning), case-insensitive globs, and optional `:<thinking>` suffixes. A model offered by several providers is added for each, with a warning. An entry that matches nothing is skipped with a warning.
 - `--list-models [search]`<br>
   Lists available models, optionally filtered by a fuzzy search, then exits.
 
@@ -88,9 +88,9 @@ See [Sessions and Context](sessions.md) for resuming, forking, naming, and stori
 - `-c`, `--continue`<br>
   Continues the most recent session for the current directory.
 - `-r`, `--resume`<br>
-  Opens the session selector and resumes the chosen session in its working directory. Press Tab to include sessions from other directories.
+  Alias for `--continue`.
 - `--session <path|id>`<br>
-  Opens a session by file path or full/partial ID, and resumes it in its working directory. If the ID only matches sessions stored for another directory, Pi offers to fork it into the current directory instead.
+  Opens a session by file path or full/partial ID. Pi exits with an error when the session belongs to another directory and suggests `--fork`.
 - `--session-id <id>`<br>
   Opens the current directory's existing session with the ID, or creates it otherwise. IDs accept letters, numbers, `.`, `_`, and `-`.
 - `--fork <path|id>`<br>
@@ -127,7 +127,7 @@ See [Settings](settings.md#tools) for configuring the default tool selection.
 - `-nt`, `--no-tools`<br>
   Starts with all built-in, extension, custom, and MCP tools disabled.
 
-Default enabled tools are `read`, `bash`, `edit`, and `write`, unless `defaultTools` changes them. `--tools` with plain names replaces the whole selection, so name every tool you want. Like `defaultTools`, it also accepts a list of only `+name` and `-name` entries, which adds tools to or removes them from the default selection: `pi --tools +codemode,-write` keeps the other default tools, enables `codemode`, and disables `write`. These entries take exact tool names, not `*` patterns; use `--exclude-tools` to disable tools by pattern. Plain names and `+name`/`-name` entries cannot be mixed. `/reload` enables tools newly added to `defaultTools`, but a tool removed with `-name` stays removed.
+Default enabled tools are `read`, `bash`, `edit`, and `write`, unless `defaultTools` changes them. `--tools` with plain names replaces the whole selection, so name every tool you want. Like `defaultTools`, it also accepts a list of only `+name` and `-name` entries, which adds tools to or removes them from the default selection: `pi --tools +codemode,-write` keeps the other default tools, enables `codemode`, and disables `write`. These entries take exact tool names, not `*` patterns; use `--exclude-tools` to disable tools by pattern. Plain names and `+name`/`-name` entries cannot be mixed. Reloading with an extension command's `ctx.reload()` enables tools newly added to `defaultTools`, but a tool removed with `-name` stays removed.
 
 <a id="mcp-tools"></a>
 
@@ -198,7 +198,7 @@ See [Configuration](configuration.md) for conventional directories and project t
 - `-ne`, `--no-extensions`<br>
   Disables discovered, configured, and built-in extensions. Explicit `-e` paths still load, so `pi -ne -e builtin:mcp` keeps only the built-in MCP support.
 - `--no-mcp`<br>
-  Disables the built-in MCP support for this run: no servers connect, and there are no MCP tools or `/mcp`. It does not affect an extension that replaces the built-in MCP support.
+  Disables the built-in MCP support for this run: no servers connect, and there are no MCP tools or `/mcp` command. It does not affect an extension that replaces the built-in MCP support.
 - `--skill <path>`<br>
   Loads a skill file or directory and is repeatable.
 - `-ns`, `--no-skills`<br>
@@ -209,8 +209,8 @@ See [Configuration](configuration.md) for conventional directories and project t
   Disables discovered and configured templates. Explicit `--prompt-template` paths still load.
 - `--theme <path>`<br>
   Loads a theme file or directory and is repeatable.
-- `--use-theme <name[/name]>`<br>
-  Selects the initial interactive theme for this run.
+- `--use-theme <name>`<br>
+  Selects the [theme](themes.md) for this run without changing settings.
 - `--no-themes`<br>
   Disables discovered and configured themes. Explicit `--theme` paths still load.
 - `-nc`, `--no-context-files`<br>
@@ -232,10 +232,6 @@ See [Configuration](configuration.md) for saved configuration, [Security](securi
   Replaces the opening of the default system prompt with text or the contents of an existing file. The tool list and rules still follow it.
 - `--append-system-prompt <text|path>`<br>
   Appends text or an existing file to the system prompt and is repeatable.
-- `--tui-mode <mode>`<br>
-  Uses `fullscreen` (default) or `regular` terminal mode.
-- `--verbose`<br>
-  Shows verbose interactive startup information, overriding `quietStartup`.
 - `-a`, `--approve`<br>
   Trusts project-local configuration and resources for this process.
 - `-na`, `--no-approve`<br>
@@ -264,7 +260,7 @@ See [Pi Packages](packages.md) for source formats, filtering, installation, and 
 | Install a package | `pi install <source>` |
 | List configured packages | `pi list` |
 | Remove a package and its settings entry | `pi remove <source>` |
-| Configure which package resources load | `pi config` |
+| Print the resolved package resources as JSON | `pi config` |
 
 Add `--local` or `-l` to `install`, `remove`, `uninstall`, or `config` to use project settings instead of global settings.
 
@@ -304,14 +300,14 @@ export PI_SELF_UPDATE_COMMAND="mise use -g npm:{packageName}@{version}"
 
 ## Credential commands
 
-`pi auth login <provider>` logs in to a provider in the terminal and exits, without starting a session. It signs in with an account and opens the browser, like `/login <provider>`. Providers without account sign-in ask for an API key. Logging in to Radius also adds the Radius MCP server to `~/.pi/agent/mcp.json` when no global server uses that login yet. It requires an interactive terminal.
+`pi auth login <provider>` logs in to a provider in the terminal and exits, without starting a session. It signs in with an account and opens the browser. Providers without account sign-in ask for an API key. Providers registered by extensions, such as `llama.cpp`, are not available. Logging in to Radius also adds the Radius MCP server to `~/.pi/agent/mcp.json` when no global server uses that login yet. It requires an interactive terminal.
 
 | Option | Description |
 |---|---|
 | `--api-key` | Save an API key instead of signing in with an account; the key is read without echoing it |
 | `--no-browser` | Do not open a browser; use the provider's other sign-in method, such as a device code, for example over SSH. Asks when there are several. Not allowed with `--api-key` |
 
-`pi auth logout <provider>` removes the credentials that `pi auth login` or `/login` stored, like `/logout`. Environment variables and `models.json` config are unchanged. It exits with status `0` when nothing is stored, so it is safe to repeat.
+`pi auth logout <provider>` removes the credentials that `pi auth login` stored. Environment variables and `models.json` config are unchanged. It exits with status `0` when nothing is stored, so it is safe to repeat.
 
 ```sh
 pi auth login radius

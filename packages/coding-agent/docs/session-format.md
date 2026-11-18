@@ -17,8 +17,6 @@ By default, `<session-id>` is a UUID. Callers can supply a custom ID through the
 
 Sessions can be removed by deleting their `.jsonl` files under `~/.pi/agent/sessions/`.
 
-Pi also supports deleting sessions interactively from `/resume` (select a session and press `Ctrl+D`, then confirm). When available, pi uses the `trash` CLI to avoid permanent deletion.
-
 ## Session Version
 
 Sessions have a version field in the header:
@@ -69,7 +67,7 @@ First line of the file. Metadata only, not part of the tree (no `id`/`parentId`)
 {"type":"session","version":3,"id":"uuid","timestamp":"2024-12-03T14:00:00.000Z","cwd":"/path/to/project"}
 ```
 
-For sessions with a parent (created via `/fork`, `/clone`, or `newSession({ parentSession })`):
+For sessions with a parent (created via `--fork`, RPC `fork` or `clone`, or `newSession({ parentSession })`):
 
 ```json
 {"type":"session","version":3,"id":"uuid","timestamp":"2024-12-03T14:00:00.000Z","cwd":"/path/to/project","parentSession":"/path/to/original/session.jsonl"}
@@ -148,7 +146,7 @@ Targets may be user, assistant, tool-result, or custom-message entries. `replace
 
 ### BranchSummaryEntry
 
-Created when switching branches via `/tree` with an LLM generated summary of the left branch up to the common ancestor. Captures context from the abandoned path.
+Created when switching branches via `ctx.navigateTree()` with an LLM generated summary of the left branch up to the common ancestor. Captures context from the abandoned path.
 
 ```json
 {"type":"branch_summary","id":"g7h8i9j0","parentId":"a1b2c3d4","timestamp":"2024-12-03T14:15:00.000Z","fromId":"f6g7h8i9","summary":"Branch explored approach A..."}
@@ -183,7 +181,7 @@ Extension-injected messages that DO participate in LLM context.
 
 Fields:
 - `content`: String or `(TextContent | ImageContent)[]` (same as UserMessage)
-- `display`: `true` = show in TUI with distinct styling, `false` = hidden
+- `display`: `true` = clients should show it, `false` = hidden
 - `details`: Optional extension-specific metadata (not sent to LLM)
 
 ### LabelEntry
@@ -198,13 +196,13 @@ Set `label` to `undefined` to clear a label.
 
 ### SessionInfoEntry
 
-Session metadata (e.g., user-defined display name). Set via `/name`, `--name` / `-n`, or `pi.setSessionName()` in extensions.
+Session metadata (e.g., user-defined display name). Set via `--name` / `-n`, RPC `set_session_name`, or `pi.setSessionName()` in extensions.
 
 ```json
 {"type":"session_info","id":"k1l2m3n4","parentId":"j0k1l2m3","timestamp":"2024-12-03T14:35:00.000Z","name":"Refactor auth module"}
 ```
 
-The session name is displayed in the session selector (`/resume`) instead of the first message when set.
+RPC `get_state` returns the latest name as `sessionName`.
 
 ## Tree Structure
 
@@ -230,7 +228,7 @@ Entries normally form one tree, but navigation APIs can create multiple roots:
    - Includes the compaction entry first
    - Includes non-system entries from `firstKeptEntryId` up to, but not including, the compaction entry
    - Includes entries after the compaction entry
-3. Preserves non-message entries in the selected range so interactive mode can render them
+3. Preserves non-message entries in the selected range so clients can render them
 
 `buildSessionProjection()` then applies the latest `context_edit` for each selected target. It returns the model-visible messages together with their source entries. Omitted targets produce no message; replacements retain the source entry's role and metadata while changing only content. The raw selected entries are not modified.
 

@@ -1,8 +1,8 @@
 # CLI Integration
 
-By default, running `pi` opens the interactive terminal interface. When input or output is piped or redirected, Pi uses print mode instead. You can also select print, JSON, or RPC mode explicitly for scripts and applications.
+Pi runs in print mode by default: `pi "<prompt>"` and `pi -p "<prompt>"` behave the same. Select JSON or RPC mode with `--mode` for scripts and applications.
 
-All four modes use the same agent, sessions, resources, and tools. The mode determines how input enters Pi, how output is exposed, and whether the process remains available for more commands.
+All three modes use the same agent, sessions, resources, and tools. The mode determines how input enters Pi, how output is exposed, and whether the process remains available for more commands.
 
 The SDK is not a CLI mode. It embeds the agent directly in a Node.js or Bun process. See the [SDK](sdk.md) when direct TypeScript access is preferable to a process boundary.
 
@@ -10,7 +10,6 @@ The SDK is not a CLI mode. It embeds the agent directly in a Node.js or Bun proc
 
 | Mode | Interface | Lifetime | Use it when |
 |---|---|---|---|
-| Interactive | Terminal UI | Until the user exits | A person is working with Pi directly |
 | Print | Final text on stdout | One invocation | A script needs the final assistant response |
 | JSON | JSONL events on stdout | One invocation | A process needs structured progress from a run |
 | RPC | JSONL commands, responses, and events | Long-lived | A process needs bidirectional control |
@@ -67,7 +66,7 @@ A successful `prompt` response means the prompt was accepted, queued, or handled
 
 RPC commands can change models, inspect state, manage sessions, run shell commands, and answer extension UI requests.
 
-Extension dialogs form a request-response subprotocol. Other extension UI updates are notifications that a client may display or ignore. TUI-only extension capabilities are unavailable or degraded outside interactive mode.
+Extension dialogs form a request-response subprotocol. Other extension UI updates are notifications that a client may display or ignore. Some `ctx.ui` methods are no-ops; see [RPC Extension UI](rpc-extension-ui.md).
 
 For Node.js or TypeScript integrations, prefer `RpcClient` from `@punch-bot/cli`. It starts a Pi RPC child process, correlates requests, exposes typed command methods, and delivers session events to listeners.
 
@@ -97,7 +96,6 @@ Change the top-level `bin` field to set the executable name. These settings affe
 ## Examples and references
 
 - [RPC client](../examples/rpc-client.ts): typed Node.js integration
-- [RPC extension UI](../examples/rpc-extension-ui.ts): custom terminal client with extension dialogs
 - [Command Line](cli.md): startup options and mode selection
 - [JSON Event Stream](json.md): JSON event reference
 - [RPC Protocol](rpc.md): RPC lifecycle, framing, errors, and shutdown

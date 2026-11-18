@@ -4,7 +4,7 @@ Treat model-generated commands and code as untrusted. Pi can read, change, and e
 
 Files, comments, instructions, command output, and model responses can steer the model through prompt injection. Project trust controls which project resources load at startup, but it does not make that content or the resulting actions safe.
 
-Safety comes from limiting the files, credentials, processes, and network services Pi can access and affect if a generated action is wrong or hostile. Watching the transcript, using project trust, and reviewing changes do not create a security boundary.
+Safety comes from limiting the files, credentials, processes, and network services Pi can access and affect if a generated action is wrong or hostile. Watching the event stream, using project trust, and reviewing changes do not create a security boundary.
 
 ## Choose how to run Pi
 
@@ -64,17 +64,21 @@ A command-line `--approve` or `--no-approve` override applies first. When protec
 2. If no extension decides, Pi looks for a saved decision for the current directory or one of its parents. The closest decision applies.
 3. If no saved decision applies, Pi follows the global `defaultProjectTrust` setting, whose default is `"ask"`.
 
-Saved decisions use canonical directory paths and live in:
+Saved decisions use canonical directory paths as keys and `true` or `false` as values, and live in:
 
 ```text
 ~/.pi/agent/trust.json
 ```
 
-Use `/trust` to save a decision for future Pi processes.
+```json
+{ "/home/user/projects/app": true }
+```
 
-### Project trust without an interactive prompt
+Edit the file, or have a `project_trust` extension handler return `remember: true`, to save a decision for future Pi processes. See [`project_trust`](extensions.md#project_trust).
 
-Print, JSON, and RPC modes cannot show the built-in trust prompt. If no command-line override, extension, or saved decision applies:
+### Project trust without a prompt
+
+Pi has no built-in trust prompt. If no command-line override, extension, or saved decision applies:
 
 - `defaultProjectTrust: "always"` loads protected project resources.
 - `defaultProjectTrust: "ask"` or `"never"` skips them.

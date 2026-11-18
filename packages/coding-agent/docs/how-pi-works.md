@@ -10,7 +10,7 @@ A submitted message is added to the active branch. Pi builds a model request fro
 
 The provider streams an assistant response, which can contain text and tool calls. Pi records the response, executes each tool call, and records the results. That completes one turn. If tool results or queued messages require another model request, Pi starts another turn. Otherwise, the run ends.
 
-Steering messages enter after the current assistant turn. Follow-up messages enter after the agent has finished its pending work. Aborting stops the current run and returns queued messages to the editor.
+Steering messages enter after the current assistant turn. Follow-up messages enter after the agent has finished its pending work. Aborting stops the current run; queued messages stay queued and continue afterwards. RPC clients remove them first with [`clear_queue`](rpc-commands.md#clear_queue).
 
 ## Context
 
@@ -20,7 +20,7 @@ Pi builds the system prompt from its base instructions and discovered context fi
 
 Full skill instructions are loaded on demand. Extensions can add instructions or transform context.
 
-Prompt templates expand editor input before it becomes a user message. Selected files, images, pasted text, and shell output can become message content.
+Prompt templates expand prompt text before it becomes a user message. `@file` arguments, images, and output of the RPC `bash` command can become message content.
 
 ## Sessions
 
@@ -32,7 +32,7 @@ Model context is reconstructed from the active branch. Compaction inserts a summ
 
 ## Interfaces
 
-Interactive mode renders session and agent events in the terminal. Print mode runs a prompt and writes the final response. JSON mode writes agent events as JSONL.
+Print mode runs a prompt and writes the final response. JSON mode writes agent events as JSONL.
 
 RPC mode accepts JSONL commands on stdin and writes responses and events to stdout. The TypeScript SDK creates and controls agent sessions in process.
 
@@ -40,9 +40,9 @@ All interfaces use the same agent and session mechanisms.
 
 ## Extensions and resources
 
-Extensions are TypeScript modules loaded into the Pi process. Their factory functions register tools, commands, shortcuts, providers, event handlers, renderers, and terminal UI.
+Extensions are TypeScript modules loaded into the Pi process. Their factory functions register tools, commands, providers, and event handlers, and can show dialogs through the client's [extension UI](rpc-extension-ui.md).
 
-Skills provide on-demand instructions and supporting files. Prompt templates provide reusable message text. Themes provide terminal colors. Pi packages distribute these resources through npm or git.
+Skills provide on-demand instructions and supporting files. Prompt templates provide reusable message text. Themes provide the colors of HTML session exports. Pi packages distribute these resources through npm or git.
 
 ## Trust and permissions
 

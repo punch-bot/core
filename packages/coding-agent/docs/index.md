@@ -1,6 +1,6 @@
 # Pi
 
-Pi is an extensible AI agent that works from your terminal. Give it a goal and a working folder, and it can inspect files, run commands, edit content, and work through multi-step tasks.
+Pi is an extensible AI agent that runs as a command-line process. Give it a goal and a working folder, and it can inspect files, run commands, edit content, and work through multi-step tasks.
 
 Use Pi for software development, research notes, writing projects, data files, or hobby work. You can use Pi as is, prompt it to adapt itself to your workflow, or build other applications powered by Pi using the SDK.
 
@@ -10,7 +10,7 @@ New to Pi? Follow the [Quickstart](quickstart.md) to install Pi, connect a model
 
 If Pi is already installed, choose what you want to do:
 
-- [Use Pi interactively](usage.md) to add files, run commands, direct ongoing work, and export results.
+- [Run Pi](usage.md) in print, JSON, or RPC mode to add files, direct ongoing work, and export results.
 - [Choose a model](models.md) or connect a subscription, API key, local model, or compatible endpoint.
 - [Continue or branch a session](sessions.md) to resume work or explore another approach without losing history.
 - [Configure Pi](configuration.md) for your preferences, working folders, instructions, and reusable resources.
@@ -18,7 +18,7 @@ If Pi is already installed, choose what you want to do:
 
 ## Customize Pi
 
-Pi can reuse prompts, load specialized instructions, add executable integrations, change its terminal interface, connect model services, and distribute these resources as packages.
+Pi can reuse prompts, load specialized instructions, add executable integrations, connect model services, and distribute these resources as packages.
 Use the [Quickstart customization chooser](quickstart.md#choose-how-to-customize-pi) to select the smallest mechanism that meets your need.
 
 ## Automate or embed Pi
@@ -32,7 +32,7 @@ Use the [Quickstart customization chooser](quickstart.md#choose-how-to-customize
 
 Use the reference pages to look up [CLI options](cli.md), [settings](settings.md), [providers](providers.md), and [environment variables](environment-variables.md).
 
-For platform-specific help, see [Terminal Setup](terminal-setup.md), [Windows](windows.md), [tmux](tmux.md), [Termux on Android](termux.md), or [Containerization](containerization.md).
+For platform-specific help, see [Windows](windows.md), [Termux on Android](termux.md), or [Containerization](containerization.md).
 
 ## Work safely
 

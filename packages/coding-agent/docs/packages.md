@@ -16,7 +16,7 @@ pi install ./local-package
 
 `pi list` shows configured packages. Use `pi remove <source>` to remove one and `pi update --extensions` to reconcile package installations. See [Command Line](cli.md#package-commands) for every package command and option.
 
-If a configured package fails to install at startup, for example because npm cannot reach the registry, Pi warns about it, skips that package's resources, and keeps running. Pi tries to install it again on the next start or `/reload`. `pi install` and `pi update --extensions` still report the failure and exit non-zero.
+If a configured package fails to install at startup, for example because npm cannot reach the registry, Pi warns about it, skips that package's resources, and keeps running. Pi tries to install it again on the next start or reload. `pi install` and `pi update --extensions` still report the failure and exit non-zero.
 
 Personal installs are written to `~/.pi/agent/settings.json`. Add `--local` or `-l` to write the package declaration to `.pi/settings.json`. Pi reads declarations from that file only after project trust is granted.
 
@@ -28,7 +28,7 @@ Use `--extension` or `-e` to try a package for one invocation without adding it 
 pi -e npm:@example/pi-tools
 ```
 
-Pi caches `-e` packages under `~/.pi/agent/tmp/extensions/` and checks them on every start and `/reload`. An npm package is reinstalled when the registry has a newer version that matches the specification. A version pinned to an exact number, such as `@1.2.3`, is not checked. A git package is fetched and reset to the remote branch or ref. A ref that is a commit hash already checked out is not fetched. If the check fails or offline mode is on, Pi loads the cached copy.
+Pi caches `-e` packages under `~/.pi/agent/tmp/extensions/` and checks them on every start and reload. An npm package is reinstalled when the registry has a newer version that matches the specification. A version pinned to an exact number, such as `@1.2.3`, is not checked. A git package is fetched and reset to the remote branch or ref. A ref that is a commit hash already checked out is not fetched. If the check fails or offline mode is on, Pi loads the cached copy.
 
 ## Choose a source
 
@@ -77,13 +77,11 @@ Paths are relative to the package root. Arrays accept glob patterns and exclusio
 
 The `pi-package` keyword makes an npm package eligible for discovery in the [Pi package gallery](https://pi.dev/packages). Optional `pi.image` and `pi.video` fields add gallery previews.
 
-## Show a changelog
+## Point to a changelog
 
-After a package update, Pi can show what changed. On the next fresh launch, Pi reads the package changelog and shows entries newer than the last seen version under "Extension Updates", the same way it shows its own changelog. The first time Pi sees a package, it records the version without showing anything.
+Pi does not display package changelogs. It resolves each package's changelog path and reports it as `changelogPath` in the source information of the package's resources, for example in RPC [`get_commands`](rpc-commands.md#get_commands) results, so clients can show it.
 
-This applies to packages that load at least one extension. Packages that only provide skills, prompt templates, or themes do not show a changelog.
-
-By default Pi reads `CHANGELOG.md` from the package root. Point `pi.changelogPath` at another file inside the package, or set it to `""` to disable the changelog:
+By default Pi uses `CHANGELOG.md` from the package root. Point `pi.changelogPath` at another file inside the package, or set it to `""` to report none:
 
 ```json
 {
@@ -94,8 +92,6 @@ By default Pi reads `CHANGELOG.md` from the package root. Point `pi.changelogPat
   }
 }
 ```
-
-Use version headings in the same format as Pi's changelog, such as `## [1.2.0]` or `## 1.2.0 - 2026-01-01`. Entries are matched against the `version` field in `package.json`, so a git package only shows a changelog when that field increases. The `collapseChangelog` setting condenses the section to one line per package, such as `Updated my-pi-package to v1.2.0.` Unlike Pi's own changelog, `/changelog` does not show package changelogs, so read the package's changelog file or repository for details.
 
 ## Declare dependencies
 
@@ -142,7 +138,7 @@ For each resource type:
 
 Filters narrow the package manifest. They do not expose resources that the package itself did not declare.
 
-Run `pi config` to enable or disable discovered resources and pi's built-in extensions. It starts with personal configuration; press Tab to switch scope, or run `pi config --local` to start with project overrides.
+Enable or disable discovered resources and Pi's built-in extensions by editing the resource arrays in [settings](settings.md#resources). Run `pi config` to print the resolved resources as JSON, or `pi config --local` to print them with project overrides.
 
 ## Understand scope and identity
 

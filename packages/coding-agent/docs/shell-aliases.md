@@ -9,7 +9,7 @@ Use `shellPath` to choose the Bash executable and `shellCommandPrefix` to run se
 | Command source | Shell |
 |---|---|
 | Model calls the built-in `bash` tool | Pi's resolved Bash executable |
-| You enter `!command` or `!!command` | The same resolved Bash executable |
+| An RPC client sends the [`bash`](rpc-commands.md#bash) command | The same resolved Bash executable |
 | Model calls the optional `powershell` tool | PowerShell 7 (`pwsh.exe`) or Windows PowerShell |
 | An extension provides or replaces a shell tool | The operations implemented by that extension |
 
@@ -33,11 +33,11 @@ On Windows, use forward slashes or escape backslashes:
 }
 ```
 
-Run `/reload` after changing the setting. See [Run Pi on Windows](windows.md) for the native Windows defaults.
+Restart Pi after changing the setting. See [Run Pi on Windows](windows.md) for the native Windows defaults.
 
 ## Run setup before every Bash command
 
-Set `shellCommandPrefix` to prepend shell setup to both the built-in `bash` tool and user-entered `!` or `!!` commands:
+Set `shellCommandPrefix` to prepend shell setup to both the built-in `bash` tool and the RPC `bash` command:
 
 ```json
 {
@@ -66,10 +66,10 @@ Then configure Pi to enable alias expansion and load the file:
 }
 ```
 
-Run `/reload`, then verify the alias through Pi:
+Then verify the alias through Pi:
 
-```text
-!ll
+```bash
+pi --tools bash -p "Run the shell command ll and show its output."
 ```
 
 The command should produce the same listing as `ls -la`.
@@ -78,7 +78,7 @@ Aliases must use Bash-compatible syntax. Do not source an arbitrary `.zshrc` int
 
 ## Troubleshooting
 
-### The prefix works for `!` but not for an extension tool
+### The prefix works for the built-in tool but not for an extension tool
 
 `shellCommandPrefix` configures Pi's built-in Bash execution. An extension that replaces the `bash` tool or provides its own shell operations controls its own setup. Check that extension's documentation.
 

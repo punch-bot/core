@@ -6,7 +6,7 @@ Extensions are TypeScript modules that extend pi's behavior. They can subscribe 
 
 An extension runs inside the pi process with the same operating-system permissions. It can inspect prompts, tool calls, files, credentials, and session history, so load extensions only from sources you trust.
 
-> **Placement for /reload:** Put extensions in `~/.pi/agent/extensions/` (global) or `.pi/extensions/` (project-local) for auto-discovery. Use `pi -e ./path.ts` only for quick tests. Extensions in auto-discovered locations can be hot-reloaded with `/reload`.
+> **Placement for reload:** Put extensions in `~/.pi/agent/extensions/` (global) or `.pi/extensions/` (project-local) for auto-discovery. Use `pi -e ./path.ts` only for quick tests. Extensions in auto-discovered locations are reloaded by [`ctx.reload()`](#ctxreload) and in the next Pi process.
 
 **Key capabilities:**
 - **Custom tools** - Register tools the LLM can call via `pi.registerTool()`
@@ -370,11 +370,11 @@ Session startup and replacement follow a separate lifecycle:
 flowchart TD
     Startup["Process startup"] --> Trust["project_trust when needed"]
     Trust --> SessionStart["session_start"]
-    Switch["/new or /resume"] --> BeforeSwitch["session_before_switch"]
-    Fork["/fork or /clone"] --> BeforeFork["session_before_fork"]
+    Switch["new_session or switch_session"] --> BeforeSwitch["session_before_switch"]
+    Fork["fork or clone"] --> BeforeFork["session_before_fork"]
     BeforeSwitch --> Shutdown["session_shutdown"]
     BeforeFork --> Shutdown
-    Reload["/reload"] --> Shutdown
+    Reload["ctx.reload()"] --> Shutdown
     Exit["exit"] --> Shutdown
     Shutdown --> Replacing{"Replacing the runtime?"}
     Replacing -->|yes| ReplacementTrust["project_trust when the working directory is new"]
@@ -390,10 +390,10 @@ Other operations change the current session without replacing the runtime:
 
 | Operation | Events |
 |---|---|
-| `/compact` or automatic compaction | `session_before_compact` (can cancel or customize), then `session_compact` or `session_compact_failed` |
-| `/tree` navigation | `session_before_tree` (can cancel or customize), then `session_tree` |
-| `/name` or `pi.setSessionName()` | `session_info_changed` |
-| `/model`, RPC `set_model`, or model cycling (RPC `cycle_model`) | `thinking_level_select` if the level changes or is clamped, then `model_select` |
+| RPC `compact`, `ctx.compact()`, or automatic compaction | `session_before_compact` (can cancel or customize), then `session_compact` or `session_compact_failed` |
+| `ctx.navigateTree()` | `session_before_tree` (can cancel or customize), then `session_tree` |
+| `--name`, RPC `set_session_name`, or `pi.setSessionName()` | `session_info_changed` |
+| RPC `set_model`, model cycling (RPC `cycle_model`), or `pi.setModel()` | `thinking_level_select` if the level changes or is clamped, then `model_select` |
 | Thinking-level change (settings, RPC `set_thinking_level` or `cycle_thinking_level`, `pi.setThinkingLevel()`) | `thinking_level_select` |
 | RPC `bash` command | `user_bash` (can intercept) |
 | Extension dialog waits for the user | `ui_prompt_start`, `ui_prompt_end` |
@@ -422,7 +422,7 @@ Notification handlers should not perform slow work on a streaming event. Transfo
 
 #### project_trust
 
-Fired before pi decides whether to trust a project with dynamic configs (`.pi` or `.agents/skills`). It runs during startup and when session replacement (for example `/resume`) enters a cwd whose trust has not been resolved in the current process. Only user/global extensions and CLI `-e` extensions participate; project-local extensions are not loaded until after trust is resolved.
+Fired before pi decides whether to trust a project with dynamic configs (`.pi` or `.agents/skills`). It runs during startup and when session replacement (for example RPC `switch_session`) enters a cwd whose trust has not been resolved in the current process. Only user/global extensions and CLI `-e` extensions participate; project-local extensions are not loaded until after trust is resolved.
 
 ```typescript
 pi.on("project_trust", async (event, ctx) => {
@@ -478,7 +478,7 @@ pi.on("session_start", async (event, ctx) => {
 
 #### session_info_changed
 
-Fired when the current session display name is set via `/name`, RPC, or `pi.setSessionName()`.
+Fired when the current session display name is set via `--name`, RPC `set_session_name`, or `pi.setSessionName()`.
 
 ```typescript
 pi.on("session_info_changed", async (event, ctx) => {
@@ -489,7 +489,7 @@ pi.on("session_info_changed", async (event, ctx) => {
 
 #### session_before_switch
 
-Fired before starting a new session (`/new`) or switching sessions (`/resume`).
+Fired before starting a new session (RPC `new_session`, `ctx.newSession()`) or switching sessions (RPC `switch_session`, `ctx.switchSession()`).
 
 ```typescript
 pi.on("session_before_switch", async (event, ctx) => {
@@ -508,12 +508,12 @@ Do cleanup work in `session_shutdown`, then reestablish any in-memory state in `
 
 #### session_before_fork
 
-Fired when forking via `/fork` or cloning via `/clone`.
+Fired when forking via RPC `fork` or cloning via RPC `clone`, or through `ctx.fork()`.
 
 ```typescript
 pi.on("session_before_fork", async (event, ctx) => {
   // event.entryId - ID of the selected entry
-  // event.position - "before" for /fork, "at" for /clone
+  // event.position - "before" for fork, "at" for clone
   return { cancel: true }; // Cancel fork/clone
   // OR
   return { skipConversationRestore: true }; // Reserved for future conversation restore control
@@ -533,7 +533,7 @@ Fired on compaction. See [compaction.md](compaction.md) for details.
 pi.on("session_before_compact", async (event, ctx) => {
   const { preparation, branchEntries, customInstructions, reason, willRetry, signal } = event;
 
-  // reason - "manual" (/compact), "threshold", or "overflow"
+  // reason - "manual" (RPC `compact` or `ctx.compact()`), "threshold", or "overflow"
   // willRetry - whether the aborted turn is retried after compaction (overflow recovery)
 
   // Cancel:
@@ -553,12 +553,12 @@ pi.on("session_before_compact", async (event, ctx) => {
 pi.on("session_compact", async (event, ctx) => {
   // event.compactionEntry - the saved compaction
   // event.fromExtension - whether extension provided it
-  // event.reason - "manual" (/compact), "threshold", or "overflow"
+  // event.reason - "manual" (RPC `compact` or `ctx.compact()`), "threshold", or "overflow"
   // event.willRetry - whether the aborted turn is retried after compaction (overflow recovery)
 });
 
 pi.on("session_compact_failed", async (event, ctx) => {
-  // event.reason - "manual" (/compact), "threshold", or "overflow"
+  // event.reason - "manual" (RPC `compact` or `ctx.compact()`), "threshold", or "overflow"
   // event.errorMessage - present for non-abort failures
   // event.aborted - true for cancelled/aborted compactions
   // event.willRetry - whether the aborted turn would have retried after compaction
@@ -568,7 +568,7 @@ pi.on("session_compact_failed", async (event, ctx) => {
 
 #### session_before_tree / session_tree
 
-Fired on `/tree` navigation. See [Sessions](sessions.md) for tree navigation concepts.
+Fired on `ctx.navigateTree()`. See [Sessions](sessions.md) for tree navigation concepts.
 
 ```typescript
 pi.on("session_before_tree", async (event, ctx) => {
@@ -926,7 +926,7 @@ Return `{ action: "warm" }` or `{ action: "stop" }` to override; the last handle
 
 #### model_select
 
-Fired when the model changes via `/model` command, model cycling (RPC `cycle_model`), or `pi.setModel()`. Restoring a session does not fire it; read `ctx.model` in `session_start` to initialize model-dependent state.
+Fired when the model changes via RPC `set_model`, model cycling (RPC `cycle_model`), or `pi.setModel()`. Restoring a session does not fire it; read `ctx.model` in `session_start` to initialize model-dependent state.
 
 ```typescript
 pi.on("model_select", async (event, ctx) => {
@@ -943,7 +943,7 @@ pi.on("model_select", async (event, ctx) => {
 });
 ```
 
-Use this to update UI elements (status bars, footers) or perform model-specific initialization when the active model changes.
+Use this to update UI elements such as status entries or perform model-specific initialization when the active model changes.
 
 #### thinking_level_select
 
@@ -1071,7 +1071,7 @@ pi.on("tool_result", async (event, ctx) => {
 
 #### user_bash
 
-Fired when user executes `!` or `!!` commands. **Can intercept.**
+Fired when an RPC client runs the [`bash`](rpc-commands.md#bash) command. `excludeFromContext` is `true` when the output should stay out of model context. **Can intercept.**
 
 ```typescript
 import { createLocalBashOperations } from "@punch-bot/cli";
@@ -1211,7 +1211,7 @@ ctx.sessionManager.getLeafId()              // Current leaf entry ID
 
 Access to models, providers, and resolved authentication. `ctx.modelRegistry.getProvider(id)` returns the effective pi-ai provider, while `getProviderAuth(id)` resolves its current API key, headers, base URL, and provider-scoped environment without requiring a loaded model. `ctx.model` is the active model, and `ctx.thinkingLevel` is its current effective thinking level.
 
-`ctx.scopedModels` is the read-only list of models scoped to the current session — the same set the `/scoped-models` command shows. It is resolved at session start from the `--models` CLI flag and the `enabledModels` setting (matched against the available catalogue with minimatch on `provider/modelId` or a bare `modelId`). It is empty when no scoping is configured, meaning every available model is usable. Each entry is `{ model, thinkingLevel? }`, where `thinkingLevel` is set only when a pattern pinned it (e.g. `anthropic/*:high`). Use it to populate a model picker that mirrors the built-in one instead of enumerating the whole catalogue via `ctx.modelRegistry.getAvailable()`.
+`ctx.scopedModels` is the read-only list of models scoped to the current session — the same set RPC `cycle_model` cycles through. It is resolved at session start from the `--models` CLI flag and the `enabledModels` setting (matched against the available catalogue with minimatch on `provider/modelId` or a bare `modelId`). It is empty when no scoping is configured, meaning every available model is usable. Each entry is `{ model, thinkingLevel? }`, where `thinkingLevel` is set only when a pattern pinned it (e.g. `anthropic/*:high`). Use it to populate a model picker that mirrors the built-in one instead of enumerating the whole catalogue via `ctx.modelRegistry.getAvailable()`.
 
 #### Streaming model calls
 
@@ -1395,8 +1395,8 @@ if (cloneResult.cancelled) {
 ```
 
 Options:
-- `position`: `"before"` (default) forks before the selected user message, restoring that prompt into the editor
-- `position`: `"at"` duplicates the active path through the selected entry without restoring editor text
+- `position`: `"before"` (default) forks before the selected user message; RPC `fork` returns that prompt's text
+- `position`: `"at"` duplicates the active path through the selected entry
 - `withSession`: run post-switch work against a fresh replacement-session context. Do not use captured old `pi` / command `ctx`; see [Session replacement lifecycle and footguns](#session-replacement-lifecycle-and-footguns).
 
 ### ctx.navigateTree(targetId, options?)
@@ -1506,7 +1506,7 @@ pi.registerCommand("handoff", {
 
 ### ctx.reload()
 
-Run the same reload flow as `/reload`.
+Reload settings, extensions, skills, prompt templates, themes, and context files in the running session.
 
 ```typescript
 pi.registerCommand("reload-runtime", {
@@ -1688,7 +1688,7 @@ pi.on("session_start", async (_event, ctx) => {
 
 ### pi.setSessionName(name)
 
-Set the session display name (shown in session selector instead of first message).
+Set the session display name, returned by RPC `get_state` and stored as a `session_info` entry.
 
 ```typescript
 pi.setSessionName("Refactor auth module");
@@ -1707,7 +1707,7 @@ if (name) {
 
 ### pi.setLabel(entryId, label)
 
-Set or clear a label on an entry. Labels are user-defined markers for bookmarking and navigation (shown in `/tree` selector).
+Set or clear a label on an entry. Labels are user-defined markers for bookmarking and navigation, returned with RPC `get_tree` entries.
 
 ```typescript
 // Set a label
@@ -1889,7 +1889,7 @@ pi.events.emit("my:event", { ... });
 
 Register or override a model provider dynamically. Useful for proxies, custom endpoints, or team-wide model configurations.
 
-Calls made during the extension factory function are queued and applied once the runner initialises. Calls made after that — for example from a command handler following a user setup flow — take effect immediately without requiring a `/reload`.
+Calls made during the extension factory function are queued and applied once the runner initialises. Calls made after that — for example from a command handler following a user setup flow — take effect immediately without requiring a reload.
 
 Dynamic providers can implement `refreshModels`. Pi calls it during model refresh, publishes the returned list synchronously through the provider, and passes the canonical credential/stored-catalog/network/signal context. The extension decides whether to persist catalog metadata through generation-checked `context.publish({ persist: entry })`; live servers such as llama.cpp can return models without persisting them.
 
@@ -1970,7 +1970,7 @@ pi.registerProvider("anthropic", {
   baseUrl: "https://proxy.example.com"
 });
 
-// Register provider with OAuth support for /login
+// Register provider with OAuth support
 pi.registerProvider("corporate-ai", {
   baseUrl: "https://ai.corp.com",
   api: "openai-responses",
@@ -1998,15 +1998,15 @@ pi.registerProvider("corporate-ai", {
 The object form accepts a complete pi-ai `Provider`, including native `auth`, `getModels`, `refreshModels`, `filterModels`, `stream`, and `streamSimple` behavior.
 
 **Legacy config options:**
-- `name` - Display name for the provider in UI such as `/login`.
+- `name` - Display name for the provider.
 - `baseUrl` - API endpoint URL. Each defined model needs one, from the model definition or the provider.
-- `apiKey` - API key literal, environment interpolation (`$ENV_VAR` or `${ENV_VAR}`), or leading `!command`. Optional: without it, users store a key with `pi auth login`. `$$` escapes `$`, and `$!` escapes a literal `!` without triggering command execution.
+- `apiKey` - API key literal, environment interpolation (`$ENV_VAR` or `${ENV_VAR}`), or leading `!command`. Optional: without it, users store a key in `auth.json`. `$$` escapes `$`, and `$!` escapes a literal `!` without triggering command execution.
 - `api` - API type: `"anthropic-messages"`, `"openai-completions"`, `"openai-responses"`, etc.
 - `headers` - Custom headers to include in requests.
 - `authHeader` - If true, adds `Authorization: Bearer` header automatically.
 - `models` - Array of model definitions. If provided, replaces all existing models for this provider. Model definitions can set `baseUrl` to override the provider endpoint for that model.
 - `refreshModels` - Async dynamic discovery callback. Its returned models replace extension-provided models. `context.stored` contains the persisted provider snapshot; use generation-checked `context.publish({ persist: entry })` only when updated catalog data should persist. Use `persist: null` to delete that snapshot.
-- `oauth` - OAuth provider config for `/login` support. When provided, the provider appears in the login menu.
+- `oauth` - OAuth provider config. `pi auth login` does not load extensions and the headless modes have no login command, so only SDK applications can run this flow, through `session.modelRuntime.login()`.
 - `streamSimple` - Custom streaming implementation for non-standard APIs.
 
 See [custom-provider.md](custom-provider.md) for advanced topics: custom streaming APIs, OAuth details, model definition reference.
@@ -2015,7 +2015,7 @@ See [custom-provider.md](custom-provider.md) for advanced topics: custom streami
 
 Remove a previously registered provider and its models. Built-in models that were overridden by the provider are restored. Has no effect if the provider was not registered.
 
-Like `registerProvider`, this takes effect immediately when called after the initial load phase, so a `/reload` is not required.
+Like `registerProvider`, this takes effect immediately when called after the initial load phase, so no reload is required.
 
 ```typescript
 pi.registerCommand("my-setup-teardown", {
@@ -2060,7 +2060,7 @@ export default function (pi: ExtensionAPI) {
     }
   };
   pi.on("session_start", async (_event, ctx) => reconstruct(ctx));
-  pi.on("session_tree", async (_event, ctx) => reconstruct(ctx)); // /tree changes the branch
+  pi.on("session_tree", async (_event, ctx) => reconstruct(ctx)); // ctx.navigateTree() changes the branch
 
   pi.registerTool({
     name: "my_tool",
@@ -2181,7 +2181,7 @@ pi.registerTool({
 
 **Result fields:** Every result, including partial results passed to `onUpdate`, needs model-facing `content` and a `details` value. Use `details: undefined` when there is nothing to store; the type of `details` must match across all results of the tool.
 
-**Usage accounting:** If a tool makes nested LLM calls, return their combined `Usage` as `usage`. Pi persists it on the tool result and includes it in footer, `/session`, and RPC session totals. `tool_result` handlers can inspect or replace this value.
+**Usage accounting:** If a tool makes nested LLM calls, return their combined `Usage` as `usage`. Pi persists it on the tool result and includes it in RPC `get_session_stats` and SDK session totals. `tool_result` handlers can inspect or replace this value.
 
 **Signaling errors:** To mark a tool execution as failed, throw an error from `execute`, or return a result with `isError: true`. Both report an error result to the LLM; a returned result also keeps `details` and `structuredContent` for rendering and scripts. Other returned values never set the error flag.
 
@@ -2658,7 +2658,7 @@ These methods are fire-and-forget. RPC mode forwards them to the client:
 ctx.ui.setStatus("my-ext", "Processing...");
 ctx.ui.setStatus("my-ext", undefined);  // Clear
 
-// Widget of text lines, above the editor by default
+// Widget of text lines; placement tells the RPC client where to show it
 ctx.ui.setWidget("my-widget", ["Line 1", "Line 2"]);
 ctx.ui.setWidget("my-widget", ["Line 1", "Line 2"], { placement: "belowEditor" });
 ctx.ui.setWidget("my-widget", undefined);  // Clear
@@ -2749,7 +2749,7 @@ All examples in [examples/extensions/](../examples/extensions/).
 | `event-bus.ts` | Inter-extension events | `pi.events` |
 | **Session Metadata** |||
 | `session-name.ts` | Name sessions | `setSessionName`, `getSessionName` |
-| `bookmark.ts` | Bookmark entries for /tree | `setLabel` |
+| `bookmark.ts` | Bookmark entries for tree navigation | `setLabel` |
 | **Misc** |||
 | `commands.ts` | List available slash commands | `getCommands` |
 | `dynamic-resources/` | Add skills, prompts, and themes at runtime | `on("resources_discover")` |
