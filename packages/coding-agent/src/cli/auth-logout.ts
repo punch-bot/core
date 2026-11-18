@@ -1,7 +1,7 @@
 import type { CredentialInfo } from "@punch-bot/ai";
 import { APP_NAME } from "../config.ts";
 import { CredentialSynchronizationError, type ModelRuntime } from "../core/model-runtime.ts";
-import { findMatchingProviders } from "../core/provider-matching.ts";
+import { findProvider } from "../core/provider-matching.ts";
 import { replaceControlCharacters } from "../utils/text.ts";
 import type { AuthOutput } from "./auth-terminal.ts";
 
@@ -33,9 +33,16 @@ export async function runAuthLogout(args: string[], options: AuthLogoutOptions):
 		terminal.error(`Could not read stored credentials: ${error instanceof Error ? error.message : String(error)}`);
 		return 1;
 	}
-	const provider = findMatchingProviders(modelRuntime.getProviders(), providerRef)[0];
-	// A credential whose provider is gone, for example after its extension was removed, still matches by id.
-	const credential = stored.find((candidate) => candidate.providerId === (provider?.id ?? providerRef));
+	const ref = providerRef.trim().toLowerCase();
+	const loaded = findProvider(modelRuntime.getProviders(), providerRef);
+	// An exact stored id wins over a provider that only shares the display name, so a credential whose extension was
+	// removed is still found and another provider's credential is not.
+	const storedById =
+		loaded?.id.toLowerCase() === ref
+			? undefined
+			: stored.find((candidate) => candidate.providerId.toLowerCase() === ref);
+	const provider = storedById ? undefined : loaded;
+	const credential = storedById ?? stored.find((candidate) => candidate.providerId === provider?.id);
 	if (!provider && !credential) {
 		terminal.error(`Unknown provider "${replaceControlCharacters(providerRef)}".`);
 		const storedIds = stored.map((credential) => credential.providerId).sort();

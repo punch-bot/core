@@ -154,6 +154,17 @@ async function createAuthModelRuntime(
 	return modelRuntime;
 }
 
+/**
+ * Exit once output is written. These commands load extensions without a session, so nothing emits `session_shutdown`
+ * to close what an extension opened when it loaded, such as a watcher, and the process would otherwise keep running.
+ */
+async function exitAfterExtensionCommand(exitCode: number): Promise<never> {
+	for (const stream of [process.stdout, process.stderr]) {
+		if (stream.writableLength > 0) await new Promise<void>((resolve) => stream.once("drain", resolve));
+	}
+	process.exit(exitCode);
+}
+
 async function runAuthLoginCommand(args: string[], extensionFactories: InlineExtension[]): Promise<number> {
 	const cwd = process.cwd();
 	const agentDir = getAgentDir();
@@ -182,6 +193,7 @@ async function runAuthLoginCommand(args: string[], extensionFactories: InlineExt
 		});
 	} finally {
 		process.off("SIGINT", interrupt);
+		await settingsManager.flush();
 	}
 }
 
@@ -205,16 +217,20 @@ async function runAuthCommand(args: string[], extensionFactories: InlineExtensio
 	}
 	if (args[0] === "auth" && args[1] === "login") {
 		// main() already applied --offline.
-		process.exitCode = await runAuthLoginCommand(
-			args.slice(2).filter((arg) => arg !== "--offline"),
-			extensionFactories,
+		await exitAfterExtensionCommand(
+			await runAuthLoginCommand(
+				args.slice(2).filter((arg) => arg !== "--offline"),
+				extensionFactories,
+			),
 		);
 		return true;
 	}
 	if (args[0] === "auth" && args[1] === "logout") {
-		process.exitCode = await runAuthLogoutCommand(
-			args.slice(2).filter((arg) => arg !== "--offline"),
-			extensionFactories,
+		await exitAfterExtensionCommand(
+			await runAuthLogoutCommand(
+				args.slice(2).filter((arg) => arg !== "--offline"),
+				extensionFactories,
+			),
 		);
 		return true;
 	}

@@ -1,7 +1,7 @@
 import type { AuthInteraction, AuthPrompt, AuthType, Provider } from "@punch-bot/ai";
 import { APP_NAME, getAuthPath } from "../config.ts";
 import { CredentialSynchronizationError, type ModelRuntime } from "../core/model-runtime.ts";
-import { findMatchingProviders } from "../core/provider-matching.ts";
+import { findProvider } from "../core/provider-matching.ts";
 import { RADIUS_PROVIDER_ID } from "../core/radius.ts";
 import { planRadiusMcpServer } from "../core/radius-mcp.ts";
 import { addMcpServerConfig } from "../extensions/mcp/config.ts";
@@ -43,7 +43,7 @@ export async function runAuthLogin(args: string[], options: AuthLoginOptions): P
 	const { request } = parsed;
 	const { providerRef } = request;
 
-	const provider = findMatchingProviders(modelRuntime.getProviders(), providerRef)[0];
+	const provider = findProvider(modelRuntime.getProviders(), providerRef);
 	if (!provider) {
 		const loginProviders = modelRuntime
 			.getProviders()

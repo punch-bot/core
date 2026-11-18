@@ -311,13 +311,18 @@ async function runSingleAgent(
 					currentResult.stderr = result.error ?? "A2A delegation failed";
 					currentResult.stopReason = "error";
 					currentResult.errorMessage = currentResult.stderr;
-				} else if (result.text) {
-					currentResult.messages = [
-						{
-							role: "assistant",
-							content: [{ type: "text", text: result.text }],
-						} as Message,
-					];
+					currentResult.status = "failed";
+				} else {
+					if (result.text) {
+						currentResult.messages = [
+							{
+								role: "assistant",
+								content: [{ type: "text", text: result.text }],
+							} as Message,
+						];
+					}
+					currentResult.exitCode = 0;
+					currentResult.status = "completed";
 				}
 			} catch (error) {
 				if (signal?.aborted) {
@@ -327,6 +332,7 @@ async function runSingleAgent(
 				currentResult.stderr = error instanceof Error ? error.message : String(error);
 				currentResult.stopReason = "error";
 				currentResult.errorMessage = currentResult.stderr;
+				currentResult.status = "failed";
 			}
 			emitUpdate();
 			return currentResult;

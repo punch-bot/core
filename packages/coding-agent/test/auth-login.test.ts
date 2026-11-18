@@ -485,8 +485,8 @@ describe("pi auth login command", () => {
 	test("finds providers that builtin extensions register", async () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "pi-auth-login-"));
 		const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
-		const originalExitCode = process.exitCode;
 		const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+		const exit = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
 		try {
 			process.env.PI_CODING_AGENT_DIR = agentDir;
 			await main(["auth", "login", "llama.cpp"]);
@@ -494,9 +494,10 @@ describe("pi auth login command", () => {
 			// Not a terminal in tests, so login stops after finding the provider.
 			expect(output).toContain("requires an interactive terminal");
 			expect(output).not.toContain("Unknown provider");
+			expect(exit).toHaveBeenCalledWith(1);
 		} finally {
 			stderr.mockRestore();
-			process.exitCode = originalExitCode;
+			exit.mockRestore();
 			if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 			else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
 			rmSync(agentDir, { recursive: true, force: true });
