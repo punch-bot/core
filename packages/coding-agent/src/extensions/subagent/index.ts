@@ -519,9 +519,6 @@ const SubagentParams = Type.Object({
 	tasks: Type.Optional(Type.Array(TaskItem, { description: "Array of {agent, task} for parallel execution" })),
 	chain: Type.Optional(Type.Array(ChainItem, { description: "Array of {agent, task} for sequential execution" })),
 	agentScope: Type.Optional(AgentScopeSchema),
-	confirmProjectAgents: Type.Optional(
-		Type.Boolean({ description: "Prompt before running project-local agents. Default: true.", default: true }),
-	),
 	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process (single mode)" })),
 });
 
@@ -552,7 +549,6 @@ export default function (pi: ExtensionAPI) {
 			};
 			const discovery = discoverAgents(ctx.cwd, agentScope);
 			const agents = discovery.agents;
-			const confirmProjectAgents = params.confirmProjectAgents ?? true;
 
 			const hasChain = (params.chain?.length ?? 0) > 0;
 			const hasTasks = (params.tasks?.length ?? 0) > 0;
@@ -588,7 +584,9 @@ export default function (pi: ExtensionAPI) {
 			);
 			const resolvedSingle = params.agent ? resolveAgent(ctx.cwd, agentScope, params.agent, params.cwd) : undefined;
 
-			if ((agentScope === "project" || agentScope === "both") && confirmProjectAgents && ctx.hasUI) {
+			// Project agents are repo-controlled prompts. Outside the session's trusted project only the user can approve
+			// them, never the model: a prompt-injected model picks the agent, its cwd and any option the tool offers.
+			if (agentScope === "project" || agentScope === "both") {
 				let selectedAgents: ResolvedAgent[] = [];
 				if (hasChain) selectedAgents = resolvedChain;
 				else if (hasTasks) selectedAgents = resolvedTasks;
@@ -610,6 +608,17 @@ export default function (pi: ExtensionAPI) {
 				);
 				if (projectAgentsRequested.length > 0) {
 					const sources = projectAgentsRequested.map((agent) => `- ${agent.name}: ${agent.filePath}`).join("\n");
+					if (!ctx.hasUI) {
+						return {
+							content: [
+								{
+									type: "text",
+									text: `Refused: project-local agents from an untrusted project need approval in a UI, or the project must be trusted.\nSources:\n${sources}`,
+								},
+							],
+							details: makeDetails(hasChain ? "chain" : hasTasks ? "parallel" : "single", true)([]),
+						};
+					}
 					const ok = await ctx.ui.confirm(
 						"Run project-local agents?",
 						`Sources:\n${sources}\n\nProject agents are repo-controlled. Only continue for trusted repositories.`,

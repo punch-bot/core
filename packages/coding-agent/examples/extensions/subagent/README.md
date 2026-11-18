@@ -48,7 +48,7 @@ This tool executes a separate `pi` subprocess with a delegated system prompt and
 
 To enable project-local agents, pass `agentScope: "both"` (or `"project"`). Only do this for repositories you trust.
 
-When running interactively, the tool prompts for confirmation before running project-local agents unless the session trust context reports trusted and the agents come from that session project's `.pi/agents` directory. Agents loaded from another task `cwd` still require confirmation. Set `confirmProjectAgents: false` to disable confirmation.
+Project-local agents from the session's trusted project run without asking. Agents from any other project, including one a task `cwd` points into, need the user's confirmation in a UI; in print, JSON, or RPC mode without a UI they are refused. Trust the project to run its agents headless.
 
 ## Usage
 
