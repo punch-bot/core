@@ -415,17 +415,17 @@ describe("SettingsManager", () => {
 	});
 
 	describe("cacheWarming", () => {
-		it("defaults to streaming and ignores project settings", () => {
-			expect(SettingsManager.create(projectDir, agentDir).getCacheWarmingMode()).toBe("streaming");
-
-			writeFileSync(join(projectDir, ".pi", "settings.json"), JSON.stringify({ cacheWarming: "idle" }));
-			expect(SettingsManager.create(projectDir, agentDir).getCacheWarmingMode()).toBe("streaming");
-
-			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ cacheWarming: "idle" }));
+		it("defaults to idle and ignores project settings", () => {
 			expect(SettingsManager.create(projectDir, agentDir).getCacheWarmingMode()).toBe("idle");
 
-			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ cacheWarming: "bogus" }));
+			writeFileSync(join(projectDir, ".pi", "settings.json"), JSON.stringify({ cacheWarming: "streaming" }));
+			expect(SettingsManager.create(projectDir, agentDir).getCacheWarmingMode()).toBe("idle");
+
+			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ cacheWarming: "streaming" }));
 			expect(SettingsManager.create(projectDir, agentDir).getCacheWarmingMode()).toBe("streaming");
+
+			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ cacheWarming: "bogus" }));
+			expect(SettingsManager.create(projectDir, agentDir).getCacheWarmingMode()).toBe("idle");
 		});
 
 		it("persists the mode globally", async () => {
@@ -435,170 +435,6 @@ describe("SettingsManager", () => {
 
 			expect(SettingsManager.create(projectDir, agentDir).getCacheWarmingMode()).toBe("off");
 			expect(JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf8"))).toEqual({ cacheWarming: "off" });
-		});
-	});
-
-	describe("externalEditor", () => {
-		const originalVisual = process.env.VISUAL;
-		const originalEditor = process.env.EDITOR;
-		const originalPlatform = Object.getOwnPropertyDescriptor(process, "platform");
-
-		function setEditorEnv(visual?: string, editor?: string): void {
-			if (visual === undefined) delete process.env.VISUAL;
-			else process.env.VISUAL = visual;
-			if (editor === undefined) delete process.env.EDITOR;
-			else process.env.EDITOR = editor;
-		}
-
-		afterEach(() => {
-			setEditorEnv(originalVisual, originalEditor);
-			if (originalPlatform) {
-				Object.defineProperty(process, "platform", originalPlatform);
-			}
-		});
-
-		it("should resolve editor commands by precedence", () => {
-			setEditorEnv("vim", "nano");
-			expect(SettingsManager.inMemory({ externalEditor: "code --wait" }).getExternalEditorCommand()).toBe(
-				"code --wait",
-			);
-			expect(SettingsManager.inMemory().getExternalEditorCommand()).toBe("vim");
-
-			setEditorEnv(undefined, "emacs");
-			expect(SettingsManager.inMemory().getExternalEditorCommand()).toBe("emacs");
-		});
-
-		it("should fall back to platform defaults", () => {
-			setEditorEnv();
-			Object.defineProperty(process, "platform", { value: "win32" });
-			expect(SettingsManager.inMemory().getExternalEditorCommand()).toBe("notepad");
-
-			Object.defineProperty(process, "platform", { value: "darwin" });
-			expect(SettingsManager.inMemory().getExternalEditorCommand()).toBe("nano");
-
-			Object.defineProperty(process, "platform", { value: "linux" });
-			expect(SettingsManager.inMemory().getExternalEditorCommand()).toBe("nano");
-		});
-	});
-
-	describe("TUI mode", () => {
-		it("defaults to fullscreen and persists regular mode", async () => {
-			const manager = SettingsManager.create(projectDir, agentDir);
-
-			expect(manager.getTuiMode()).toBe("fullscreen");
-
-			manager.setTuiMode("regular");
-			await manager.flush();
-
-			expect(manager.getTuiMode()).toBe("regular");
-			const savedSettings = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf-8"));
-			expect(savedSettings.tuiMode).toBe("regular");
-		});
-
-		it("falls back to fullscreen for unsupported values", () => {
-			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ tuiMode: "other" }));
-
-			const manager = SettingsManager.create(projectDir, agentDir);
-
-			expect(manager.getTuiMode()).toBe("fullscreen");
-		});
-
-		it("does not recognize the old uiMode setting", () => {
-			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ uiMode: "regular" }));
-
-			const manager = SettingsManager.create(projectDir, agentDir);
-
-			expect(manager.getTuiMode()).toBe("fullscreen");
-		});
-	});
-
-	it("validates and persists fullscreen settings", async () => {
-		const manager = SettingsManager.create(projectDir, agentDir);
-		expect(manager.getFullscreenExitOutput()).toBe("transcript");
-		expect(manager.getFullscreenScrollbar()).toBe("auto");
-		expect(manager.getFullscreenCopyOnSelect()).toBe(true);
-
-		manager.setFullscreenExitOutput("resume-hint");
-		manager.setFullscreenScrollbar("hidden");
-		manager.setFullscreenCopyOnSelect(false);
-		await manager.flush();
-		const savedSettings = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf-8"));
-		expect(savedSettings.fullscreenExitOutput).toBe("resume-hint");
-		expect(savedSettings.fullscreenScrollbar).toBe("hidden");
-		expect(savedSettings.fullscreenCopyOnSelect).toBe(false);
-
-		writeFileSync(
-			join(agentDir, "settings.json"),
-			JSON.stringify({ fullscreenExitOutput: "nothing", fullscreenScrollbar: "sometimes" }),
-		);
-		const reloadedManager = SettingsManager.create(projectDir, agentDir);
-		expect(reloadedManager.getFullscreenExitOutput()).toBe("transcript");
-		expect(reloadedManager.getFullscreenScrollbar()).toBe("auto");
-		expect(reloadedManager.getFullscreenCopyOnSelect()).toBe(true);
-	});
-
-	// #9758: wheel scrolling defaults to auto, persists line counts, and ignores invalid values.
-	it("persists fullscreen wheel scroll lines", async () => {
-		const manager = SettingsManager.create(projectDir, agentDir);
-		expect(manager.getFullscreenWheelScrollLines()).toBe("auto");
-
-		manager.setFullscreenWheelScrollLines(3);
-		await manager.flush();
-		expect(JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf-8")).fullscreenWheelScrollLines).toBe(3);
-
-		for (const [value, expected] of [
-			[7.9, 7],
-			[0, 1],
-			[1000, 100],
-			["fast", "auto"],
-			[null, "auto"],
-		] as const) {
-			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ fullscreenWheelScrollLines: value }));
-			expect(SettingsManager.create(projectDir, agentDir).getFullscreenWheelScrollLines()).toBe(expected);
-		}
-	});
-
-	describe("outputPad", () => {
-		it("should default to 1 and persist binary values", async () => {
-			const manager = SettingsManager.create(projectDir, agentDir);
-
-			expect(manager.getOutputPad()).toBe(1);
-
-			manager.setOutputPad(0);
-			await manager.flush();
-
-			expect(manager.getOutputPad()).toBe(0);
-			const savedSettings = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf-8"));
-			expect(savedSettings.outputPad).toBe(0);
-		});
-
-		it("should treat unsupported outputPad values as default padding", () => {
-			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ outputPad: 2 }));
-
-			const manager = SettingsManager.create(projectDir, agentDir);
-
-			expect(manager.getOutputPad()).toBe(1);
-		});
-	});
-
-	describe("markdown.mermaid", () => {
-		it("defaults to streaming and persists rendering modes", async () => {
-			const manager = SettingsManager.create(projectDir, agentDir);
-
-			expect(manager.getMermaidRenderingMode()).toBe("streaming");
-
-			manager.setMermaidRenderingMode("final");
-			await manager.flush();
-
-			expect(manager.getMermaidRenderingMode()).toBe("final");
-			const savedSettings = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf-8"));
-			expect(savedSettings.markdown.mermaid).toBe("final");
-		});
-
-		it("falls back to streaming for unsupported values", () => {
-			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ markdown: { mermaid: "sometimes" } }));
-
-			expect(SettingsManager.create(projectDir, agentDir).getMermaidRenderingMode()).toBe("streaming");
 		});
 	});
 

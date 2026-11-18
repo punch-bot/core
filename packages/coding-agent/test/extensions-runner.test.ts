@@ -148,7 +148,7 @@ describe("ExtensionRunner", () => {
 				{ type: "project_trust", cwd: tempDir },
 				{
 					cwd: tempDir,
-					mode: "tui",
+					mode: "print",
 					hasUI: false,
 					ui: {
 						select: async () => undefined,
@@ -161,24 +161,6 @@ describe("ExtensionRunner", () => {
 
 			expect(result.result).toEqual({ trusted: "no", remember: true });
 			expect(result.errors).toEqual([]);
-		});
-	});
-
-	describe("shortcuts", () => {
-		it("collects registered shortcuts", async () => {
-			const extCode = `
-				export default function(pi) {
-					pi.registerShortcut("ctrl+shift+x", {
-						description: "Custom shortcut",
-						handler: async () => {},
-					});
-				}
-			`;
-			fs.writeFileSync(path.join(extensionsDir, "shortcut.ts"), extCode);
-			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
-			const shortcuts = runner.getShortcuts();
-			expect(shortcuts.has("ctrl+shift+x")).toBe(true);
 		});
 	});
 
@@ -392,17 +374,6 @@ describe("ExtensionRunner", () => {
 
 			const ctx = runner.createContext();
 			expect(ctx.mode).toBe("rpc");
-			expect(ctx.hasUI).toBe(true);
-		});
-
-		it("exposes tui mode with hasUI true when a TUI UI context is provided", async () => {
-			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
-			runner.bindCore(extensionActions, extensionContextActions);
-			runner.setUIContext({} as ExtensionUIContext, "tui");
-
-			const ctx = runner.createContext();
-			expect(ctx.mode).toBe("tui");
 			expect(ctx.hasUI).toBe(true);
 		});
 	});

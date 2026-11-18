@@ -2,7 +2,7 @@
 
 A virtual model is a selectable model that picks a physical model for each request. Use one to route by task, cost, or conversation state. For example, a router can send quick questions to a small model and hard problems to a large one, while the user selects a single model.
 
-Register virtual models from an [extension](extensions.md). They appear in `/model`, `--model`, scoped models, and settings like any other model. A virtual model can be listed under any provider, including one with physical models, such as `openai-codex/auto`.
+Register virtual models from an [extension](extensions.md). They appear in `--list-models`, `--model`, RPC `get_available_models`, scoped models, and settings like any other model. A virtual model can be listed under any provider, including one with physical models, such as `openai-codex/auto`.
 
 ## Selection and dispatch
 
@@ -20,11 +20,11 @@ Pi keeps the two pairs apart:
 | | Selection | Dispatch |
 |---|---|---|
 | Recorded in | `model_change` and `thinking_level_change` entries | Each assistant message: `provider`, `api`, `model`, `thinkingLevel` |
-| Visible as | `ctx.model`, `ctx.thinkingLevel`, `PI_MODEL`, `PI_REASONING_LEVEL`, `/model` | The assistant message of each response |
+| Visible as | `ctx.model`, `ctx.thinkingLevel`, `PI_MODEL`, `PI_REASONING_LEVEL`, RPC `get_state` | The assistant message of each response |
 
 Providers only receive physical models. Assistant messages name the physical model, so replaying a conversation across different physical models works the same as after a manual model switch. Resuming a session restores the virtual selection from its latest `model_change` entry. If the virtual model is no longer registered, Pi falls back to the physical model that answered last.
 
-In interactive mode, the footer shows the routed model next to the selection, for example `auto • high → gpt-5.6-luna • medium`. `/session` lists the cost for each physical model.
+Each assistant message records the physical model that answered, so per-model cost can be computed from the session entries.
 
 Context usage uses the limits of the physical model that produced the latest response, even if that response came before switching to the virtual model. Without such a response, it uses the limits declared on the virtual model, if any. Compaction checks the same limits, and again the limits of the model each request is routed to. If that model's context window is too small for the conversation, Pi compacts before sending the request; the route stays as the router chose it.
 
@@ -104,7 +104,7 @@ pi.registerVirtualModel<{ phase: "plan" | "build" }>({
 
 - State must be JSON-serializable. Returning `undefined` or `request.state` itself keeps the current state.
 - Pi stores any other returned object as new state, before the request is sent, even when it equals the current state. Return a new object only when the state changes. The state stays stored if the request later fails.
-- State follows the session tree, so forks and `/tree` navigation see the state of their branch. It survives compaction.
+- State follows the session tree, so forks and tree navigation see the state of their branch. It survives compaction.
 - `direct` requests have no state, and Pi ignores state they return.
 
 The transcript already records the selection and every dispatched model, and `ctx.sessionManager.getBranch()` exposes both.

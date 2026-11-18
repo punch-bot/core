@@ -1,0 +1,208 @@
+// Type-checks the example extensions against the modules extensions see at run time (core/extensions/virtual-modules.ts):
+// "@punch-bot/ai" is the extension view, which adds TypeBox's Type, Static and TSchema to the compat entry (the
+// view imports "@punch-bot/ai/compat", so that path stays the package's own).
+// The other paths repeat the root tsconfig.json; keep them in sync.
+{
+	"extends": "../../../tsconfig.json",
+	"compilerOptions": {
+		"paths": {
+			"@punch-bot/chord": [
+				"../../../packages/chord/src/index.ts"
+			],
+			"@punch-bot/chord/context": [
+				"../../../packages/chord/src/context/index.ts"
+			],
+			"@punch-bot/chord/delta": [
+				"../../../packages/chord/src/delta/index.ts"
+			],
+			"@punch-bot/chord/json": [
+				"../../../packages/chord/src/json.ts"
+			],
+			"@punch-bot/chord/watch": [
+				"../../../packages/chord/src/watch.ts"
+			],
+			"@punch-bot/chord/output": [
+				"../../../packages/chord/src/output.ts"
+			],
+			"@punch-bot/chord/sqlite": [
+				"../../../packages/chord/src/sqlite/index.ts"
+			],
+			"@punch-bot/chord/sqlite/node": [
+				"../../../packages/chord/src/sqlite/node.ts"
+			],
+			"@punch-bot/chord/sqlite/cloudflare": [
+				"../../../packages/chord/src/sqlite/cloudflare.ts"
+			],
+			"@punch-bot/chord/telemetry-sqlite": [
+				"../../../packages/chord/src/telemetry-sqlite/index.ts"
+			],
+			"@punch-bot/chord/http": [
+				"../../../packages/chord/src/node/http/index.ts"
+			],
+			"@punch-bot/chord/workers": [
+				"../../../packages/chord/src/node/workers/index.ts"
+			],
+			"@punch-bot/chord/workers/child": [
+				"../../../packages/chord/src/node/workers/child.ts"
+			],
+			"@punch-bot/chord/plugins": [
+				"../../../packages/chord/src/node/plugins/index.ts"
+			],
+			"@punch-bot/chord/plugins/runtime": [
+				"../../../packages/chord/src/node/plugins/runtime.ts"
+			],
+			"@punch-bot/chord/app": [
+				"../../../packages/chord/src/node/app/index.ts"
+			],
+			"@punch-bot/chord/app/files": [
+				"../../../packages/chord/src/node/app/files-entry.ts"
+			],
+			"@punch-bot/chord/web": [
+				"../../../packages/chord/src/web/index.ts"
+			],
+			"@punch-bot/chord/surfaces": [
+				"../../../packages/chord/src/node/surfaces/index.ts"
+			],
+			"@punch-bot/chord/react": [
+				"../../../packages/chord/src/react/index.ts"
+			],
+			"@punch-bot/chord/tui": [
+				"../../../packages/chord/src/tui/index.ts"
+			],
+			"@punch-bot/chord/tui/launcher": [
+				"../../../packages/chord/src/node/tui/index.ts"
+			],
+			"@punch-bot/chord/sync": [
+				"../../../packages/chord/src/sync/index.ts"
+			],
+			"@test/contracts/*": [
+				"../../chord/test/node/fixtures/plugins/contracts/*.ts"
+			],
+			"@example/contracts/*": [
+				"../../chord/test/examples/35-plugins/plugins/contracts/*.ts"
+			],
+			"@example/weather/*": [
+				"../../chord/test/examples/36-plugin-failures/plugins/weather/*.ts"
+			],
+			"@example/prices/*": [
+				"../../chord/test/examples/36-plugin-failures/plugins/prices/*.ts"
+			],
+			"@example/shapes/*": [
+				"../../chord/test/examples/37-plugin-imports/plugins/shapes/*.ts"
+			],
+			"@example/shared/*": [
+				"../../chord/test/examples/38-watch-and-rollout/plugins/contracts/*.ts"
+			],
+			"@punch-bot/chord/compression": [
+				"../../../packages/chord/src/node/compression.ts"
+			],
+			"@punch-bot/telemetry": [
+				"../../../packages/telemetry/src/index.ts"
+			],
+			"@punch-bot/telemetry/testing": [
+				"../../../packages/telemetry/src/testing/index.ts"
+			],
+			"@punch-bot/telemetry/render": [
+				"../../../packages/telemetry/src/render.ts"
+			],
+			"@punch-bot/codemode": [
+				"../../../packages/codemode/src/index.ts"
+			],
+			"@punch-bot/codemode/cloudflare": [
+				"../../../packages/codemode/src/cloudflare.ts"
+			],
+			"@punch-bot/codemode/declarations": [
+				"../../../packages/codemode/src/declarations.ts"
+			],
+			"@punch-bot/codemode/portable": [
+				"../../../packages/codemode/src/portable.ts"
+			],
+			"@punch-bot/codemode/source": [
+				"../../../packages/codemode/src/source.ts"
+			],
+			"@punch-bot/codemode/worker": [
+				"../../../packages/codemode/src/runtime/worker.ts"
+			],
+			"@punch-bot/schema": [
+				"../../../packages/schema/src/index.ts"
+			],
+			"@punch-bot/schema/formats": [
+				"../../../packages/schema/src/formats/index.ts"
+			],
+			"@punch-bot/mcp": [
+				"../../../packages/mcp/src/index.ts"
+			],
+			"@punch-bot/mcp/oauth": [
+				"../../../packages/mcp/src/oauth/index.ts"
+			],
+			"@punch-bot/mcp/testing": [
+				"../../../packages/mcp/src/testing/index.ts"
+			],
+			"@punch-bot/ai": [
+				"../../../packages/coding-agent/src/core/extensions/pi-ai-extension-view.ts"
+			],
+			"@punch-bot/ai/oauth": [
+				"../../../packages/ai/src/oauth.ts"
+			],
+			"@punch-bot/ai/*": [
+				"../../../packages/ai/src/*.ts",
+				"../../../packages/ai/src/providers/*.ts"
+			],
+			"@punch-bot/ai/dist/*": [
+				"../../../packages/ai/src/*"
+			],
+			"@punch-bot/durable": [
+				"../../../packages/durable/src/index.ts"
+			],
+			"@punch-bot/durable/testing": [
+				"../../../packages/durable/src/testing/index.ts"
+			],
+			"@punch-bot/durable/*": [
+				"../../../packages/durable/src/*.ts",
+				"../../../packages/durable/src/*/index.ts",
+				"../../../packages/durable/src/*"
+			],
+			"@punch-bot/env": [
+				"../../../packages/env/src/index.ts"
+			],
+			"@punch-bot/agent": [
+				"../../../packages/agent/src/index.ts"
+			],
+			"@punch-bot/cli": [
+				"../../../packages/coding-agent/src/index.ts"
+			],
+			"@punch-bot/cli/hooks": [
+				"../../../packages/coding-agent/src/core/hooks/index.ts"
+			],
+			"@punch-bot/cli/*": [
+				"../../../packages/coding-agent/src/*"
+			],
+			"@punch-bot/a2a": [
+				"../../../packages/a2a/src/index.ts"
+			],
+			"@punch-bot/a2a/*": [
+				"../../../packages/a2a/src/*"
+			],
+			"typebox": [
+				"../../../node_modules/typebox"
+			],
+			"@earendil-works/pi-agent-old": [
+				"../../../packages/agent-old/src/index.ts"
+			],
+			"@earendil-works/pi-agent-old/*": [
+				"../../../packages/agent-old/src/*"
+			],
+			"@mariozechner/pi-ai": [
+				"../../../packages/coding-agent/src/core/extensions/pi-ai-extension-view.ts"
+			]
+		}
+	},
+	"include": [
+		"./extensions/**/*",
+		"../../*/src/**/*.d.ts"
+	],
+	"exclude": [
+		"**/node_modules/**",
+		"./extensions/gondolin/**"
+	]
+}

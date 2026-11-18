@@ -23,8 +23,9 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 | `protected-paths.ts` | Blocks writes to protected paths (.env, .git/, node_modules/) |
 | `confirm-destructive.ts` | Confirms before destructive session actions (clear, switch, fork) |
 | `dirty-repo-guard.ts` | Prevents session changes with uncommitted git changes |
-| `sandbox/` | OS-level sandboxing using `@anthropic-ai/sandbox-runtime` with per-project config |
 | `gondolin/` | Route built-in tools and `!` commands into a Gondolin micro-VM |
+
+For isolation setup and limitations, see [Run Pi in an isolated environment](../../docs/containerization.md).
 
 ### Custom Tools
 
@@ -158,7 +159,7 @@ export default function (pi: ExtensionAPI) {
 
 **Use StringEnum for string parameters** (required for Google API compatibility):
 ```typescript
-import { StringEnum } from "@punch-bot/ai";
+import { StringEnum } from "@punch-bot/cli";
 
 // Good
 action: StringEnum(["list", "add"] as const)

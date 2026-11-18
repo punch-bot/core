@@ -103,7 +103,6 @@ export type {
 	ExtensionFlag,
 	ExtensionHandler,
 	ExtensionRuntime,
-	ExtensionShortcut,
 	ExtensionToolContext,
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
@@ -203,8 +202,8 @@ export {
 	wrapRegisteredTool,
 	wrapRegisteredTools,
 } from "./core/extensions/index.ts";
-// Footer data provider (git branch + extension statuses - data not otherwise available to extensions)
-export type { ReadonlyFooterDataProvider } from "./core/footer-data-provider.ts";
+// TypeBox-typed string enum for tool parameters built with `Type.Object`
+export { StringEnum } from "./core/extensions/pi-ai-extension-view.ts";
 export type { RegisteredMcpServer } from "./core/mcp-servers.ts";
 export { convertToLlm } from "./core/messages.ts";
 export { ModelRegistry } from "./core/model-registry.ts";
@@ -224,6 +223,7 @@ export {
 	type ModelRuntimeAuthOverrides,
 } from "./core/model-runtime.ts";
 export type {
+	PackageInstallFailure,
 	PackageManager,
 	PathMetadata,
 	ProgressCallback,
@@ -299,14 +299,11 @@ export {
 	type CompactionModelOverride,
 	type CompactionSettings,
 	type DefaultProjectTrust,
-	type FullscreenExitOutput,
 	type ImageSettings,
 	type PackageSource,
-	type QuietStartup,
 	type RetrySettings,
 	SettingsManager,
 	type SettingsManagerCreateOptions,
-	type TuiMode,
 } from "./core/settings-manager.ts";
 // Skills
 export {

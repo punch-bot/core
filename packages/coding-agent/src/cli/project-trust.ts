@@ -11,7 +11,7 @@ export function createProjectTrustContext(options: {
 }): ProjectTrustContext {
 	return {
 		cwd: options.cwd,
-		mode: options.mode === "interactive" ? "tui" : options.mode,
+		mode: options.mode,
 		hasUI: options.hasUI,
 		ui: {
 			select: async () => undefined,

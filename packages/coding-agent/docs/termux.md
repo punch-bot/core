@@ -1,12 +1,12 @@
 # Run Pi on Android with Termux
 
-Pi runs on Android through [Termux](https://termux.dev/), a terminal emulator and Linux environment. Text input, file tools, and shell commands are supported. Pi can copy and paste text through the Android clipboard with Termux:API. Clipboard image paste is not supported.
+Pi runs on Android through [Termux](https://termux.dev/), a terminal emulator and Linux environment. Print, JSON, and RPC modes, file tools, and shell commands are supported. Extensions can copy text to the Android clipboard through Termux:API.
 
 ## Before you begin
 
 Install Termux from [GitHub or F-Droid](https://github.com/termux/termux-app#installation). Do not use the deprecated Google Play build.
 
-[Termux:API](https://github.com/termux/termux-api#installation) is optional. Install it only when you want Pi to copy or paste Android clipboard text, or when shell commands need Android device APIs.
+[Termux:API](https://github.com/termux/termux-api#installation) is optional. Install it only when an extension should copy text to the Android clipboard, or when shell commands need Android device APIs.
 
 ## Install Pi
 
@@ -34,14 +34,13 @@ Install Termux from [GitHub or F-Droid](https://github.com/termux/termux-app#ins
    pi --version
    ```
 
-5. Open the folder you want to work in and start Pi:
+5. Open the folder you want to work in:
 
    ```bash
    cd /path/to/working-folder
-   pi
    ```
 
-Continue with the main [Quickstart](quickstart.md#3-choose-a-model) to connect a model and run your first task.
+Continue with the main [Quickstart](quickstart.md#2-choose-a-model) to connect a model and run your first task.
 
 ## Access Android shared storage
 
@@ -57,7 +56,7 @@ Only grant this permission when Pi should be able to access those files. Command
 
 ## Use clipboard commands
 
-Pi uses `termux-clipboard-set` to copy text and `termux-clipboard-get` for its clipboard-paste shortcut. Shell commands can use both commands directly. Install the Termux:API app and its command-line package:
+The SDK's `copyToClipboard()`, which extensions can call, uses `termux-clipboard-set` in Termux. Shell commands can use `termux-clipboard-set` and `termux-clipboard-get` directly. Install the Termux:API app and its command-line package:
 
 ```bash
 pkg install termux-api
@@ -72,7 +71,7 @@ termux-clipboard-get
 
 The second command should print `Pi clipboard test`.
 
-The Termux clipboard API supports text only. Pi's clipboard-paste shortcut inserts that text into the editor but cannot attach clipboard images.
+The Termux clipboard API supports text only.
 
 ## Add Termux-specific instructions
 
@@ -88,7 +87,7 @@ Pi detects that it is running in Termux, but it cannot infer how you want it to 
 - Do not access shared storage unless the task requires it.
 ````
 
-Run `/reload` after changing the file during an active session.
+Pi reads the file at startup, so the change applies to the next Pi process.
 
 ## Troubleshooting
 
@@ -99,7 +98,7 @@ Confirm that you installed both components:
 1. The Termux:API Android app from the same source as Termux
 2. The `termux-api` command-line package
 
-Then run the clipboard verification commands above outside Pi. If they fail there, fix the Termux:API installation before retrying Pi's copy command.
+Then run the clipboard verification commands above outside Pi. If they fail there, fix the Termux:API installation before retrying the extension that copies text.
 
 ### Shared storage reports permission denied
 

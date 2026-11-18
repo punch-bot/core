@@ -17,14 +17,14 @@
 		"README.md"
 	],
 	"scripts": {
-		"clean": "shx rm -rf dist",
+		"clean": "node ../../scripts/package-files.mjs clean dist",
 		"build": "tsc -p tsconfig.build.json",
 		"test": "vitest --run",
 		"prepublishOnly": "npm run build"
 	},
 	"dependencies": {
 		"@punch-bot/ai": "1.5.1",
-		"typebox": "1.3.27"
+		"@punch-bot/schema": "1.5.1"
 	},
 	"keywords": [
 		"ai",

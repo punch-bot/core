@@ -10,7 +10,7 @@ import {
 	type ProjectTrustStore,
 } from "./trust-manager.ts";
 
-export type AppMode = "interactive" | "print" | "json" | "rpc";
+export type AppMode = "print" | "json" | "rpc";
 
 export interface ResolveProjectTrustedOptions {
 	cwd: string;
@@ -49,7 +49,7 @@ export async function resolveProjectTrusted(options: ResolveProjectTrustedOption
 		return options.trustOverride;
 	}
 	if (!hasTrustRequiringProjectResources(options.cwd)) {
-		return true;
+		return options.trustStore.get(options.cwd) ?? true;
 	}
 
 	if (options.extensionsResult) {

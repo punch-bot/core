@@ -398,13 +398,6 @@ describe("parseArgs", () => {
 		});
 	});
 
-	describe("--verbose flag", () => {
-		test("parses --verbose flag", () => {
-			const result = parseArgs(["--verbose"]);
-			expect(result.verbose).toBe(true);
-		});
-	});
-
 	describe("--offline flag", () => {
 		test("parses --offline flag", () => {
 			const result = parseArgs(["--offline"]);

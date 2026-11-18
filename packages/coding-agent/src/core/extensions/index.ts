@@ -32,7 +32,6 @@ export type {
 	AgentToolUpdateCallback,
 	AppendEntryHandler,
 	AutocompleteItem,
-	// App keybindings (for custom editors)
 	// Events - Tool (ToolCallEvent types)
 	BashToolCallEvent,
 	BashToolResultEvent,
@@ -86,7 +85,6 @@ export type {
 	ExtensionMode,
 	// Runtime
 	ExtensionRuntime,
-	ExtensionShortcut,
 	ExtensionToolContext,
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,

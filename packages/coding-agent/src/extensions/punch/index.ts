@@ -1,7 +1,6 @@
 import { execFileSync } from "node:child_process";
-
-import { StringEnum } from "@punch-bot/ai";
 import { Type } from "typebox";
+import { StringEnum } from "../../core/extensions/pi-ai-extension-view.ts";
 
 import type { ExtensionAPI } from "../../core/extensions/types.ts";
 import { installA2a, isPunchA2aEnabled } from "./a2a.ts";

@@ -2,8 +2,8 @@
  * RPC Extension UI Demo
  *
  * Purpose-built extension that exercises all RPC-supported extension UI methods.
- * Designed to be loaded alongside the rpc-extension-ui-example.ts script to
- * demonstrate the full extension UI protocol.
+ * Load it in a Pi RPC process (`pi --mode rpc -e ./rpc-demo.ts`) to see the
+ * full extension UI protocol from a client.
  *
  * UI methods exercised:
  * - select() - on tool_call for dangerous bash commands

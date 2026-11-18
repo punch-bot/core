@@ -24,7 +24,12 @@
 import { join } from "node:path";
 import type { AgentTool } from "@punch-bot/agent";
 import type { CodemodeJsonSchema, CodemodeTool } from "@punch-bot/codemode";
-import { renderToolOutputType, renderToolSample, toCodemodeIdentifier } from "@punch-bot/codemode/declarations";
+import {
+	renderToolOutputType,
+	renderToolSample,
+	resolveSchemaRef,
+	toCodemodeIdentifier,
+} from "@punch-bot/codemode/declarations";
 import { CODEMODE_SOURCE_GRAMMAR } from "@punch-bot/codemode/source";
 import { type Static, Type } from "typebox";
 import { getDocsPath } from "../../config.ts";
@@ -32,7 +37,7 @@ import type { ToolDefinition, ToolLoadout, ToolLoadoutChanges, ToolNamespace } f
 import type { ModelRegistry } from "../../core/model-registry.ts";
 import { SETTINGS_DEFAULTS } from "../../core/settings-defaults.ts";
 import type { CodemodeMode } from "../../core/settings-manager.ts";
-import { wrapToolDefinition } from "../../core/tools/tool-definition-wrapper.ts";
+import { type TypeBoxAgentTool, wrapToolDefinition } from "../../core/tools/tool-definition-wrapper.ts";
 import { loadCodemodeExecutor } from "./execute.lazy.ts";
 
 export const CODEMODE_TOOL_NAME = "codemode";
@@ -270,16 +275,24 @@ export function createCodemodeDescription(
 
 /**
  * The field names of an object schema, `{ output, exit_code, full_output_path? }`, with the fields of
- * object-typed fields `depth` levels deep: `{ content, structuredContent?: { results } }`. Undefined
- * for other schemas.
+ * object-typed fields `depth` levels deep: `{ content, structuredContent?: { results } }`, and the
+ * value of `const` fields: `{ action: "start", id }`. Undefined for other schemas. Local `$ref`s resolve
+ * against `root`.
  */
-function describeFields(schema: unknown, depth: number): string | undefined {
-	if (typeof schema !== "object" || schema === null) return undefined;
-	const { type, properties, required } = schema as Record<string, unknown>;
+function describeFields(schema: unknown, root: CodemodeJsonSchema, depth: number): string | undefined {
+	const resolved = followRef(schema, root);
+	if (typeof resolved !== "object" || resolved === null) return undefined;
+	const { type, properties, required } = resolved as Record<string, unknown>;
 	if (type !== "object" || typeof properties !== "object" || properties === null) return undefined;
 	const requiredNames = new Set(Array.isArray(required) ? required : []);
 	const fields = Object.entries(properties).map(([name, field]) => {
-		const nested = depth > 0 ? describeFields(field, depth - 1) : undefined;
+		const constValue = (followRef(field, root) as Record<string, unknown> | null)?.const;
+		const nested =
+			constValue !== undefined
+				? JSON.stringify(constValue)
+				: depth > 0
+					? describeFields(field, root, depth - 1)
+					: undefined;
 		return `${name}${requiredNames.has(name) ? "" : "?"}${nested ? `: ${nested}` : ""}`;
 	});
 	return `{ ${fields.join(", ")} }`;
@@ -287,13 +300,50 @@ function describeFields(schema: unknown, depth: number): string | undefined {
 
 /**
  * What a script call resolves to, in one line: `a string`, the field names of an object (see
- * {@link describeFields}), or the rendered type for anything else.
+ * {@link describeFields}), the field names of each object in a union, the rendered type when it
+ * fits on one line, or a pointer to `describeTool()` for anything longer. The full type of a large
+ * schema would otherwise be sent with every request (#11501).
  */
-function describeOutput(schema: CodemodeJsonSchema | undefined): string {
+function describeOutput(name: string, schema: CodemodeJsonSchema | undefined): string {
 	const type = renderToolOutputType(schema);
 	if (type === "string") return "a string";
-	const fields = describeFields(schema, 1);
-	return `\`${fields ?? type.replace(/\s+/g, " ")}\``;
+	const fields =
+		schema === undefined ? undefined : (describeFields(schema, schema, 1) ?? describeUnionFields(schema, schema));
+	if (fields) return `\`${fields}\``;
+	if (!type.includes("\n")) return `\`${type}\``;
+	return `a value; \`await describeTool(${JSON.stringify(name)})\` shows its type`;
+}
+
+/**
+ * The field names of each variant of an `anyOf`/`oneOf` whose variants are all objects, joined by
+ * `|`.
+ */
+function describeUnionFields(schema: unknown, root: CodemodeJsonSchema): string | undefined {
+	const resolved = followRef(schema, root);
+	if (typeof resolved !== "object" || resolved === null) return undefined;
+	const { anyOf, oneOf } = resolved as Record<string, unknown>;
+	const variants = anyOf ?? oneOf;
+	if (!Array.isArray(variants) || variants.length === 0) return undefined;
+	const described = variants.map((variant) => describeFields(variant, root, 0));
+	return described.every((fields) => fields !== undefined) ? described.join(" | ") : undefined;
+}
+
+/**
+ * The subschema the local `$ref` chain of `schema` names in `root`, so MCP output schemas that put their models in
+ * `$defs` still show field names. Remote, missing, and cyclic references stop at the schema holding them.
+ */
+function followRef(schema: unknown, root: CodemodeJsonSchema): unknown {
+	const seen = new Set<unknown>();
+	let current = schema;
+	while (typeof current === "object" && current !== null && !seen.has(current)) {
+		const ref = (current as Record<string, unknown>).$ref;
+		if (typeof ref !== "string") break;
+		const target = resolveSchemaRef(ref, root);
+		if (target === undefined) break;
+		seen.add(current);
+		current = target;
+	}
+	return current;
 }
 
 /**
@@ -301,7 +351,7 @@ function describeOutput(schema: CodemodeJsonSchema | undefined): string {
  * arguments are the tool's declared parameters, so they are not repeated.
  */
 function describeScriptCall(tool: AgentTool<any>): string {
-	return `${tool.description.trim()}\n\nCodemode: \`tools.${toCodemodeIdentifier(tool.name)}(args)\` resolves to ${describeOutput(toCodemodeDeclaration(tool).outputSchema)}.`;
+	return `${tool.description.trim()}\n\nCodemode: \`tools.${toCodemodeIdentifier(tool.name)}(args)\` resolves to ${describeOutput(tool.name, toCodemodeDeclaration(tool).outputSchema)}.`;
 }
 
 /**
@@ -397,7 +447,7 @@ export function createCodemodeToolDefinition(
 export function createCodemodeTool(
 	tools: readonly AgentTool<any>[] = [],
 	options: CodemodeToolOptions = {},
-): AgentTool<typeof codemodeSchema> {
+): TypeBoxAgentTool<typeof codemodeSchema> {
 	const definition = createCodemodeToolDefinition(options);
 	const tool = wrapToolDefinition(definition);
 	Object.assign(tool, {

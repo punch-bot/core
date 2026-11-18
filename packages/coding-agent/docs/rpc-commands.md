@@ -590,7 +590,7 @@ Response:
 }
 ```
 
-`tokens` and `cost` include assistant messages, usage reported by tools, and compaction/branch-summary generation across the full session. `contextUsage` contains the actual current context-window estimate used for compaction and footer display.
+`tokens` and `cost` include assistant messages, usage reported by tools, and compaction/branch-summary generation across the full session. `contextUsage` contains the actual current context-window estimate used for compaction.
 
 `contextUsage` is omitted when no model or context window is available. `contextUsage.tokens` and `contextUsage.percent` are `null` immediately after compaction until a fresh post-compaction assistant response provides valid usage data.
 
@@ -859,7 +859,7 @@ Each command has:
   - `origin`: `"top-level"` for a directly loaded resource or `"package"` for a package resource
   - `baseDir`: Package base directory, when applicable
 
-**Note**: Built-in TUI commands (`/settings`, `/hotkeys`, etc.) are not included. They are handled only in interactive mode and would not execute if sent via `prompt`.
+**Note**: Pi has no other slash commands. A `prompt` such as `/model` that matches no extension command, prompt template, or skill is sent to the model as plain text. Use RPC commands such as `set_model` instead.
 
 ## Model object
 

@@ -5,15 +5,15 @@ Most hosted providers support one or both of these authentication methods:
 - Sign in through a browser or device flow backed by OAuth.
 - Provide an API key.
 
-Use `/login [provider]` to see the methods supported by a provider. Amazon Bedrock and Google Vertex AI can also use ambient cloud credentials.
+Run `pi auth login <provider>` to use the method a provider supports. An unknown provider ID prints the list of known provider IDs. Providers that built-in or user extensions register, such as llama.cpp, log in the same way. A project's own extensions do not load for this command. Amazon Bedrock and Google Vertex AI can also use ambient cloud credentials.
 
 ## Authenticate interactively
 
-Run `/login` and select a provider. Pi guides you through its OAuth or API-key flow and saves the resulting credential in [`auth.json`](configuration.md#agent-directory).
+Run `pi auth login <provider>` in a terminal. Pi guides you through its OAuth or API-key flow, saves the resulting credential in [`auth.json`](configuration.md#agent-directory), and exits. Add `--api-key` to save an API key instead of signing in with an account. See [Credential commands](cli.md#credential-commands).
 
-On a remote or headless machine, an OAuth callback may not reach the local process. When prompted, paste the final redirect URL or authorization code back into Pi.
+On a remote or headless machine, an OAuth callback may not reach the local process. Add `--no-browser` to use another sign-in method, such as a device code, or paste the final redirect URL or authorization code back into Pi when prompted.
 
-Run `/logout` and select a provider to remove its stored credential. This does not unset environment variables, remove authentication from `models.json`, or revoke the credential at the provider.
+Run `pi auth logout <provider>` to remove its stored credential. This does not unset environment variables, remove authentication from `models.json`, or revoke the credential at the provider.
 
 `auth.json` can contain API keys and OAuth tokens. Keep it private and do not commit it.
 
@@ -23,7 +23,7 @@ Environment variables are useful in CI and anywhere Pi should not store the key.
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-pi
+pi -p "Say hello"
 ```
 
 This table covers providers with a single primary API-key variable. Providers that need additional configuration or support ambient credentials are covered under [Provider Specific Config](#provider-specific-config).
@@ -58,7 +58,7 @@ This table covers providers with a single primary API-key variable. Providers th
 | MiniMax (China) | `MINIMAX_CN_API_KEY` |
 | Moonshot AI (Global and China) | `MOONSHOT_API_KEY` |
 | Qwen Token Plan and Individual | `QWEN_TOKEN_PLAN_API_KEY` |
-| Qwen Token Plan (China) | `QWEN_TOKEN_PLAN_CN_API_KEY` |
+| Qwen Token Plan (China) and Individual (China) | `QWEN_TOKEN_PLAN_CN_API_KEY` |
 | Xiaomi MiMo | `XIAOMI_API_KEY` |
 | Xiaomi MiMo Token Plan (China) | `XIAOMI_TOKEN_PLAN_CN_API_KEY` |
 | Xiaomi MiMo Token Plan (Amsterdam) | `XIAOMI_TOKEN_PLAN_AMS_API_KEY` |
@@ -105,7 +105,7 @@ A stored API-key credential can include an `env` object. Its values take priorit
 
 Radius is a service crafted for Pi by the builders of Pi, Earendil Works. It provides a customizable AI gateway with organization-level controls and analytics built in, and artifacts for sharing what you create with Pi.
 
-To get started, run `/login radius` in Pi. This adds Radius as a provider, and its models appear in `/model` like any other provider's.
+To get started, run `pi auth login radius`. This adds Radius as a provider, and its models appear in `--list-models` like any other provider's.
 
 Radius also has an MCP server, so Pi can manage Radius for you.
 
@@ -115,7 +115,7 @@ Radius authentication uses its gateway catalog and caches refreshed model metada
 
 ### OpenRouter
 
-Authenticate with `/login openrouter` or `OPENROUTER_API_KEY`.
+Authenticate with `pi auth login openrouter` or `OPENROUTER_API_KEY`.
 
 With a key, Pi lists only the OpenRouter chat models that key may use, with the key's context size, max output, and prices. These come from OpenRouter's `/models/user` endpoint and reflect guardrails and provider restrictions set in OpenRouter. Image and classifier models are not filtered.
 

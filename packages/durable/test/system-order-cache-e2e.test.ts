@@ -1,12 +1,4 @@
-import {
-	type AssistantMessage,
-	type Message,
-	type Model,
-	type Models,
-	normalizeContext,
-	Type,
-	uuidv7,
-} from "@punch-bot/ai";
+import { type AssistantMessage, type Message, type Model, type Models, normalizeContext, uuidv7 } from "@punch-bot/ai";
 import { builtinModels } from "@punch-bot/ai/providers/all";
 import {
 	AssistantEntry,
@@ -18,6 +10,7 @@ import {
 	hook,
 	MemoryStorage,
 } from "@punch-bot/durable";
+import { obj, str } from "@punch-bot/schema";
 import { describe, expect, it } from "vitest";
 import { streamSimple as streamSimpleAnthropic } from "../../ai/src/api/anthropic-messages.ts";
 import { resolveApiKey } from "../../ai/test/oauth.ts";
@@ -41,7 +34,7 @@ function instructions(nonce: string): string {
 	return lines.join("\n");
 }
 
-const Parameters = Type.Object({ text: Type.String() });
+const Parameters = obj({ text: str() });
 const first = defineTool({
 	name: "probe_first",
 	description: "Unused probe tool.",

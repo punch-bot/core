@@ -24,6 +24,9 @@ import {
 	printAuthCommandHelp,
 	validateAuthCommandArgs,
 } from "./cli/auth-command.ts";
+import { runAuthLogin } from "./cli/auth-login.ts";
+import { runAuthLogout } from "./cli/auth-logout.ts";
+import { createProcessLoginTerminal } from "./cli/auth-terminal.ts";
 import { resolveCredentialForPrint } from "./cli/credential-print.ts";
 import { processFileArguments } from "./cli/file-processor.ts";
 import { buildInitialMessage } from "./cli/initial-message.ts";
@@ -45,6 +48,7 @@ import { resolveCliModel, resolveModelScopeWithDiagnostics, type ScopedModel } f
 import { ModelRuntime } from "./core/model-runtime.ts";
 import { flushRawStdout, restoreStdout, takeOverStdout, writeRawStdout } from "./core/output-guard.ts";
 import { type AppMode, resolveProjectTrusted } from "./core/project-trust.ts";
+import { isBuiltinExtension } from "./core/resource-loader.ts";
 import type { CreateAgentSessionOptions } from "./core/sdk.ts";
 import { getMissingSessionCwdIssue, MissingSessionCwdError } from "./core/session-cwd.ts";
 import { assertValidSessionId, SessionManager } from "./core/session-manager.ts";
@@ -119,9 +123,116 @@ function isPlainRuntimeMetadataCommand(parsed: Args): boolean {
 	return !parsed.print && parsed.mode === undefined && (parsed.help === true || parsed.listModels !== undefined);
 }
 
-async function runAuthCommand(args: string[]): Promise<boolean> {
+/**
+ * Model runtime for `pi auth login` and `pi auth logout`, with the providers that `builtin:<name>` extensions (such as
+ * llama.cpp) and the user's extensions register. The project stays untrusted, so its own extensions do not run. Other
+ * inline extensions stay out: the punch extension, for example, starts its server when it loads, which would keep the
+ * process running.
+ */
+async function createAuthModelRuntime(
+	cwd: string,
+	agentDir: string,
+	settingsManager: SettingsManager,
+	extensionFactories: InlineExtension[],
+	signal: AbortSignal,
+): Promise<ModelRuntime> {
+	const modelRuntime = await ModelRuntime.create({ allowModelNetwork: false, signal });
+	const { diagnostics, resourceLoader } = await createAgentSessionServices({
+		cwd,
+		agentDir,
+		settingsManager,
+		modelRuntime,
+		resourceLoaderOptions: { extensionFactories: extensionFactories.filter(isBuiltinExtension) },
+	});
+	reportDiagnostics([
+		...diagnostics,
+		...resourceLoader.getExtensions().errors.map(({ path, error }) => ({
+			type: "warning" as const,
+			message: `Failed to load extension "${path}": ${error}`,
+		})),
+	]);
+	return modelRuntime;
+}
+
+/**
+ * Exit once output is written. These commands load extensions without a session, so nothing emits `session_shutdown`
+ * to close what an extension opened when it loaded, such as a watcher, and the process would otherwise keep running.
+ */
+async function exitAfterExtensionCommand(exitCode: number): Promise<never> {
+	for (const stream of [process.stdout, process.stderr]) {
+		// The callback of an empty write runs once everything written before it is flushed.
+		await new Promise<void>((resolve) => stream.write("", () => resolve()));
+	}
+	process.exit(exitCode);
+}
+
+async function runAuthLoginCommand(args: string[], extensionFactories: InlineExtension[]): Promise<number> {
+	const cwd = process.cwd();
+	const agentDir = getAgentDir();
+	const settingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: false });
+	applyHttpProxySettings(settingsManager.getGlobalSettings().httpProxy);
+	configureHttpDispatcher(settingsManager.getHttpIdleTimeoutMs());
+	const modelRuntime = await createAuthModelRuntime(
+		cwd,
+		agentDir,
+		settingsManager,
+		extensionFactories,
+		AbortSignal.timeout(15_000),
+	);
+
+	const controller = new AbortController();
+	const interrupt = () => controller.abort();
+	process.on("SIGINT", interrupt);
+	try {
+		return await runAuthLogin(args, {
+			modelRuntime,
+			terminal: createProcessLoginTerminal(interrupt),
+			agentDir,
+			cwd,
+			getDeviceId: () => settingsManager.getOrCreateDeviceId(),
+			signal: controller.signal,
+		});
+	} finally {
+		process.off("SIGINT", interrupt);
+		await settingsManager.flush();
+	}
+}
+
+async function runAuthLogoutCommand(args: string[], extensionFactories: InlineExtension[]): Promise<number> {
+	const signal = AbortSignal.timeout(15_000);
+	const cwd = process.cwd();
+	const agentDir = getAgentDir();
+	const settingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: false });
+	const modelRuntime = await createAuthModelRuntime(cwd, agentDir, settingsManager, extensionFactories, signal);
+	return runAuthLogout(args, {
+		modelRuntime,
+		terminal: { write: (line) => console.log(line), error: (line) => console.error(line) },
+		signal,
+	});
+}
+
+async function runAuthCommand(args: string[], extensionFactories: InlineExtension[]): Promise<boolean> {
 	if (isAuthCommandHelp(args)) {
 		printAuthCommandHelp();
+		return true;
+	}
+	if (args[0] === "auth" && args[1] === "login") {
+		// main() already applied --offline.
+		await exitAfterExtensionCommand(
+			await runAuthLoginCommand(
+				args.slice(2).filter((arg) => arg !== "--offline"),
+				extensionFactories,
+			),
+		);
+		return true;
+	}
+	if (args[0] === "auth" && args[1] === "logout") {
+		await exitAfterExtensionCommand(
+			await runAuthLogoutCommand(
+				args.slice(2).filter((arg) => arg !== "--offline"),
+				extensionFactories,
+			),
+		);
 		return true;
 	}
 
@@ -555,7 +666,7 @@ export async function main(args: string[], options?: MainOptions) {
 		process.env.PI_SKIP_VERSION_CHECK = "1";
 	}
 
-	if (await runAuthCommand(args)) {
+	if (await runAuthCommand(args, extensionFactories)) {
 		return;
 	}
 
@@ -564,7 +675,18 @@ export async function main(args: string[], options?: MainOptions) {
 	}
 	cleanupManagedInstall();
 
-	const cwd = process.cwd();
+	let cwd: string;
+	try {
+		cwd = process.cwd();
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+		console.error(
+			chalk.red(
+				"Error: The current working directory no longer exists. Change to an existing directory and try again.",
+			),
+		);
+		process.exit(1);
+	}
 	const agentDir = getAgentDir();
 	const bootstrapSettingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: false });
 	applyHttpProxySettings(bootstrapSettingsManager.getGlobalSettings().httpProxy);
@@ -701,9 +823,7 @@ export async function main(args: string[], options?: MainOptions) {
 			parsed.projectTrustOverride === undefined && cachedProjectTrust === undefined && hasTrustRequiringResources;
 		const projectTrusted = shouldResolveProjectTrust
 			? false
-			: (cachedProjectTrust ??
-				parsed.projectTrustOverride ??
-				(!hasTrustRequiringResources || trustStore.get(cwd) === true));
+			: (cachedProjectTrust ?? parsed.projectTrustOverride ?? trustStore.get(cwd) ?? !hasTrustRequiringResources);
 		const runtimeSettingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted });
 		if (parsed.useTheme !== undefined) {
 			runtimeSettingsManager.applyOverrides({ theme: parsed.useTheme });
@@ -851,8 +971,15 @@ export async function main(args: string[], options?: MainOptions) {
 	applyHttpProxySettings(settingsManager.getGlobalSettings().httpProxy);
 	configureHttpDispatcher(settingsManager.getHttpIdleTimeoutMs());
 
+	const startupDiagnostics = deduplicateDiagnostics([
+		...startupSettingsDiagnostics,
+		...runtime.diagnostics,
+		...(runtime.modelFallbackMessage ? [{ type: "warning" as const, message: runtime.modelFallbackMessage }] : []),
+	]);
+	const hasRuntimeErrors = runtime.diagnostics.some((diagnostic) => diagnostic.type === "error");
+
 	if (parsed.help) {
-		reportDiagnostics(startupSettingsDiagnostics);
+		reportDiagnostics(startupDiagnostics);
 		const extensionFlags = resourceLoader
 			.getExtensions()
 			.extensions.flatMap((extension) => Array.from(extension.flags.values()));
@@ -861,7 +988,7 @@ export async function main(args: string[], options?: MainOptions) {
 	}
 
 	if (parsed.listModels !== undefined) {
-		reportDiagnostics(startupSettingsDiagnostics);
+		reportDiagnostics(startupDiagnostics);
 		const searchPattern = typeof parsed.listModels === "string" ? parsed.listModels : undefined;
 		await listModels(modelRuntime, searchPattern, AbortSignal.timeout(15_000));
 		process.exit(0);
@@ -884,12 +1011,6 @@ export async function main(args: string[], options?: MainOptions) {
 	recordInstallTelemetry(settingsManager, VERSION);
 
 	time("resolveModelScope");
-	const startupDiagnostics = deduplicateDiagnostics([
-		...startupSettingsDiagnostics,
-		...runtime.diagnostics,
-		...(runtime.modelFallbackMessage ? [{ type: "warning" as const, message: runtime.modelFallbackMessage }] : []),
-	]);
-	const hasRuntimeErrors = runtime.diagnostics.some((diagnostic) => diagnostic.type === "error");
 	reportDiagnostics(startupDiagnostics);
 	if (hasRuntimeErrors) {
 		if (runtime.diagnostics.some((diagnostic) => diagnostic.message.includes("Failed to load extension"))) {

@@ -474,24 +474,6 @@ describe("extensions discovery", () => {
 		expect(result.extensions[0].handlers.has("agent_end")).toBe(true);
 	});
 
-	it("loads extension with shortcuts", async () => {
-		const extCode = `
-			export default function(pi) {
-				pi.registerShortcut("ctrl+t", {
-					description: "Test shortcut",
-					handler: async (ctx) => {},
-				});
-			}
-		`;
-		fs.writeFileSync(path.join(extensionsDir, "with-shortcut.ts"), extCode);
-
-		const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-
-		expect(result.errors).toHaveLength(0);
-		expect(result.extensions).toHaveLength(1);
-		expect(result.extensions[0].shortcuts.has("ctrl+t")).toBe(true);
-	});
-
 	it("loads extension with flags", async () => {
 		const extCode = `
 			export default function(pi) {

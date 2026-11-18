@@ -12,7 +12,6 @@ export const SETTINGS_DEFAULTS = {
 	},
 	branchSummary: {
 		reserveTokens: 16384,
-		skipPrompt: false,
 	},
 	retry: {
 		enabled: true,
@@ -23,44 +22,15 @@ export const SETTINGS_DEFAULTS = {
 			maxRetryDelayMs: 60000,
 		},
 	},
-	hideThinkingBlock: false,
-	showCacheMissNotices: false,
-	quietStartup: false,
 	defaultProjectTrust: "ask",
-	collapseChangelog: false,
 	enableInstallTelemetry: true,
-	enableAnalytics: false,
-	enableSkillCommands: true,
-	terminal: {
-		showImages: true,
-		imageWidthCells: 60,
-		clearOnShrink: false,
-		showTerminalProgress: false,
-	},
 	images: {
 		autoResize: true,
 		blockImages: false,
-	},
-	doubleEscapeAction: "tree",
-	treeFilterMode: "default",
-	editorPaddingX: 0,
-	outputPad: 1,
-	autocompleteMaxVisible: 5,
-	markdown: {
-		codeBlockIndent: "  ",
-		mermaid: "streaming",
-	},
-	warnings: {
-		anthropicExtraUsage: true,
 	},
 	codemode: {
 		mode: "on",
 		inlineBudget: 3000,
 	},
-	cacheWarming: "streaming",
-	tuiMode: "fullscreen",
-	fullscreenExitOutput: "transcript",
-	fullscreenScrollbar: "auto",
-	fullscreenCopyOnSelect: true,
-	fullscreenWheelScrollLines: "auto",
+	cacheWarming: "idle",
 } as const;

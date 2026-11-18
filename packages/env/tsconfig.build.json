@@ -3,7 +3,6 @@
 	"compilerOptions": {
 		"outDir": "./dist",
 		"paths": {
-			"@punch-bot/chord": ["../chord/dist/index.d.ts"],
 			"@punch-bot/chord/context": ["../chord/dist/context/index.d.ts"],
 			"@punch-bot/durable/env": ["../durable/dist/env/index.d.ts"]
 		},

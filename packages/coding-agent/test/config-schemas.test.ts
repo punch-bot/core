@@ -79,9 +79,7 @@ describe("generated configuration schemas", () => {
 
 		const settings = JSON.parse(renderConfigSchemas().get("schemas/settings.schema.json") ?? "");
 		expect(settings.properties).toMatchObject({
-			quietStartup: { description: expect.stringContaining("hide all startup output") },
 			defaultTools: { description: expect.stringContaining("+name and -name") },
-			fullscreenWheelScrollLines: { description: expect.stringContaining("1 to 100") },
 		});
 	});
 

@@ -91,6 +91,6 @@ Use the [router health checks](llama-cpp.md#troubleshooting) to confirm that the
 
 ## Use the model in Pi
 
-Follow [Configure Pi](llama-cpp.md#configure-pi) and connect to `http://127.0.0.1:8080`. The preset section name is the model ID, so select `qwen3.8-27b` in `/model` for this example.
+Follow [Configure Pi](llama-cpp.md#configure-pi) and connect to `http://127.0.0.1:8080`. The preset section name is the model ID, so select it with `--model qwen3.8-27b` for this example.
 
 NVIDIA recipe memory settings assume that only the selected model uses the GPU. If `/llama` shows other loaded models, unload them before using the recipe model.

@@ -10,7 +10,7 @@ The `subagent` tool is built into Punch. The files in this directory provide the
 - **Streaming output**: See tool calls and progress as they happen
 - **Parallel streaming**: All parallel tasks stream updates simultaneously
 - **Markdown rendering**: Final output rendered with proper formatting (expanded view)
-- **Usage tracking**: Shows turns, tokens, cost, and context usage per agent
+- **Usage display**: Shows turns, tokens, cost, and context usage inside each subagent result
 - **Abort support**: Ctrl+C propagates to kill subagent processes
 
 ## Structure
@@ -48,7 +48,7 @@ This tool executes a separate `pi` subprocess with a delegated system prompt and
 
 To enable project-local agents, pass `agentScope: "both"` (or `"project"`). Only do this for repositories you trust.
 
-When running interactively, the tool prompts for confirmation before running project-local agents in untrusted projects. Trusted projects skip the additional prompt. Set `confirmProjectAgents: false` to disable confirmation.
+When running interactively, the tool prompts for confirmation before running project-local agents unless the session trust context reports trusted and the agents come from that session project's `.pi/agents` directory. Agents loaded from another task `cwd` still require confirmation. Set `confirmProjectAgents: false` to disable confirmation.
 
 ## Usage
 
@@ -98,8 +98,8 @@ Use a chain: first have scout find the read tool, then have planner suggest impr
 **Parallel mode streaming**:
 - Shows all tasks with live status (⏳ running, ✓ done, ✗ failed)
 - Updates as each task makes progress
-- Shows "2/3 done, 1 running" status
-- Returns each completed task's final output to the parent model, capped at 50 KB per task
+- Distinguishes pending, running, completed, failed, and aborted tasks
+- Returns each completed task summary to the parent model with its own 50 KB limit
 - Returns failure diagnostics from stderr/error messages when a child exits before producing output
 
 **Tool call formatting** (mimics built-in tools):
@@ -130,7 +130,7 @@ When `model` is omitted, the subagent inherits the dispatching session's active 
 
 **Locations:**
 - Bundled `scout`, `planner`, `reviewer`, and `worker` definitions
-- `~/.pi/agent/agents/*.md` - User-level (always loaded)
+- `~/.pi/agent/agents/*.md` - User-level (with `agentScope: "user"` or `"both"`)
 - `.pi/agents/*.md` - Project-level (only with `agentScope: "project"` or `"both"`)
 
 User agents override bundled agents. Project agents override both with the same name when their scope is enabled.
@@ -154,14 +154,17 @@ User agents override bundled agents. Project agents override both with the same 
 
 ## Error Handling
 
-- **Exit code != 0**: Tool returns error with stderr/output
-- **stopReason "error"**: LLM error propagated with error message
-- **stopReason "aborted"**: User abort (Ctrl+C) kills subprocess, throws error
-- **Chain mode**: Stops at first failing step, reports which step failed
+- **Exit code != 0 or signal termination**: Tool returns an error with preserved stderr/output
+- **Spawn errors**: Tool returns the spawn diagnostic
+- **stopReason "error"**: LLM error is propagated with its error message
+- **Abort**: Ctrl+C sends SIGTERM, escalates to SIGKILL after five seconds if needed, and preserves partial details/usage
+- **Chain mode**: Stops at the first failing step and reports which step failed
 
 ## Limitations
 
 - Output truncated to last 10 items in collapsed view (expand to see all)
-- Parallel model-visible output is capped at 50 KB per task; full results remain in tool details
-- Agents discovered fresh on each invocation (allows editing mid-session)
+- Single and chain output is capped at 50 KB/2,000 lines; full results remain in tool details
+- Parallel output keeps a separate 50 KB budget per task, allowing up to roughly 400 KB across eight tasks
+- Child usage is displayed in tool details but is not added to the calling session's usage totals
+- Agents are snapshotted from each task's effective cwd when the tool invocation starts; relative task cwd values resolve from the session cwd
 - Parallel mode limited to 8 tasks, 4 concurrent

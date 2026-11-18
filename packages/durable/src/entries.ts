@@ -1,4 +1,4 @@
-import type { JsonValue } from "@punch-bot/chord";
+import type { JsonValue } from "@punch-bot/chord/json";
 import type { CompactionReason, ToolDiagnostic } from "./harness/types.ts";
 import type { Entry, EntryRecord, TypedEntry } from "./types.ts";
 

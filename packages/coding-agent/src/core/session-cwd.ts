@@ -37,10 +37,6 @@ export function formatMissingSessionCwdError(issue: SessionCwdIssue): string {
 	return `Stored session working directory does not exist: ${issue.sessionCwd}${sessionFile}\nCurrent working directory: ${issue.fallbackCwd}`;
 }
 
-export function formatMissingSessionCwdPrompt(issue: SessionCwdIssue): string {
-	return `cwd from session file does not exist\n${issue.sessionCwd}\n\ncontinue in current cwd\n${issue.fallbackCwd}`;
-}
-
 export class MissingSessionCwdError extends Error {
 	readonly issue: SessionCwdIssue;
 

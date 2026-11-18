@@ -10,7 +10,7 @@ import {
 	fauxToolCall,
 	type MutableModels,
 } from "@punch-bot/ai";
-import type { Context } from "@punch-bot/chord";
+import type { Context } from "@punch-bot/chord/context";
 import { CodemodeSandbox } from "@punch-bot/codemode";
 import { MemoryStorage, ToolResultEntry, UsageDoc } from "@punch-bot/durable";
 import { describe, expect, it } from "vitest";

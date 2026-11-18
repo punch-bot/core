@@ -27,10 +27,10 @@
 		"dist",
 		"README.md",
 		"CHANGELOG.md",
-		"LICENSES"
+		"THIRD_PARTY_NOTICES"
 	],
 	"scripts": {
-		"clean": "shx rm -rf dist",
+		"clean": "node ../../scripts/package-files.mjs clean dist",
 		"build": "tsc -p tsconfig.build.json",
 		"test": "vitest --run",
 		"prepublishOnly": "npm run clean && npm run build"
@@ -55,7 +55,6 @@
 	},
 	"devDependencies": {
 		"@types/cross-spawn": "6.0.6",
-		"shx": "0.4.0",
 		"vitest": "5.0.5"
 	}
 }

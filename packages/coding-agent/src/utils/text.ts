@@ -7,3 +7,10 @@ export function splitBom(content: string): { bom: string; text: string } {
 export function stripBom(content: string): string {
 	return splitBom(content).text;
 }
+
+const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f]+/g;
+
+/** Replace each run of C0/C1 control characters with a space, so untrusted text cannot drive the terminal. */
+export function replaceControlCharacters(str: string): string {
+	return str.replace(CONTROL_CHARACTERS, " ");
+}

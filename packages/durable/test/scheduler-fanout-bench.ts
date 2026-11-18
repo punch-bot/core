@@ -9,7 +9,7 @@
 import { createModels } from "@punch-bot/ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from "@punch-bot/ai/providers/faux";
 import { BACKGROUND_CONTEXT as context } from "@punch-bot/chord/context";
-import { Type } from "typebox";
+import { num, obj } from "@punch-bot/schema";
 import { createRegistry, defineExtension, defineTool, Harness, ToolResultEntry } from "../src/index.ts";
 import { MemoryStorage } from "../src/storage/memory.ts";
 
@@ -21,13 +21,13 @@ async function run(calls: number): Promise<{ ms: number; commits: number }> {
 	const leaf = defineTool({
 		name: "leaf",
 		description: "Return at once",
-		parameters: Type.Object({ n: Type.Number() }),
+		parameters: obj({ n: num() }),
 		execute: async () => ({ output: [{ type: "text", text: "ok" }] }),
 	});
 	const fan = defineTool({
 		name: "fan",
 		description: "Call leaf in parallel",
-		parameters: Type.Object({ count: Type.Number() }),
+		parameters: obj({ count: num() }),
 		execute: async (args, api, callContext) => {
 			const results = await Promise.all(
 				Array.from({ length: args.count }, (_, n) =>
@@ -42,9 +42,9 @@ async function run(calls: number): Promise<{ ms: number; commits: number }> {
 	const storage = new MemoryStorage();
 	let commits = 0;
 	const commit = storage.commit.bind(storage);
-	storage.commit = (writes, commitContext) => {
-		commits++;
-		return commit(writes, commitContext);
+	storage.commit = (batches, receive, commitContext) => {
+		commits += batches.length;
+		return commit(batches, receive, commitContext);
 	};
 	const harness = await Harness.open(storage, { models, registry }, context);
 	const root = await harness.root(context, { agent: { model: { provider: "faux", modelId: "faux-1" } } });

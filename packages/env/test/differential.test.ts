@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Context } from "@punch-bot/chord";
+import type { Context } from "@punch-bot/chord/context";
 import { BACKGROUND_CONTEXT } from "@punch-bot/chord/context";
 import type { ToolExecutionApi } from "@punch-bot/durable";
 import type { ExecutionEnv, FileError, Result } from "@punch-bot/durable/env";

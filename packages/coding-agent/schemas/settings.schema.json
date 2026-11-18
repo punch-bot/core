@@ -11,6 +11,15 @@
     "lastChangelogVersion": {
       "type": "string"
     },
+    "extensionChangelogVersions": {
+      "type": "object",
+      "patternProperties": {
+        "^.*$": {
+          "type": "string"
+        }
+      },
+      "description": "Last seen changelog version per extension package."
+    },
     "defaultProvider": {
       "type": "string"
     },
@@ -128,11 +137,6 @@
           "type": "number",
           "description": "Tokens reserved for the prompt and LLM response.",
           "default": 16384
-        },
-        "skipPrompt": {
-          "type": "boolean",
-          "description": "When true, skips the \"Summarize branch?\" prompt and defaults to no summary.",
-          "default": false
         }
       }
     },
@@ -181,35 +185,9 @@
         }
       }
     },
-    "hideThinkingBlock": {
-      "type": "boolean",
-      "default": false
-    },
-    "showCacheMissNotices": {
-      "type": "boolean",
-      "description": "Show cache cost and provider recovery notices.",
-      "default": false
-    },
-    "externalEditor": {
-      "type": "string",
-      "description": "Command for Ctrl+G external editor; takes precedence over VISUAL and EDITOR."
-    },
     "shellPath": {
       "type": "string",
       "description": "Custom shell path, for example for Cygwin on Windows, with support for leading ~ expansion."
-    },
-    "quietStartup": {
-      "anyOf": [
-        {
-          "type": "boolean"
-        },
-        {
-          "type": "string",
-          "const": "header"
-        }
-      ],
-      "description": "When true, hide all startup output. When \"header\", keep only the startup header.",
-      "default": false
     },
     "defaultProjectTrust": {
       "anyOf": [
@@ -240,24 +218,18 @@
       },
       "description": "Command used for npm package lookup and installation, in argv form such as [\"mise\", \"exec\", \"node@20\", \"--\", \"npm\"]."
     },
-    "collapseChangelog": {
-      "type": "boolean",
-      "description": "Show the condensed changelog after update; use /changelog for the full changelog.",
-      "default": false
+    "selfUpdateCommand": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "description": "Command `pi update` runs to update Pi itself, in argv form such as [\"mise\", \"use\", \"-g\", \"npm:{packageName}@{version}\"]. Placeholders: {packageName}, {version}, {installSpec}. PI_SELF_UPDATE_COMMAND takes precedence. Global setting only."
     },
     "enableInstallTelemetry": {
       "type": "boolean",
       "description": "Send an anonymous version and update ping after changelog-detected updates.",
       "default": true
-    },
-    "enableAnalytics": {
-      "type": "boolean",
-      "description": "Opt in to analytics data sharing.",
-      "default": false
-    },
-    "trackingId": {
-      "type": "string",
-      "description": "Analytics tracking identifier, generated when analytics is enabled."
     },
     "packages": {
       "type": "array",
@@ -333,9 +305,6 @@
         {
           "type": "object",
           "properties": {
-            "enableSkillCommands": {
-              "type": "boolean"
-            },
             "customDirectories": {
               "type": "array",
               "items": {
@@ -362,34 +331,9 @@
       },
       "description": "Local theme file paths or directories."
     },
-    "enableSkillCommands": {
-      "type": "boolean",
-      "description": "Register skills as /skill:name commands.",
-      "default": true
-    },
     "terminal": {
       "type": "object",
       "properties": {
-        "showImages": {
-          "type": "boolean",
-          "description": "Show images when the terminal supports them.",
-          "default": true
-        },
-        "imageWidthCells": {
-          "type": "number",
-          "description": "Preferred inline image width in terminal cells.",
-          "default": 60
-        },
-        "clearOnShrink": {
-          "type": "boolean",
-          "description": "Clear empty rows when content shrinks.",
-          "default": false
-        },
-        "showTerminalProgress": {
-          "type": "boolean",
-          "description": "Show OSC 9;4 terminal progress indicators.",
-          "default": false
-        },
         "trueColor": {
           "anyOf": [
             {
@@ -432,50 +376,6 @@
       },
       "description": "Initial tool selection. Plain names replace the inherited selection; +name and -name entries add or remove tools."
     },
-    "doubleEscapeAction": {
-      "anyOf": [
-        {
-          "type": "string",
-          "const": "fork"
-        },
-        {
-          "type": "string",
-          "const": "tree"
-        },
-        {
-          "type": "string",
-          "const": "none"
-        }
-      ],
-      "description": "Action for double-escape with an empty editor.",
-      "default": "tree"
-    },
-    "treeFilterMode": {
-      "anyOf": [
-        {
-          "type": "string",
-          "const": "default"
-        },
-        {
-          "type": "string",
-          "const": "no-tools"
-        },
-        {
-          "type": "string",
-          "const": "user-only"
-        },
-        {
-          "type": "string",
-          "const": "labeled-only"
-        },
-        {
-          "type": "string",
-          "const": "all"
-        }
-      ],
-      "description": "Default filter when opening /tree.",
-      "default": "default"
-    },
     "thinkingBudgets": {
       "type": "object",
       "properties": {
@@ -493,69 +393,6 @@
         }
       },
       "description": "Custom token budgets for thinking levels."
-    },
-    "editorPaddingX": {
-      "type": "number",
-      "description": "Horizontal padding for the input editor.",
-      "default": 0
-    },
-    "outputPad": {
-      "anyOf": [
-        {
-          "type": "number",
-          "const": 0
-        },
-        {
-          "type": "number",
-          "const": 1
-        }
-      ],
-      "description": "Horizontal padding for transcript content.",
-      "default": 1
-    },
-    "autocompleteMaxVisible": {
-      "type": "number",
-      "description": "Maximum visible items in the autocomplete dropdown.",
-      "default": 5
-    },
-    "showHardwareCursor": {
-      "type": "boolean",
-      "description": "Show the terminal cursor while still positioning it for IME."
-    },
-    "markdown": {
-      "type": "object",
-      "properties": {
-        "codeBlockIndent": {
-          "type": "string",
-          "default": "  "
-        },
-        "mermaid": {
-          "anyOf": [
-            {
-              "type": "string",
-              "const": "off"
-            },
-            {
-              "type": "string",
-              "const": "final"
-            },
-            {
-              "type": "string",
-              "const": "streaming"
-            }
-          ],
-          "default": "streaming"
-        }
-      }
-    },
-    "warnings": {
-      "type": "object",
-      "properties": {
-        "anthropicExtraUsage": {
-          "type": "boolean",
-          "default": true
-        }
-      }
     },
     "codemode": {
       "type": "object",
@@ -619,7 +456,7 @@
         }
       ],
       "description": "Cache-warming profile. \"idle\" also warms between agent runs. Global only because each refresh costs money.",
-      "default": "streaming"
+      "default": "idle"
     },
     "websocketConnectTimeoutMs": {
       "anyOf": [
@@ -633,69 +470,6 @@
         }
       ],
       "description": "WebSocket connect or open handshake timeout in milliseconds; 0 or \"disabled\" disables it."
-    },
-    "tuiMode": {
-      "anyOf": [
-        {
-          "type": "string",
-          "const": "regular"
-        },
-        {
-          "type": "string",
-          "const": "fullscreen"
-        }
-      ],
-      "default": "fullscreen"
-    },
-    "fullscreenExitOutput": {
-      "anyOf": [
-        {
-          "type": "string",
-          "const": "transcript"
-        },
-        {
-          "type": "string",
-          "const": "resume-hint"
-        }
-      ],
-      "description": "No effect in regular TUI mode.",
-      "default": "transcript"
-    },
-    "fullscreenScrollbar": {
-      "anyOf": [
-        {
-          "type": "string",
-          "const": "auto"
-        },
-        {
-          "type": "string",
-          "const": "always"
-        },
-        {
-          "type": "string",
-          "const": "hidden"
-        }
-      ],
-      "description": "No effect in regular TUI mode.",
-      "default": "auto"
-    },
-    "fullscreenCopyOnSelect": {
-      "type": "boolean",
-      "description": "No effect in regular TUI mode.",
-      "default": true
-    },
-    "fullscreenWheelScrollLines": {
-      "anyOf": [
-        {
-          "type": "number"
-        },
-        {
-          "type": "string",
-          "const": "auto"
-        }
-      ],
-      "description": "Lines scrolled per wheel event in fullscreen mode; numeric values are clamped from 1 to 100.",
-      "default": "auto"
     },
     "queueMode": {
       "anyOf": [
