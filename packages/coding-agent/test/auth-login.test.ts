@@ -485,7 +485,12 @@ describe("pi auth login command", () => {
 	test("finds providers that builtin extensions register", async () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "pi-auth-login-"));
 		const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
-		const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+		// Calls write callbacks like a real stream, since the command waits for them before exiting.
+		const stderr = vi.spyOn(process.stderr, "write").mockImplementation(((_chunk: unknown, ...rest: unknown[]) => {
+			const callback = rest.find((arg) => typeof arg === "function") as (() => void) | undefined;
+			callback?.();
+			return true;
+		}) as typeof process.stderr.write);
 		const exit = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
 		try {
 			process.env.PI_CODING_AGENT_DIR = agentDir;

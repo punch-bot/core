@@ -118,7 +118,7 @@ The source archive includes the generated provider model data used for that rele
 Treat npm dependency changes as reviewed code.
 
 - Direct registry dependencies, including internal workspace packages, are pinned to exact versions.
-- `.npmrc` sets `save-exact=true` and `min-release-age=2` to avoid same-day dependency releases during npm resolution.
+- `.npmrc` sets `save-exact=true` and `min-release-age=2` to avoid same-day dependency releases during npm resolution. `@punch-bot/*` is excluded from the release-age gate, so the workspace's own packages resolve right after a release.
 - `package-lock.json` is the dependency ground truth. Pre-commit blocks accidental lockfile commits unless `PI_ALLOW_LOCKFILE_CHANGE=1` is set.
 - `npm run check` verifies pinned direct deps, native TypeScript import compatibility, and the generated coding-agent shrinkwrap and install lock.
 - The pi.dev installer installs from `packages/coding-agent/install-lock/`, generated from the root lockfile, to pin transitive deps. The npm package also keeps a generated shrinkwrap to pin transitive deps.

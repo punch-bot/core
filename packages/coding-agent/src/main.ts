@@ -160,7 +160,8 @@ async function createAuthModelRuntime(
  */
 async function exitAfterExtensionCommand(exitCode: number): Promise<never> {
 	for (const stream of [process.stdout, process.stderr]) {
-		if (stream.writableLength > 0) await new Promise<void>((resolve) => stream.once("drain", resolve));
+		// The callback of an empty write runs once everything written before it is flushed.
+		await new Promise<void>((resolve) => stream.write("", () => resolve()));
 	}
 	process.exit(exitCode);
 }
