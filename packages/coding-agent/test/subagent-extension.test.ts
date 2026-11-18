@@ -111,14 +111,13 @@ function createTool(): ToolDefinition {
 	return registered;
 }
 
-/** A headless session whose project is trusted, so its own project agents run without asking. */
-function createContext(cwd: string, trusted = true): ExtensionToolContext {
+function createContext(cwd: string): ExtensionToolContext {
 	return {
 		cwd,
 		hasUI: false,
 		model: { provider: "test", id: "dispatch-alias" },
 		thinkingLevel: "high",
-		isProjectTrusted: () => trusted,
+		isProjectTrusted: () => false,
 	} as unknown as ExtensionToolContext;
 }
 
@@ -135,6 +134,7 @@ function singleTask(task: string, overrides: Record<string, unknown> = {}): Reco
 		agent: "worker",
 		task,
 		agentScope: "project",
+		confirmProjectAgents: false,
 		...overrides,
 	};
 }
@@ -250,6 +250,7 @@ describe("subagent extension", () => {
 						task: fixtureScenario.toolWait(releaseFile),
 					})),
 					agentScope: "project",
+					confirmProjectAgents: false,
 				},
 				{ onUpdate: (update) => updates.push(update) },
 			);
@@ -319,6 +320,7 @@ describe("subagent extension", () => {
 							task: fixtureScenario.toolThenFinal,
 						})),
 						agentScope: "project",
+						confirmProjectAgents: false,
 					},
 					{ signal: controller.signal },
 				),
@@ -345,6 +347,7 @@ describe("subagent extension", () => {
 							task: fixtureScenario.hold(startsFile),
 						})),
 						agentScope: "project",
+						confirmProjectAgents: false,
 					},
 					{ signal: controller.signal },
 				),
@@ -376,6 +379,7 @@ describe("subagent extension", () => {
 						agent: "worker",
 						task: fixtureScenario.error,
 						agentScope: "project",
+						confirmProjectAgents: false,
 					}),
 					{ stopReason: "toolUse" },
 				),
@@ -472,9 +476,8 @@ describe("subagent extension", () => {
 
 			try {
 				process.chdir(startupRoot);
-				// The child folder has its own agents, so the user approves them.
 				await executeSubagent(singleTask(fixtureScenario.recordInvocation(invocationFile), { cwd: "child" }), {
-					context: createInteractiveContext(createContext(sessionRoot), async () => true),
+					context: createContext(sessionRoot),
 				});
 			} finally {
 				process.chdir(originalCwd);
@@ -492,9 +495,13 @@ describe("subagent extension", () => {
 			createProjectAgent(childCwd, "worker", { model: "child-model" });
 			const argvFile = join(tempDir, "confirmed-child-argv.json");
 			const confirm = vi.fn(async (_title: string, _message: string) => true);
-			await executeSubagent(singleTask(fixtureScenario.recordArgv(argvFile), { cwd: childCwd }), {
-				context: createInteractiveContext(ctx, confirm),
-			});
+			await executeSubagent(
+				singleTask(fixtureScenario.recordArgv(argvFile), {
+					cwd: childCwd,
+					confirmProjectAgents: true,
+				}),
+				{ context: createInteractiveContext(ctx, confirm) },
+			);
 
 			expect.soft(selectedModel(argvFile)).toBe("child-model");
 			expect(confirm).toHaveBeenCalledWith(
@@ -514,9 +521,13 @@ describe("subagent extension", () => {
 			createProjectAgent(externalCwd, "worker", { model: "external-model" });
 			const argvFile = join(tempDir, "external-child-argv.json");
 			const confirm = vi.fn(async (_title: string, _message: string) => true);
-			await executeSubagent(singleTask(fixtureScenario.recordArgv(argvFile), { cwd: externalCwd }), {
-				context: createInteractiveContext(createContext(sessionCwd), confirm, true),
-			});
+			await executeSubagent(
+				singleTask(fixtureScenario.recordArgv(argvFile), {
+					cwd: externalCwd,
+					confirmProjectAgents: true,
+				}),
+				{ context: createInteractiveContext(createContext(sessionCwd), confirm, true) },
+			);
 
 			expect.soft(selectedModel(argvFile)).toBe("external-model");
 			expect(confirm).toHaveBeenCalledOnce();
@@ -525,17 +536,6 @@ describe("subagent extension", () => {
 				expect.stringContaining(join(externalCwd, CONFIG_DIR_NAME, "agents")),
 			);
 			expect(String(confirm.mock.calls[0][1])).not.toContain(join(sessionCwd, CONFIG_DIR_NAME, "agents"));
-		});
-
-		it("refuses project agents from an untrusted project without a UI", async () => {
-			const argvFile = join(tempDir, "refused-argv.json");
-			const result = await executeSubagent(singleTask(fixtureScenario.recordArgv(argvFile)), {
-				context: createContext(tempDir, false),
-			});
-
-			expect(resultText(result)).toContain("Refused: project-local agents from an untrusted project");
-			expect(resultText(result)).toContain(join(tempDir, CONFIG_DIR_NAME, "agents"));
-			expect(existsSync(argvFile)).toBe(false);
 		});
 
 		it("resolves and confirms each project-agent source for parallel task cwd values", async () => {
@@ -557,6 +557,7 @@ describe("subagent extension", () => {
 						{ agent: "worker", task: fixtureScenario.recordArgv(argvB), cwd: projectB },
 					],
 					agentScope: "project",
+					confirmProjectAgents: true,
 				},
 				{ context: createInteractiveContext(ctx, confirm) },
 			);
@@ -581,6 +582,7 @@ describe("subagent extension", () => {
 				params: {
 					chain: [{ agent: "worker", task: fixtureScenario.large("chain") }],
 					agentScope: "project",
+					confirmProjectAgents: false,
 				},
 			},
 		])("limits $name output while retaining complete details", async ({ params }) => {
@@ -599,6 +601,7 @@ describe("subagent extension", () => {
 			return executeSubagent({
 				chain: [{ agent: "worker", task }],
 				agentScope: "project",
+				confirmProjectAgents: false,
 			});
 		}
 

@@ -32,7 +32,7 @@ Punch sandboxes on the same machine also advertise an A2A listener when `SANDBOX
 
 ## Project agents and trust
 
-The default `agentScope` is `user`, which loads bundled and user agents but not repository-controlled definitions. Set it to `project` or `both` to discover the nearest `.pi/agents` directory. Agents from the session's trusted project run without asking. Agents from any other project, including one a task `cwd` points into, need the user's confirmation in a UI; without one (print, JSON, or RPC mode with no UI client) Punch refuses them. Trust a project to run its agents headless. Project definitions override user and bundled definitions with the same name.
+The default `agentScope` is `user`, which loads bundled and user agents but not repository-controlled definitions. Set it to `project` or `both` to discover the nearest `.pi/agents` directory. In an untrusted interactive project, Punch asks for confirmation before executing any requested project agent. Project definitions override user and bundled definitions with the same name.
 
 ## Modes
 
