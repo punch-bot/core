@@ -10,20 +10,21 @@ const dryRun = process.argv.includes("--dry-run");
 const unknownArgs = process.argv.slice(2).filter((arg) => arg !== "--dry-run");
 if (unknownArgs.length > 0) throw new Error("Usage: node scripts/publish.mjs [--dry-run]");
 
-function isPublished(name, version) {
+/** Whether npm knows `spec`, a package name or `name@version`; a 404 means it does not. */
+function existsOnRegistry(spec) {
 	try {
-		const output = execNpmSync(["view", `${name}@${version}`, "version", "--json"], {
+		const output = execNpmSync(["view", spec, "version", "--json"], {
 			encoding: "utf8",
 			stdio: ["inherit", "pipe", "pipe"],
 		});
-		if (!output.trim()) throw new Error(`npm returned no version for ${name}@${version}`);
+		if (!output.trim()) throw new Error(`npm returned no version for ${spec}`);
 		return true;
 	} catch (error) {
 		const output = error && typeof error === "object"
 			? ["stdout", "stderr"].map((key) => key in error ? String(error[key] ?? "") : "").filter(Boolean).join("\n")
 			: "";
 		if (output.includes("E404") || output.includes("404 Not Found")) return false;
-		throw new Error(`Failed to query ${name}@${version}${output ? `\n${output}` : ""}`, { cause: error });
+		throw new Error(`Failed to query ${spec}${output ? `\n${output}` : ""}`, { cause: error });
 	}
 }
 
@@ -41,9 +42,20 @@ for (const pkg of packages) {
 console.log(`Publishing pi packages at ${versions[0]}${dryRun ? " (dry run)" : ""}\n`);
 const artifactSet = produceArtifactSet({ build: false, repoRoot });
 try {
-	const packageStates = artifactSet.packages.map((pkg) => ({ ...pkg, published: isPublished(pkg.name, pkg.version) }));
+	const packageStates = artifactSet.packages.map((pkg) => ({
+		...pkg,
+		published: existsOnRegistry(`${pkg.name}@${pkg.version}`),
+	}));
 	for (const pkg of packageStates) {
 		console.log(`${pkg.name}@${pkg.version} ${pkg.published ? "is already published" : "is ready to publish"}: ${pkg.tarballPath}`);
+	}
+	// npm trusted publishing cannot create a package: its publisher is configured in the settings of an existing one.
+	// Check before publishing anything, so other packages never go out depending on a package that then fails.
+	const newPackages = packageStates.filter((pkg) => !pkg.published && !existsOnRegistry(pkg.name)).map((pkg) => pkg.name);
+	if (newPackages.length > 0) {
+		const message = `${newPackages.join(", ")} ${newPackages.length === 1 ? "has" : "have"} never been published. Trusted publishing cannot publish a package for the first time, so this publish needs the NPM_TOKEN secret, or a first publish by hand.`;
+		if (!dryRun && !process.env.NODE_AUTH_TOKEN) throw new Error(message);
+		console.log(`\nNote: ${message}`);
 	}
 	console.log(dryRun ? "\nDry-running tarball publication with provenance.\n" : "\nAll packages packed; starting publication.\n");
 	for (const pkg of packageStates) {

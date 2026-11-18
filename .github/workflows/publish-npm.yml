@@ -154,15 +154,10 @@ jobs:
       - name: Validate npm tarball publication with provenance
         run: node scripts/publish.mjs --dry-run
 
+      # npm authenticates through trusted publishing (OIDC) for packages that have this workflow configured as their
+      # trusted publisher, and falls back to NPM_TOKEN when it is set. A package's first publish needs the token.
       - name: Publish npm packages with provenance
         if: ${{ !inputs.dry_run }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ -z "$NODE_AUTH_TOKEN" ]]; then
-            echo "::error::NPM_TOKEN is not set in the npm-publish environment"
-            exit 1
-          fi
-          node scripts/publish.mjs
+        run: node scripts/publish.mjs
