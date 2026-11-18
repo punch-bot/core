@@ -7,6 +7,7 @@ import { runAuthLogin } from "../src/cli/auth-login.ts";
 import type { LoginTerminal } from "../src/cli/auth-terminal.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import { CredentialSynchronizationError, ModelRuntime } from "../src/core/model-runtime.ts";
+import { main } from "../src/main.ts";
 
 const PROVIDER_ID = "login-test";
 
@@ -475,6 +476,29 @@ describe("pi auth login", () => {
 			expect(await run(["radius"], modelRuntime, second, undefined, agentDir)).toBe(0);
 			expect(second.lines.some((line) => line.includes("MCP server"))).toBe(false);
 		} finally {
+			rmSync(agentDir, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("pi auth login command", () => {
+	test("finds providers that builtin extensions register", async () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "pi-auth-login-"));
+		const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+		const originalExitCode = process.exitCode;
+		const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+		try {
+			process.env.PI_CODING_AGENT_DIR = agentDir;
+			await main(["auth", "login", "llama.cpp"]);
+			const output = stderr.mock.calls.map(([chunk]) => String(chunk)).join("");
+			// Not a terminal in tests, so login stops after finding the provider.
+			expect(output).toContain("requires an interactive terminal");
+			expect(output).not.toContain("Unknown provider");
+		} finally {
+			stderr.mockRestore();
+			process.exitCode = originalExitCode;
+			if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+			else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
 			rmSync(agentDir, { recursive: true, force: true });
 		}
 	});

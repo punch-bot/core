@@ -134,7 +134,7 @@ Static providers can resolve an API key from a literal, environment interpolatio
 
 Use native provider authentication when the integration needs stored credentials, custom resolution, provider-scoped environment, or multiple login methods.
 
-An OAuth provider supplies a display name, login flow, token refresh, and access-token resolution. Pi stores returned credentials in `~/.pi/agent/auth.json`. `pi auth login` does not load extensions and the headless modes have no login command, so only SDK applications can start this flow, through `session.modelRuntime.login()`.
+An OAuth provider supplies a display name, login flow, token refresh, and access-token resolution. Pi stores returned credentials in `~/.pi/agent/auth.json`. `pi auth login <provider>` starts this flow for providers that built-in extensions or your own extensions (in `~/.pi/agent/extensions/` or the `extensions` setting) register. A project's own extensions do not load for that command. SDK applications can start the flow through `session.modelRuntime.login()`.
 
 OAuth callbacks are UI-neutral. They can open an authorization URL, show a device code, report progress, request input, or ask the user to choose a login method. Honor cancellation and the supplied abort signal during network requests.
 

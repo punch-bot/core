@@ -61,7 +61,7 @@ export LLAMA_API_KEY=optional-secret
 pi --list-models llama
 ```
 
-`pi auth login` cannot configure `llama.cpp` because an extension registers the provider.
+Or run `pi auth login llama.cpp` in a terminal: it asks for the server URL and an optional API key, checks that the server answers, and saves both.
 
 If you start the router with `--no-models-autoload`, load a model with `/llama` first, then select it with `--model` or the RPC `set_model` command.
 

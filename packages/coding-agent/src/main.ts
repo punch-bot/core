@@ -48,6 +48,7 @@ import { resolveCliModel, resolveModelScopeWithDiagnostics, type ScopedModel } f
 import { ModelRuntime } from "./core/model-runtime.ts";
 import { flushRawStdout, restoreStdout, takeOverStdout, writeRawStdout } from "./core/output-guard.ts";
 import { type AppMode, resolveProjectTrusted } from "./core/project-trust.ts";
+import { isBuiltinExtension } from "./core/resource-loader.ts";
 import type { CreateAgentSessionOptions } from "./core/sdk.ts";
 import { getMissingSessionCwdIssue, MissingSessionCwdError } from "./core/session-cwd.ts";
 import { assertValidSessionId, SessionManager } from "./core/session-manager.ts";
@@ -122,13 +123,50 @@ function isPlainRuntimeMetadataCommand(parsed: Args): boolean {
 	return !parsed.print && parsed.mode === undefined && (parsed.help === true || parsed.listModels !== undefined);
 }
 
-async function runAuthLoginCommand(args: string[]): Promise<number> {
+/**
+ * Model runtime for `pi auth login` and `pi auth logout`, with the providers that `builtin:<name>` extensions (such as
+ * llama.cpp) and the user's extensions register. The project stays untrusted, so its own extensions do not run. Other
+ * inline extensions stay out: the punch extension, for example, starts its server when it loads, which would keep the
+ * process running.
+ */
+async function createAuthModelRuntime(
+	cwd: string,
+	agentDir: string,
+	settingsManager: SettingsManager,
+	extensionFactories: InlineExtension[],
+	signal: AbortSignal,
+): Promise<ModelRuntime> {
+	const modelRuntime = await ModelRuntime.create({ allowModelNetwork: false, signal });
+	const { diagnostics, resourceLoader } = await createAgentSessionServices({
+		cwd,
+		agentDir,
+		settingsManager,
+		modelRuntime,
+		resourceLoaderOptions: { extensionFactories: extensionFactories.filter(isBuiltinExtension) },
+	});
+	reportDiagnostics([
+		...diagnostics,
+		...resourceLoader.getExtensions().errors.map(({ path, error }) => ({
+			type: "warning" as const,
+			message: `Failed to load extension "${path}": ${error}`,
+		})),
+	]);
+	return modelRuntime;
+}
+
+async function runAuthLoginCommand(args: string[], extensionFactories: InlineExtension[]): Promise<number> {
 	const cwd = process.cwd();
 	const agentDir = getAgentDir();
 	const settingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: false });
 	applyHttpProxySettings(settingsManager.getGlobalSettings().httpProxy);
 	configureHttpDispatcher(settingsManager.getHttpIdleTimeoutMs());
-	const modelRuntime = await ModelRuntime.create({ allowModelNetwork: false, signal: AbortSignal.timeout(15_000) });
+	const modelRuntime = await createAuthModelRuntime(
+		cwd,
+		agentDir,
+		settingsManager,
+		extensionFactories,
+		AbortSignal.timeout(15_000),
+	);
 
 	const controller = new AbortController();
 	const interrupt = () => controller.abort();
@@ -147,9 +185,12 @@ async function runAuthLoginCommand(args: string[]): Promise<number> {
 	}
 }
 
-async function runAuthLogoutCommand(args: string[]): Promise<number> {
+async function runAuthLogoutCommand(args: string[], extensionFactories: InlineExtension[]): Promise<number> {
 	const signal = AbortSignal.timeout(15_000);
-	const modelRuntime = await ModelRuntime.create({ allowModelNetwork: false, signal });
+	const cwd = process.cwd();
+	const agentDir = getAgentDir();
+	const settingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: false });
+	const modelRuntime = await createAuthModelRuntime(cwd, agentDir, settingsManager, extensionFactories, signal);
 	return runAuthLogout(args, {
 		modelRuntime,
 		terminal: { write: (line) => console.log(line), error: (line) => console.error(line) },
@@ -157,18 +198,24 @@ async function runAuthLogoutCommand(args: string[]): Promise<number> {
 	});
 }
 
-async function runAuthCommand(args: string[]): Promise<boolean> {
+async function runAuthCommand(args: string[], extensionFactories: InlineExtension[]): Promise<boolean> {
 	if (isAuthCommandHelp(args)) {
 		printAuthCommandHelp();
 		return true;
 	}
 	if (args[0] === "auth" && args[1] === "login") {
 		// main() already applied --offline.
-		process.exitCode = await runAuthLoginCommand(args.slice(2).filter((arg) => arg !== "--offline"));
+		process.exitCode = await runAuthLoginCommand(
+			args.slice(2).filter((arg) => arg !== "--offline"),
+			extensionFactories,
+		);
 		return true;
 	}
 	if (args[0] === "auth" && args[1] === "logout") {
-		process.exitCode = await runAuthLogoutCommand(args.slice(2).filter((arg) => arg !== "--offline"));
+		process.exitCode = await runAuthLogoutCommand(
+			args.slice(2).filter((arg) => arg !== "--offline"),
+			extensionFactories,
+		);
 		return true;
 	}
 
@@ -602,7 +649,7 @@ export async function main(args: string[], options?: MainOptions) {
 		process.env.PI_SKIP_VERSION_CHECK = "1";
 	}
 
-	if (await runAuthCommand(args)) {
+	if (await runAuthCommand(args, extensionFactories)) {
 		return;
 	}
 

@@ -2006,7 +2006,7 @@ The object form accepts a complete pi-ai `Provider`, including native `auth`, `g
 - `authHeader` - If true, adds `Authorization: Bearer` header automatically.
 - `models` - Array of model definitions. If provided, replaces all existing models for this provider. Model definitions can set `baseUrl` to override the provider endpoint for that model.
 - `refreshModels` - Async dynamic discovery callback. Its returned models replace extension-provided models. `context.stored` contains the persisted provider snapshot; use generation-checked `context.publish({ persist: entry })` only when updated catalog data should persist. Use `persist: null` to delete that snapshot.
-- `oauth` - OAuth provider config. `pi auth login` does not load extensions and the headless modes have no login command, so only SDK applications can run this flow, through `session.modelRuntime.login()`.
+- `oauth` - OAuth provider config. `pi auth login <provider>` runs this flow for providers that built-in or user extensions register, but not for those a project's own extensions register. SDK applications can also run it through `session.modelRuntime.login()`.
 - `streamSimple` - Custom streaming implementation for non-standard APIs.
 
 See [custom-provider.md](custom-provider.md) for advanced topics: custom streaming APIs, OAuth details, model definition reference.

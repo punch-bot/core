@@ -42,6 +42,7 @@
 
 ### Fixed
 
+- Fixed `pi auth login` and `pi auth logout` not finding providers that extensions register, such as llama.cpp: they reported `Unknown provider "llama.cpp"`. Both now load the built-in and user extensions; a project's own extensions still do not load.
 - Fixed `/import` of a session whose working directory no longer exists leaving a copy in the session directory, and continuing it leaving a second copy with the same ID (`s.jsonl` and `s-1.jsonl`); the failed copy is now removed ([#11975](https://github.com/earendil-works/pi/pull/11975) by [@petrroll](https://github.com/petrroll), fixes [#11060](https://github.com/earendil-works/pi/issues/11060))
 - Fixed Anthropic OAuth requests reporting an outdated Claude Code version
 - Fixed the grep tool's `glob` matching from the folder pi was started in instead of from `path`: with `path: "repo"`, `glob: "migrations/main/*.js"` returned `No matches found` even though `repo/migrations/main/a.js` exists. Globs are now relative to `path`, the same form grep prints its results in, also when `path` is a symlink. A leading `./` (`./src/*.ts`) is ignored instead of matching nothing ([#11807](https://github.com/earendil-works/pi/issues/11807), [#10998](https://github.com/earendil-works/pi/issues/10998))

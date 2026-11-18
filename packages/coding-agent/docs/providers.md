@@ -5,7 +5,7 @@ Most hosted providers support one or both of these authentication methods:
 - Sign in through a browser or device flow backed by OAuth.
 - Provide an API key.
 
-Run `pi auth login <provider>` to use the method a provider supports. An unknown provider ID prints the list of known provider IDs. Providers registered by extensions, such as llama.cpp, cannot log in this way; configure them through environment variables or their extension. Amazon Bedrock and Google Vertex AI can also use ambient cloud credentials.
+Run `pi auth login <provider>` to use the method a provider supports. An unknown provider ID prints the list of known provider IDs. Providers that built-in or user extensions register, such as llama.cpp, log in the same way. A project's own extensions do not load for this command. Amazon Bedrock and Google Vertex AI can also use ambient cloud credentials.
 
 ## Authenticate interactively
 

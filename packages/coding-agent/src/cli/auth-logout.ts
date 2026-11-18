@@ -34,7 +34,7 @@ export async function runAuthLogout(args: string[], options: AuthLogoutOptions):
 		return 1;
 	}
 	const provider = findMatchingProviders(modelRuntime.getProviders(), providerRef)[0];
-	// Providers registered by extensions are not loaded here, so their stored credentials match by id alone.
+	// A credential whose provider is gone, for example after its extension was removed, still matches by id.
 	const credential = stored.find((candidate) => candidate.providerId === (provider?.id ?? providerRef));
 	if (!provider && !credential) {
 		terminal.error(`Unknown provider "${replaceControlCharacters(providerRef)}".`);
