@@ -153,6 +153,8 @@
 ### Removed
 
 - Removed the native OS `sandbox/` extension example and its dependency. Use the [Gondolin example](examples/extensions/gondolin/) or the [containerization guide](docs/containerization.md).
+- Removed settings that only the removed terminal UI read, with their `SettingsManager` getters and setters: `tuiMode`, `fullscreenExitOutput`, `fullscreenScrollbar`, `fullscreenCopyOnSelect`, `fullscreenWheelScrollLines`, `editorPaddingX`, `outputPad`, `autocompleteMaxVisible`, `showHardwareCursor`, `externalEditor`, `doubleEscapeAction`, `treeFilterMode`, `hideThinkingBlock`, `quietStartup`, `terminal.showImages`, `terminal.imageWidthCells`, `terminal.clearOnShrink`, `terminal.showTerminalProgress`, `markdown`, `enableSkillCommands`, `branchSummary.skipPrompt`, `showCacheMissNotices`, `collapseChangelog`, `enableAnalytics`, `trackingId`, and `warnings`. Existing settings files that set them still load. The `FullscreenExitOutput`, `QuietStartup` and `TuiMode` type exports are gone.
+- Removed the `--verbose` flag, which nothing read.
 
 ## [1.5.1] - 2026-11-04
 

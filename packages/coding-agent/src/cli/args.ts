@@ -48,7 +48,6 @@ export interface Args {
 	noContextFiles?: boolean;
 	listModels?: string | true;
 	offline?: boolean;
-	verbose?: boolean;
 	projectTrustOverride?: boolean;
 	messages: string[];
 	fileArgs: string[];
@@ -230,8 +229,6 @@ export function parseArgs(args: string[]): Args {
 				type: "warning",
 				message: "--tui-mode is no longer supported; interactive TUI was removed",
 			});
-		} else if (arg === "--verbose") {
-			result.verbose = true;
 		} else if (arg === "--approve" || arg === "-a") {
 			result.projectTrustOverride = true;
 		} else if (arg === "--no-approve" || arg === "-na") {
@@ -330,7 +327,6 @@ ${chalk.bold("Options:")}
   --no-context-files, -nc        Disable AGENTS.md and CLAUDE.md discovery and loading
   --export <file> [output]       Export session file to HTML and exit
   --list-models [search]         List available models (with optional fuzzy search)
-  --verbose                      Force verbose startup (overrides quietStartup setting)
   --approve, -a                  Trust project-local files for this run
   --no-approve, -na              Ignore project-local files for this run
   --offline                      Disable startup network operations (same as PI_OFFLINE=1)
