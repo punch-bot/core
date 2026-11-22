@@ -43,6 +43,7 @@
 
 ### Fixed
 
+- OpenCode Go DeepSeek V4.1 Flash supports thinking off: reasoning off now sends `thinking: {"type": "disabled"}` instead of clamping to a reasoning level
 - Fixed Anthropic OAuth requests reporting an outdated Claude Code version.
 - Azure OpenAI models now keep OpenAI's long-context price tier, so requests above 272K input tokens are costed at Azure's long-context rates ([#11948](https://github.com/earendil-works/pi/issues/11948))
 - Fixed tool arguments for `Type.BigInt()` and `Type.Undefined()` parameters being rejected: they convert as TypeBox converted them (`"42"` and `42` to `42n`, `null` to `undefined`), now that pi-schema supports both types. `Type.Void()` still rejects every JSON argument.
