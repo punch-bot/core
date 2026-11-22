@@ -90,7 +90,13 @@ describe("the tutorial's code blocks", () => {
 		expect(quotes.length).toBeGreaterThan(20);
 		for (const { block, value } of quotes) {
 			const file = readFileSync(join(HERE, value), "utf8");
-			expect(file.includes(block.text), `book.md:${block.line}: ${value} no longer has this block`).toBe(true);
+			// Workspace releases bump package versions independently of the book.
+			const normalize = (text: string) =>
+				value.endsWith("package.json") ? text.replace(/^\s*"version": "[^"]+",?\n/gm, "") : text;
+			expect(
+				normalize(file).includes(normalize(block.text)),
+				`book.md:${block.line}: ${value} no longer has this block`,
+			).toBe(true);
 		}
 	});
 });
