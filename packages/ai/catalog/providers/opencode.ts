@@ -148,6 +148,9 @@ export const OPENCODE_COMPLETIONS_COMPAT = {
 
 /** Behavior shared by OpenCode Zen and Go. */
 export function finalizeOpencodeModel(model: ChatModel): void {
+	if (model.provider === "opencode-go" && model.id === "deepseek-v4.1-flash") {
+		mergeThinking(model, { off: "none" });
+	}
 	if (model.provider === "opencode-go" && model.id === "glm-5.2") {
 		mergeThinking(model, { off: null, minimal: null, low: null, medium: null, high: "high", max: "max" });
 	}
