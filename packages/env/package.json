@@ -1,6 +1,6 @@
 {
 	"name": "@punch-bot/env",
-	"version": "1.5.2",
+	"version": "1.5.3",
 	"description": "Remote execution environments for Pi Durable: a small daemon deployed over SSH and its ExecutionEnv client",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -45,8 +45,8 @@
 		"node": ">=22.19.0"
 	},
 	"dependencies": {
-		"@punch-bot/chord": "1.5.2",
-		"@punch-bot/durable": "1.5.2"
+		"@punch-bot/chord": "1.5.3",
+		"@punch-bot/durable": "1.5.3"
 	},
 	"devDependencies": {
 		"vitest": "5.0.5"

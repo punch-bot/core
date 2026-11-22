@@ -1,6 +1,6 @@
 {
 	"name": "@punch-bot/chord",
-	"version": "1.5.2",
+	"version": "1.5.3",
 	"description": "Object runtime for apps across processes: contracts, documents, a store, links, plugins with hot reload, HTTP, workers, web and terminal clients",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -165,8 +165,8 @@
 		"node": ">=22.19.0"
 	},
 	"dependencies": {
-		"@punch-bot/schema": "1.5.2",
-		"@punch-bot/telemetry": "1.5.2"
+		"@punch-bot/schema": "1.5.3",
+		"@punch-bot/telemetry": "1.5.3"
 	},
 	"peerDependencies": {
 		"esbuild": "0.28.2",
